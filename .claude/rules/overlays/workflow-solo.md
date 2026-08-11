@@ -8,4 +8,6 @@ Compose with `core/workflow-core.md`. Use when you are the only contributor.
   commit).
 - The feature-branch and squash steps still stand — only the PR/review step is
   waived.
-- Switch to `workflow-team.md` the moment a second contributor joins.
+- Switch to `workflow-team.md` the moment a second contributor joins, and swap
+  any posture-matched overlay with it (e.g. `workflow-agent-review-solo.md` →
+  `workflow-agent-review-team.md`).
