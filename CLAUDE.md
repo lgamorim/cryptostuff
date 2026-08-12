@@ -19,10 +19,12 @@
   single profile, so the modules are imported directly above, without a
   profile manifest.
 - This repo runs the two-role implement/review flow from
-  `overlays/workflow-agent-review-solo.md`: the implementer ends a completed
-  `feature/` branch with a handoff summary; an independent reviewer (fresh
-  context, wired outside these rules) reviews the branch diff against
-  `master` before the maintainer authorizes the squash-merge.
+  `overlays/workflow-agent-review-solo.md`. When a `feature/` branch is
+  complete, the implementer ends by invoking the `code-reviewer` subagent
+  (`.claude/agents/code-reviewer.md`), passing only the handoff summary
+  (intent, tests added, deliberate deviations), and relays its findings
+  report verbatim; the maintainer adjudicates the findings and authorizes
+  the squash-merge.
 - `.editorconfig` at the repo root encodes `core/coding-standards.md`'s naming
   and style rules so `dotnet format` and the build enforce them, not just prose.
   `EnforceCodeStyleInBuild` in `Directory.Build.props` makes style violations
