@@ -7,12 +7,25 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
     <IsPackable>false</IsPackable>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
     <!-- IDE0005 (unused usings) only fires on build when the compiler emits
          the XML doc file; CS1591 is then suppressed because
          archetype/application.md requires XML docs only where intent isn't
          obvious. -->
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+
+  <!-- Test projects are executables under the modern .NET test host. CA1707
+       is suppressed pre-emptively for the Should_ExpectedOutcome_When_Scenario
+       names core/testing-philosophy.md requires, in case analysis is ever
+       tightened to enable it (it is not active under today's settings).
+       Matches the `Tests` suffix, not `UnitTests`, so IntegrationTests
+       projects aren't silently excluded. -->
+  <PropertyGroup Condition="$(MSBuildProjectName.EndsWith('Tests'))">
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+    <NoWarn>$(NoWarn);CA1707</NoWarn>
   </PropertyGroup>
 
 </Project>
