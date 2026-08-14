@@ -43,3 +43,7 @@
   It also sets `GenerateDocumentationFile` so `IDE0005` (unused usings) runs
   on build, with `CS1591` suppressed: `archetype/application.md` requires XML
   docs only where intent isn't obvious.
+- Add projects to `cryptostuff.slnx` with plain `dotnet sln add <path>`, never
+  `--in-root`. That flag suppresses the `<Folder Name="/src/">` and
+  `<Folder Name="/test/">` elements, so IDEs show every project flat at the
+  solution root instead of mirroring the directory layout.
