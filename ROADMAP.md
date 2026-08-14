@@ -1,7 +1,6 @@
 # Roadmap
 
-Plan of record for building cryptostuff. The repository currently holds
-conventions, build configuration, and this document — no code yet.
+Plan of record for building cryptostuff.
 
 The deliverable is a cryptocurrency market data application: one core layer that
 owns the domain workflow, an isolated CoinGecko API client beneath it, and two
@@ -81,6 +80,9 @@ phase of its own; it accrues continuously.
   possible.
 - **FluentAssertions is pinned to v7**, whose licence terms carry no commercial
   restriction.
+- **Test framework is xUnit v3 on Microsoft.Testing.Platform**, not classic
+  VSTest — chosen in Milestone 1.2, matching the `OutputType=Exe`
+  test-project scoping Milestone 1.1 already added in anticipation of it.
 
 ---
 
@@ -103,9 +105,15 @@ demo key), and the build, test, and format commands.
 
 ### Milestone 1.2 — `feature/solution-skeleton`
 
-The eleven projects and `cryptostuff.slnx`, each test project carrying one
-trivial passing test to prove the harness runs. Add the CI workflow: build,
-test, and format check, on `ubuntu-latest` and `windows-latest`, in Release.
+Ten of the eleven projects and `cryptostuff.slnx`, each test project carrying
+one trivial passing test to prove the harness runs. Add the CI workflow:
+build, test, and format check, on `ubuntu-latest` and `windows-latest`, in
+Release.
+
+`CryptoStuff.Api.IntegrationTests` is deliberately deferred to Milestone 4.3:
+`archetype/application.md` only licenses an `.IntegrationTests` project once
+it exercises a real dependency, and this one has nothing to exercise until
+the API host exists.
 
 **README:** the project table and the dependency map, plus a CI badge and a note
 on what CI runs. Also update `CLAUDE.md`, whose "No code yet" note goes stale
@@ -242,7 +250,9 @@ check.
 
 ### Milestone 4.3 — `feature/api-integration-tests`
 
-A web application factory over the API with a fake CoinGecko client substituted,
+The eleventh project, `CryptoStuff.Api.IntegrationTests`, held back from
+Milestone 1.2 until there was a real dependency for it to exercise. A web
+application factory over the API with a fake CoinGecko client substituted,
 asserting real status codes and JSON response bodies end to end. This is the
 first point at which the whole stack runs together.
 

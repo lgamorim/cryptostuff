@@ -26,6 +26,10 @@
     <OutputType>Exe</OutputType>
     <IsPackable>false</IsPackable>
     <NoWarn>$(NoWarn);CA1707</NoWarn>
+    <!-- Opts into Microsoft.Testing.Platform for `dotnet test`; on the .NET 10
+         SDK, an MTP-based project without this fails with "Testing with
+         VSTest target is no longer supported". -->
+    <TestingPlatformDotnetTestSupport>true</TestingPlatformDotnetTestSupport>
   </PropertyGroup>
 
 </Project>

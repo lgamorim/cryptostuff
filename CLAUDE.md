@@ -43,6 +43,3 @@
   It also sets `GenerateDocumentationFile` so `IDE0005` (unused usings) runs
   on build, with `CS1591` suppressed: `archetype/application.md` requires XML
   docs only where intent isn't obvious.
-- No code yet. The first project goes under `src/<ProjectName>/` with unit
-  tests under `test/<ProjectName>.UnitTests/` and a single `.slnx` at this
-  root, per `core/architecture.md` and `archetype/application.md`.

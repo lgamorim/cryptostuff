@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\CryptoStuff.CoinGecko\CryptoStuff.CoinGecko.csproj" />
+  </ItemGroup>
+
+</Project>
