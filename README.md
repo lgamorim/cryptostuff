@@ -33,6 +33,14 @@ Dependencies point inward; no lower layer references a layer above it.
   `CoinGecko:ApiKey`; in deployment, set the `CoinGecko__ApiKey` environment
   variable.
 
+## Configuration
+
+`CryptoStuff.CoinGecko` talks to CoinGecko's REST API at
+`https://api.coingecko.com/api/v3`. Every request is authenticated with the
+demo API key described in Prerequisites (`CoinGecko:ApiKey` locally,
+`CoinGecko__ApiKey` in deployment), sent as the `x-cg-demo-api-key` HTTP
+header.
+
 ## Build, test, and format
 
 ```bash
