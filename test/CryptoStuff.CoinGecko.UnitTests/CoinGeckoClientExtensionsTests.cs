@@ -131,4 +131,112 @@ public class CoinGeckoClientExtensionsTests
         var value = response.Value ?? throw new InvalidOperationException("Expected a value.");
         value["0xabc"]["usd"].Should().Be(1.23m);
     }
+
+    [Fact]
+    public async Task Should_BuildPercentEncodedCoinIdAndQueryString_When_RequestingMarketChart()
+    {
+        Uri? capturedUri = null;
+        var handler = FakeHttpMessageHandler.ReturningJson(HttpStatusCode.OK, EmptyMarketChartJson, onRequest: r => capturedUri = r.RequestUri);
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://example.test/") };
+        ICoinGeckoClient client = new CoinGeckoClient(httpClient);
+
+        await client.GetMarketChartAsync("bit coin", "u s d", 30, CancellationToken.None);
+
+        var uri = capturedUri ?? throw new InvalidOperationException("Request was not captured.");
+        uri.PathAndQuery.Should().Be("/coins/bit%20coin/market_chart?vs_currency=u%20s%20d&days=30");
+    }
+
+    [Fact]
+    public async Task Should_ReturnDeserializedMarketChart_When_ResponseIsSuccessful()
+    {
+        var json = """
+            {
+                "prices": [[1700000000000, 43189.52], [1700003600000, 43200.11]],
+                "market_caps": [[1700000000000, 850000000000]],
+                "total_volumes": [[1700000000000, 25000000000]]
+            }
+            """;
+        var handler = FakeHttpMessageHandler.ReturningJson(HttpStatusCode.OK, json);
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://example.test/") };
+        ICoinGeckoClient client = new CoinGeckoClient(httpClient);
+
+        var response = await client.GetMarketChartAsync("bitcoin", "usd", 30, CancellationToken.None);
+
+        response.IsSuccess.Should().BeTrue();
+        var value = response.Value ?? throw new InvalidOperationException("Expected a value.");
+        value.Prices.Should().HaveCount(2);
+        value.Prices[0].Should().Be(new CoinGeckoMarketChartPoint(1700000000000, 43189.52m));
+        value.MarketCaps.Should().ContainSingle().Which.Should().Be(new CoinGeckoMarketChartPoint(1700000000000, 850000000000m));
+        value.TotalVolumes.Should().ContainSingle().Which.Should().Be(new CoinGeckoMarketChartPoint(1700000000000, 25000000000m));
+    }
+
+    [Fact]
+    public async Task Should_ReturnEmptySeries_When_ResponseArraysAreEmpty()
+    {
+        var handler = FakeHttpMessageHandler.ReturningJson(HttpStatusCode.OK, EmptyMarketChartJson);
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://example.test/") };
+        ICoinGeckoClient client = new CoinGeckoClient(httpClient);
+
+        var response = await client.GetMarketChartAsync("bitcoin", "usd", 30, CancellationToken.None);
+
+        response.IsSuccess.Should().BeTrue();
+        var value = response.Value ?? throw new InvalidOperationException("Expected a value.");
+        value.Prices.Should().BeEmpty();
+        value.MarketCaps.Should().BeEmpty();
+        value.TotalVolumes.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Should_ThrowJsonException_When_MarketChartResponseIsMissingASeries()
+    {
+        var handler = FakeHttpMessageHandler.ReturningJson(HttpStatusCode.OK, """{"prices":[],"total_volumes":[]}""");
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://example.test/") };
+        ICoinGeckoClient client = new CoinGeckoClient(httpClient);
+
+        var act = () => client.GetMarketChartAsync("bitcoin", "usd", 30, CancellationToken.None);
+
+        await act.Should().ThrowAsync<JsonException>();
+    }
+
+    [Fact]
+    public async Task Should_ThrowJsonException_When_MarketChartResponseBodyIsMalformedJson()
+    {
+        var handler = FakeHttpMessageHandler.ReturningJson(HttpStatusCode.OK, "{not valid json");
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://example.test/") };
+        ICoinGeckoClient client = new CoinGeckoClient(httpClient);
+
+        var act = () => client.GetMarketChartAsync("bitcoin", "usd", 30, CancellationToken.None);
+
+        await act.Should().ThrowAsync<JsonException>();
+    }
+
+    [Fact]
+    public async Task Should_CaptureStatusCode_When_MarketChartResponseIsNotSuccessful()
+    {
+        var handler = FakeHttpMessageHandler.ReturningJson(HttpStatusCode.NotFound, "");
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://example.test/") };
+        ICoinGeckoClient client = new CoinGeckoClient(httpClient);
+
+        var response = await client.GetMarketChartAsync("unknown-coin", "usd", 30, CancellationToken.None);
+
+        response.IsSuccess.Should().BeFalse();
+        response.IsTimeout.Should().BeFalse();
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public async Task Should_ReturnTimeoutResponse_When_MarketChartHttpClientTimeoutElapses()
+    {
+        var handler = FakeHttpMessageHandler.SimulatingTimeout();
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://example.test/") };
+        ICoinGeckoClient client = new CoinGeckoClient(httpClient);
+
+        var response = await client.GetMarketChartAsync("bitcoin", "usd", 30, CancellationToken.None);
+
+        response.IsSuccess.Should().BeFalse();
+        response.IsTimeout.Should().BeTrue();
+        response.StatusCode.Should().BeNull();
+    }
+
+    private const string EmptyMarketChartJson = """{"prices":[],"market_caps":[],"total_volumes":[]}""";
 }

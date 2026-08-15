@@ -37,4 +37,19 @@ public static class CoinGeckoClientExtensions
         client.GetAsync<CoinGeckoPriceMatrix>(
             $"simple/token_price/{Uri.EscapeDataString(platform)}?contract_addresses={CoinGeckoUrlEncoder.JoinAndEncode(contractAddresses)}&vs_currencies={CoinGeckoUrlEncoder.JoinAndEncode(vsCurrencies)}",
             cancellationToken);
+
+    /// <summary>
+    /// Calls <c>coins/{id}/market_chart</c> for the given coin id, target
+    /// currency, and day count, returning the prices, market caps, and total
+    /// volumes series.
+    /// </summary>
+    public static Task<CoinGeckoResponse<CoinGeckoMarketChart>> GetMarketChartAsync(
+        this ICoinGeckoClient client,
+        string coinId,
+        string vsCurrency,
+        int days,
+        CancellationToken cancellationToken) =>
+        client.GetAsync<CoinGeckoMarketChart>(
+            $"coins/{Uri.EscapeDataString(coinId)}/market_chart?vs_currency={Uri.EscapeDataString(vsCurrency)}&days={days}",
+            cancellationToken);
 }

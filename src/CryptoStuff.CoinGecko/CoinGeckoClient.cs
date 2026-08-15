@@ -6,6 +6,15 @@ namespace CryptoStuff.CoinGecko;
 public sealed class CoinGeckoClient(HttpClient httpClient) : ICoinGeckoClient
 {
     /// <inheritdoc />
+    /// <remarks>
+    /// Deserializes with <c>HttpContent.ReadFromJsonAsync</c>'s implicit
+    /// options, which are <see cref="System.Text.Json.JsonSerializerDefaults.Web"/> —
+    /// case-insensitive property matching plus a camelCase naming policy, not
+    /// <see cref="System.Text.Json.JsonSerializerOptions.Default"/>. A DTO
+    /// property bound to a snake_case field (e.g. <c>market_caps</c>) still
+    /// needs an explicit <c>[JsonPropertyName]</c>, since neither camelCase
+    /// matches snake_case.
+    /// </remarks>
     public async Task<CoinGeckoResponse<TValue>> GetAsync<TValue>(string requestUri, CancellationToken cancellationToken)
     {
         HttpResponseMessage response;

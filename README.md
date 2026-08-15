@@ -11,7 +11,7 @@ hosts above it — a console app and a minimal REST API. See
 
 | Project | Purpose |
 |---|---|
-| `CryptoStuff.CoinGecko` | API client — sole owner of the wire format; covers `simple/price` and `simple/token_price/{platform}` |
+| `CryptoStuff.CoinGecko` | API client — sole owner of the wire format; covers `simple/price`, `simple/token_price/{platform}`, and `coins/{id}/market_chart` |
 | `CryptoStuff.Core` | Queries, view records, results, mapping, caching, validation |
 | `CryptoStuff.Composition` | Registration and HTTP pipeline wiring |
 | `CryptoStuff.Cli` | Console host |
