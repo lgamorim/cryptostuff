@@ -52,4 +52,35 @@ public static class CoinGeckoClientExtensions
         client.GetAsync<CoinGeckoMarketChart>(
             $"coins/{Uri.EscapeDataString(coinId)}/market_chart?vs_currency={Uri.EscapeDataString(vsCurrency)}&days={days}",
             cancellationToken);
+
+    /// <summary>
+    /// Calls <c>coins/{id}</c> for coin detail. <c>description</c> (what
+    /// <see cref="CoinGeckoCoin.Description"/> maps) is returned regardless
+    /// of the <c>localization</c> flag, so it's turned off here — it only
+    /// gates a separate, unmodeled block of translated coin names. The other
+    /// flags keep unused large sub-objects (tickers, community data,
+    /// developer data, sparkline) out of the response.
+    /// </summary>
+    public static Task<CoinGeckoResponse<CoinGeckoCoin>> GetCoinAsync(
+        this ICoinGeckoClient client,
+        string coinId,
+        CancellationToken cancellationToken) =>
+        client.GetAsync<CoinGeckoCoin>(
+            $"coins/{Uri.EscapeDataString(coinId)}?localization=false&tickers=false&market_data=true&community_data=false&developer_data=false&sparkline=false",
+            cancellationToken);
+
+    /// <summary>
+    /// Calls <c>coins/{id}/history</c> for point-in-time developer activity.
+    /// <paramref name="date"/> is passed through verbatim, unvalidated —
+    /// parsing and validating CoinGecko's required <c>dd-MM-yyyy</c> format
+    /// is Core's job, not this client's.
+    /// </summary>
+    public static Task<CoinGeckoResponse<CoinGeckoCoinHistory>> GetCoinHistoryAsync(
+        this ICoinGeckoClient client,
+        string coinId,
+        string date,
+        CancellationToken cancellationToken) =>
+        client.GetAsync<CoinGeckoCoinHistory>(
+            $"coins/{Uri.EscapeDataString(coinId)}/history?date={Uri.EscapeDataString(date)}&localization=false",
+            cancellationToken);
 }
