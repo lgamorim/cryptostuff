@@ -24,8 +24,9 @@ public sealed record CoinGeckoResponse<TValue>
 
     /// <summary>
     /// The deserialized response body. Always null when <see cref="IsSuccess"/>
-    /// is false; may also be null on success, since an empty or JSON-`null`
-    /// body deserializes to null without that being a failure.
+    /// is false; may also be null on success, since a JSON-`null` body
+    /// deserializes to null without that being a failure. A truly empty body
+    /// is not covered by this — it fails JSON deserialization instead.
     /// </summary>
     public TValue? Value { get; }
 

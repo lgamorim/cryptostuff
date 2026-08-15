@@ -10,18 +10,24 @@ namespace CryptoStuff.CoinGecko.UnitTests.TestSupport;
 internal sealed class FakeHttpMessageHandler : HttpMessageHandler
 {
     private readonly Func<HttpResponseMessage>? _responseFactory;
+    private readonly Action<HttpRequestMessage>? _onRequest;
 
-    private FakeHttpMessageHandler(Func<HttpResponseMessage>? responseFactory)
+    private FakeHttpMessageHandler(Func<HttpResponseMessage>? responseFactory, Action<HttpRequestMessage>? onRequest = null)
     {
         _responseFactory = responseFactory;
+        _onRequest = onRequest;
     }
 
-    /// <summary>Creates a handler that returns the given status code and JSON body.</summary>
-    public static FakeHttpMessageHandler ReturningJson(HttpStatusCode statusCode, string json) =>
+    /// <summary>
+    /// Creates a handler that returns the given status code and JSON body.
+    /// <paramref name="onRequest"/>, when given, is invoked with the request
+    /// sent, so a test can assert on the request URI.
+    /// </summary>
+    public static FakeHttpMessageHandler ReturningJson(HttpStatusCode statusCode, string json, Action<HttpRequestMessage>? onRequest = null) =>
         new(() => new HttpResponseMessage(statusCode)
         {
             Content = new StringContent(json, Encoding.UTF8, "application/json"),
-        });
+        }, onRequest);
 
     /// <summary>
     /// Creates a handler that reproduces an <see cref="HttpClient.Timeout"/> expiry:
@@ -35,6 +41,7 @@ internal sealed class FakeHttpMessageHandler : HttpMessageHandler
     protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        _onRequest?.Invoke(request);
 
         if (_responseFactory is null)
         {

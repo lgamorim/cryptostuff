@@ -6,8 +6,12 @@ namespace CryptoStuff.CoinGecko;
 /// </summary>
 public sealed record CoinGeckoClientOptions
 {
-    /// <summary>The public CoinGecko REST API used by a demo API key.</summary>
-    public const string DefaultBaseAddress = "https://api.coingecko.com/api/v3";
+    /// <summary>
+    /// The public CoinGecko REST API used by a demo API key. Trailing-slashed
+    /// so relative request URIs resolve under the `/v3` segment rather than
+    /// replacing it, per <see cref="Uri"/> relative-resolution rules.
+    /// </summary>
+    public const string DefaultBaseAddress = "https://api.coingecko.com/api/v3/";
 
     /// <summary>The HTTP header CoinGecko expects the demo API key on.</summary>
     public const string ApiKeyHeaderName = "x-cg-demo-api-key";

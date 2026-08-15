@@ -1,3 +1,6 @@
+using System.Net;
+using CryptoStuff.CoinGecko.UnitTests.TestSupport;
+
 namespace CryptoStuff.CoinGecko.UnitTests;
 
 public class CoinGeckoClientOptionsTests
@@ -35,5 +38,21 @@ public class CoinGeckoClientOptionsTests
 
         httpClient.DefaultRequestHeaders.GetValues(CoinGeckoClientOptions.ApiKeyHeaderName)
             .Should().ContainSingle().Which.Should().Be("secret-key");
+    }
+
+    [Fact]
+    public async Task Should_ResolveRelativeRequestUriUnderApiVersionSegment_When_UsingDefaultBaseAddress()
+    {
+        Uri? capturedUri = null;
+        var handler = FakeHttpMessageHandler.ReturningJson(HttpStatusCode.OK, "{}", onRequest: r => capturedUri = r.RequestUri);
+        using var httpClient = new HttpClient(handler);
+        var options = new CoinGeckoClientOptions { ApiKey = "key" };
+        options.ApplyTo(httpClient);
+        ICoinGeckoClient client = new CoinGeckoClient(httpClient);
+
+        await client.GetAsync<object>("simple/price", CancellationToken.None);
+
+        var uri = capturedUri ?? throw new InvalidOperationException("Request was not captured.");
+        uri.AbsoluteUri.Should().Be("https://api.coingecko.com/api/v3/simple/price");
     }
 }
