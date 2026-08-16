@@ -12,7 +12,7 @@ hosts above it — a console app and a minimal REST API. See
 | Project | Purpose |
 |---|---|
 | `CryptoStuff.CoinGecko` | API client — sole owner of the wire format; covers `simple/price`, `simple/token_price/{platform}`, `coins/{id}/market_chart`, `coins/{id}`, and `coins/{id}/history` (the latter's `date` query parameter must be `dd-MM-yyyy`) |
-| `CryptoStuff.Core` | Queries, view records, results, mapping, caching, validation |
+| `CryptoStuff.Core` | Queries (`CoinPriceQuery`, `TokenPriceQuery`, `CoinMarketChartQuery`, `CoinQuery`, `CoinDeveloperDataQuery`) and view records (`CoinPriceView`, `TokenPriceView`, `CoinMarketChartView`, `CoinView`, `CoinDeveloperDataView`), results, mapping, caching, validation |
 | `CryptoStuff.Composition` | Registration and HTTP pipeline wiring |
 | `CryptoStuff.Cli` | Console host |
 | `CryptoStuff.Api` | Minimal REST host |
@@ -51,6 +51,20 @@ header.
 | `RateLimited` | The CoinGecko rate limit was exceeded | CoinGecko returned `429` |
 | `RequestTimedOut` | The request to CoinGecko did not complete in time | The request timed out |
 | `UpstreamUnavailable` | CoinGecko failed for any other reason | Any other non-success response |
+
+## Missing identifiers
+
+`GetPricesAsync` and `GetTokenPricesAsync` check that every requested coin id
+(or contract address) is present in CoinGecko's response. CoinGecko's
+`simple/price` and `simple/token_price` endpoints silently omit unknown
+identifiers instead of returning an error, so `CryptoStuff.Core` treats any
+requested identifier absent from the response as a `NotFound` failure for the
+whole request, rather than returning a partial result with a silent gap.
+
+The single-resource endpoints (`coins/{id}`, `coins/{id}/market_chart`,
+`coins/{id}/history`) don't need this check: CoinGecko itself returns `404`
+for an unknown coin id, which the error-code mapping above already turns into
+`NotFound`.
 
 ## Build, test, and format
 
