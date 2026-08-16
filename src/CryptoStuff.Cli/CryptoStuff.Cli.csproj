@@ -2,6 +2,7 @@
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
+    <UserSecretsId>4174194e-4f73-4686-9c88-1186da7b2238</UserSecretsId>
   </PropertyGroup>
 
   <ItemGroup>

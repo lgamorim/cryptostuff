@@ -96,9 +96,9 @@ on the very next request for the same key rather than being cached or served
 stale.
 
 The decorator's cache duration is a constructor argument; it doesn't read
-configuration itself. Once milestone `3.6` wires it into the DI container,
-its duration will come from the `CoinGecko:CacheSeconds` setting, defaulting
-to `300` (5 minutes) when unset.
+configuration itself. `CryptoStuff.Composition`'s `AddCryptoStuff` extension
+wires its duration from the `CoinGecko:CacheSeconds` setting, defaulting to
+`300` (5 minutes) when unset.
 
 ## Rate limiting
 
@@ -122,9 +122,38 @@ failure surfaces as `RateLimited` or as `RequestTimedOut` (see
 `HttpClient`'s own timeout, which is configured elsewhere.
 
 The handler's attempt count and backoff duration are constructor arguments;
-it doesn't read configuration itself and isn't yet wired into the HTTP
-pipeline used by the hosts. Milestone `3.6` is where those values, and the
-`HttpClient` timeout they need to stay compatible with, actually get chosen.
+it doesn't read configuration itself. `AddCryptoStuff` wires it into the
+CoinGecko `HttpClient` pipeline with 3 retry attempts and a 2-second constant
+backoff, and sets that `HttpClient`'s own timeout to 30 seconds —
+comfortably longer than three retries' worth of constant backoff plus
+request time, so a plain rate-limited sequence with no `Retry-After` header
+has room to fully exhaust its retries before the client times out. A
+sufficiently long `Retry-After` value can still exceed that timeout; when it
+does, the failure surfaces as `RequestTimedOut` rather than `RateLimited`
+(see [Error codes](#error-codes)).
+
+## Registration
+
+`CryptoStuff.Composition` provides `AddCryptoStuff(IServiceCollection,
+IConfiguration)`, the single extension method that registers everything
+above: the CoinGecko-backed `ICryptocurrencyService`, wrapped in the caching
+decorator, wired to the CoinGecko `HttpClient` and its rate-limit retry
+handler. Both hosts reference `CryptoStuff.Composition` to call it, but
+neither does yet — that's milestones `4.1` and `4.2`.
+
+If `CoinGecko:ApiKey` is missing or blank, `AddCryptoStuff` throws
+immediately — before it returns, so before whichever host calls it starts
+serving anything — with:
+
+```
+CoinGecko API key is missing. Set it locally by running 'dotnet user-secrets set CoinGecko:ApiKey <your-api-key>' from the host project directory, or set the CoinGecko__ApiKey environment variable in deployment.
+```
+
+To resolve it locally, from either host project directory:
+
+```bash
+dotnet user-secrets set CoinGecko:ApiKey <your-api-key>
+```
 
 ## Build, test, and format
 
