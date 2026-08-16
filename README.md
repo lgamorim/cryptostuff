@@ -100,6 +100,32 @@ configuration itself. Once milestone `3.6` wires it into the DI container,
 its duration will come from the `CoinGecko:CacheSeconds` setting, defaulting
 to `300` (5 minutes) when unset.
 
+## Rate limiting
+
+`CryptoStuff.Composition` provides `RateLimitRetryHandler`, a
+`DelegatingHandler` that retries a request automatically when CoinGecko
+responds `429 Too Many Requests`, up to a bounded number of attempts:
+
+| Signal | Behaviour |
+|---|---|
+| `Retry-After` header present, delta-seconds form (e.g. `Retry-After: 5`) | Waits exactly that many seconds before retrying |
+| `Retry-After` header present, HTTP-date form | Waits until that date (never negative — a date already in the past retries immediately) |
+| `Retry-After` header absent | Waits a constant backoff instead |
+| Retry attempts exhausted | Returns the last `429` response as-is |
+
+Retries only ever happen on `429`; any other status code — success or
+failure — passes straight through untouched. If every retry still comes
+back `429`, the request still fails and the caller still sees a failure — the
+handler retries, it doesn't swallow the eventual outcome. Whether that
+failure surfaces as `RateLimited` or as `RequestTimedOut` (see
+[Error codes](#error-codes)) depends on how the retry delays compare to the
+`HttpClient`'s own timeout, which is configured elsewhere.
+
+The handler's attempt count and backoff duration are constructor arguments;
+it doesn't read configuration itself and isn't yet wired into the HTTP
+pipeline used by the hosts. Milestone `3.6` is where those values, and the
+`HttpClient` timeout they need to stay compatible with, actually get chosen.
+
 ## Build, test, and format
 
 ```bash
