@@ -36,6 +36,20 @@
   and style rules so `dotnet format` and the build enforce them, not just prose.
   `EnforceCodeStyleInBuild` in `Directory.Build.props` makes style violations
   fail the build; naming violations are caught by `dotnet format`.
+  Its `end_of_line = lf` is the exception that doesn't come from
+  `coding-standards.md` — it exists to track `.gitattributes`' `eol=lf`. Leave
+  the two in sync: with `end_of_line` unset, `dotnet format` falls back to
+  `Environment.NewLine` and demands CRLF on Windows for any trivia it
+  recomputes (a comment inside a fluent method chain, say), which git then
+  normalizes back to LF, so `windows-latest` CI fails with a `WHITESPACE`
+  error that reformatting cannot fix.
+- A green local `dotnet format --verify-no-changes` on Windows is not by
+  itself evidence CI will pass. `dotnet format` writes its preferred line
+  endings to disk, git's `eol=lf` clean filter normalizes them away on commit,
+  and `git status` compares normalized content — so the working tree can pass
+  while the committed content, which is what CI checks out, fails. When a
+  formatting fix looks green locally, confirm the bytes actually committed
+  (`git show HEAD:<path> | xxd`), not just the working copy.
 - `Directory.Build.props` centralizes `TargetFramework`, `Nullable`,
   `ImplicitUsings`, `TreatWarningsAsErrors`, and `IsPackable` per
   `core/architecture.md`, so no `.csproj` repeats them. `IsPackable` stays

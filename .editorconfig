@@ -7,6 +7,11 @@ root = true
 
 [*]
 charset = utf-8
+# LF to match .gitattributes' `eol=lf`. Without this, `dotnet format` falls back
+# to Environment.NewLine, so on Windows it demands CRLF for any trivia it
+# recomputes while git keeps the files LF — a CI failure that reproduces on
+# windows-latest but not locally, and that reformatting cannot fix.
+end_of_line = lf
 indent_style = space
 insert_final_newline = true
 trim_trailing_whitespace = true
