@@ -66,6 +66,19 @@ The single-resource endpoints (`coins/{id}`, `coins/{id}/market_chart`,
 for an unknown coin id, which the error-code mapping above already turns into
 `NotFound`.
 
+## Input validation
+
+`CryptoStuff.Core` provides a small set of shared validation rules for the
+CLI and API hosts to apply to user input before a request reaches CoinGecko.
+Each rule reports which field failed and what was expected of it.
+
+| Rule | Applies to | What's required |
+|---|---|---|
+| Non-empty scalar | Coin id, platform, vs_currency code, developer-data date | The value must be present and not just whitespace |
+| Non-empty collection | Coin id lists, contract address lists, vs_currency lists | At least one value must be given |
+| Positive day count | The number of days of history to fetch | A whole number greater than zero |
+| Well-formed date | The developer-data date | A real calendar date written as `dd-MM-yyyy` (e.g. `29-02-2024`) |
+
 ## Build, test, and format
 
 ```bash
