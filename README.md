@@ -41,6 +41,17 @@ demo API key described in Prerequisites (`CoinGecko:ApiKey` locally,
 `CoinGecko__ApiKey` in deployment), sent as the `x-cg-demo-api-key` HTTP
 header.
 
+## Error codes
+
+`CryptoStuff.Core` maps a failed CoinGecko response to a `ServiceErrorCode`:
+
+| Code | Meaning | Upstream condition |
+|---|---|---|
+| `NotFound` | The requested resource does not exist | CoinGecko returned `404` |
+| `RateLimited` | The CoinGecko rate limit was exceeded | CoinGecko returned `429` |
+| `RequestTimedOut` | The request to CoinGecko did not complete in time | The request timed out |
+| `UpstreamUnavailable` | CoinGecko failed for any other reason | Any other non-success response |
+
 ## Build, test, and format
 
 ```bash
