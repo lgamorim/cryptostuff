@@ -4,4 +4,8 @@
     <ProjectReference Include="..\CryptoStuff.CoinGecko\CryptoStuff.CoinGecko.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Caching.Memory" />
+  </ItemGroup>
+
 </Project>

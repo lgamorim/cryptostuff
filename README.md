@@ -79,6 +79,27 @@ Each rule reports which field failed and what was expected of it.
 | Positive day count | The number of days of history to fetch | A whole number greater than zero |
 | Well-formed date | The developer-data date | A real calendar date written as `dd-MM-yyyy` (e.g. `29-02-2024`) |
 
+## Caching
+
+`CryptoStuff.Core` provides `CachingCryptocurrencyService`, a decorator over
+`ICryptocurrencyService` that caches two of its five operations:
+
+| Operation | Cached by |
+|---|---|
+| `GetCoinAsync` (coin detail) | Coin id |
+| `GetDeveloperDataAsync` (developer activity) | Coin id and date |
+
+`GetPricesAsync`, `GetTokenPricesAsync`, and `GetMarketChartAsync` are never
+cached — live prices and historical series change too quickly for caching to
+be worth it. Only successful results are cached; a failed result is retried
+on the very next request for the same key rather than being cached or served
+stale.
+
+The decorator's cache duration is a constructor argument; it doesn't read
+configuration itself. Once milestone `3.6` wires it into the DI container,
+its duration will come from the `CoinGecko:CacheSeconds` setting, defaulting
+to `300` (5 minutes) when unset.
+
 ## Build, test, and format
 
 ```bash
