@@ -138,8 +138,9 @@ does, the failure surfaces as `RequestTimedOut` rather than `RateLimited`
 IConfiguration)`, the single extension method that registers everything
 above: the CoinGecko-backed `ICryptocurrencyService`, wrapped in the caching
 decorator, wired to the CoinGecko `HttpClient` and its rate-limit retry
-handler. Both hosts reference `CryptoStuff.Composition` to call it, but
-neither does yet — that's milestones `4.1` and `4.2`.
+handler. Both hosts reference `CryptoStuff.Composition` to call it;
+`CryptoStuff.Cli` does so today, and `CryptoStuff.Api` will in milestone
+`4.2`.
 
 If `CoinGecko:ApiKey` is missing or blank, `AddCryptoStuff` throws
 immediately — before it returns, so before whichever host calls it starts
@@ -154,6 +155,50 @@ To resolve it locally, from either host project directory:
 ```bash
 dotnet user-secrets set CoinGecko:ApiKey <your-api-key>
 ```
+
+## Command-line interface
+
+`CryptoStuff.Cli` is a console front end over the same five operations as
+`ICryptocurrencyService`. Run it with `dotnet run --project src/CryptoStuff.Cli
+--`, followed by a command and its arguments:
+
+```bash
+dotnet run --project src/CryptoStuff.Cli -- price bitcoin usd
+```
+
+| Command | Arguments | Example |
+|---|---|---|
+| `price` | `<coins> <currencies>` — comma-separated coin ids and vs_currency codes | `cryptostuff price bitcoin,ethereum usd,eur` |
+| `token` | `<platform> <addresses> <currencies>` — a platform, comma-separated contract addresses, and comma-separated vs_currency codes | `cryptostuff token ethereum 0xaaa...,0xbbb... usd` |
+| `history` | `<coin> <currency> <days>` — a coin id, a vs_currency code, and a positive whole number of days | `cryptostuff history bitcoin usd 30` |
+| `coin` | `<id>` — a coin id | `cryptostuff coin bitcoin` |
+| `developer` | `<id> <date>` — a coin id and a date in `dd-MM-yyyy` | `cryptostuff developer bitcoin 29-02-2024` |
+
+Each command applies the applicable [input validation](#input-validation)
+rules above to its arguments before calling CoinGecko, and reports the first
+violation it finds. The non-empty-collection rule doesn't apply here: a
+comma-separated list argument can never be truly empty, only contain a blank
+entry (e.g. `bitcoin,,ethereum`), which is reported as such.
+
+### JSON output
+
+Add `--json` anywhere on the command line to get indented JSON instead of the
+default human-readable text:
+
+```bash
+dotnet run --project src/CryptoStuff.Cli -- coin bitcoin --json
+```
+
+### Exit codes
+
+| Code | Meaning |
+|---|---|
+| `0` | The command completed successfully. |
+| `1` | No command or an unrecognized command, the wrong number of arguments, an input validation failure, a CoinGecko service failure (see [Error codes](#error-codes)), or a startup configuration error (a missing or invalid `CoinGecko:ApiKey`/`CoinGecko:CacheSeconds`, see [Registration](#registration)). |
+| `130` | The command was canceled (Ctrl+C) before it completed. |
+
+Usage and validation errors, and CoinGecko service failures, are written to
+standard error; successful results are written to standard output.
 
 ## Build, test, and format
 
