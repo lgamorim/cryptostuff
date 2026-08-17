@@ -138,9 +138,7 @@ does, the failure surfaces as `RequestTimedOut` rather than `RateLimited`
 IConfiguration)`, the single extension method that registers everything
 above: the CoinGecko-backed `ICryptocurrencyService`, wrapped in the caching
 decorator, wired to the CoinGecko `HttpClient` and its rate-limit retry
-handler. Both hosts reference `CryptoStuff.Composition` to call it;
-`CryptoStuff.Cli` does so today, and `CryptoStuff.Api` will in milestone
-`4.2`.
+handler. Both hosts reference `CryptoStuff.Composition` to call it.
 
 If `CoinGecko:ApiKey` is missing or blank, `AddCryptoStuff` throws
 immediately — before it returns, so before whichever host calls it starts
@@ -199,6 +197,54 @@ dotnet run --project src/CryptoStuff.Cli -- coin bitcoin --json
 
 Usage and validation errors, and CoinGecko service failures, are written to
 standard error; successful results are written to standard output.
+
+## REST API
+
+`CryptoStuff.Api` is a minimal-API front end over the same five operations as
+`ICryptocurrencyService`. Run it with:
+
+```bash
+dotnet run --project src/CryptoStuff.Api
+```
+
+| Route | Query/path parameters | Example |
+|---|---|---|
+| `GET /prices` | `coins`, `currencies` — comma-separated coin ids and vs_currency codes | `/prices?coins=bitcoin,ethereum&currencies=usd,eur` |
+| `GET /token-prices` | `platform`, `addresses` (comma-separated), `currencies` (comma-separated) | `/token-prices?platform=ethereum&addresses=0xaaa...,0xbbb...&currencies=usd` |
+| `GET /historical-market-data` | `coin`, `currency`, `days` (a positive whole number) | `/historical-market-data?coin=bitcoin&currency=usd&days=30` |
+| `GET /coins/{coin}` | — | `/coins/bitcoin` |
+| `GET /coins/{coin}/developer-data` | `date` in `dd-MM-yyyy` | `/coins/bitcoin/developer-data?date=29-02-2024` |
+
+Each route applies the applicable [input validation](#input-validation) rules
+above to its parameters before calling CoinGecko, and reports the first
+violation it finds. As with the CLI, the non-empty-collection rule doesn't
+apply here: a comma-separated list parameter can never be truly empty, only
+contain a blank entry (e.g. `coins=bitcoin,,ethereum`), which is reported as
+such.
+
+A successful request returns `200` with the matching view record as JSON,
+serialized with ASP.NET Core's default (camelCase) naming — a validation
+failure returns `400` with an
+[RFC 7807](https://www.rfc-editor.org/rfc/rfc7807) validation-problem body,
+`{ "errors": { "<field>": ["<message>"] }, ... }`. A CoinGecko service
+failure (see [Error codes](#error-codes)) returns a `ProblemDetails` body
+with one of:
+
+| Status | `ServiceErrorCode` |
+|---|---|
+| `404` | `NotFound` |
+| `429` | `RateLimited` |
+| `502` | `UpstreamUnavailable` |
+| `504` | `RequestTimedOut` |
+| `500` | *(defensive fallback only — every `ServiceErrorCode` value maps above)* |
+
+### Health, OpenAPI, and Scalar
+
+- `GET /health` — a liveness probe, available in every environment.
+- `GET /openapi/v1.json` — the generated OpenAPI document, available in every
+  environment.
+- `GET /scalar/v1` — an interactive Scalar UI over the OpenAPI document,
+  mapped in the Development environment only.
 
 ## Build, test, and format
 
