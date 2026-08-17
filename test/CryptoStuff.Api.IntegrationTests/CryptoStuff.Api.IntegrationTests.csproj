@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <Content Include="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+    <Using Include="FluentAssertions" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="FluentAssertions" />
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
+    <PackageReference Include="xunit.v3.mtp-v2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\CryptoStuff.Api\CryptoStuff.Api.csproj" />
+    <ProjectReference Include="..\..\src\CryptoStuff.CoinGecko\CryptoStuff.CoinGecko.csproj" />
+    <ProjectReference Include="..\..\src\CryptoStuff.Core\CryptoStuff.Core.csproj" />
+  </ItemGroup>
+
+</Project>

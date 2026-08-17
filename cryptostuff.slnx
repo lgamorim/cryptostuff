@@ -7,6 +7,7 @@
     <Project Path="src/CryptoStuff.Core/CryptoStuff.Core.csproj" />
   </Folder>
   <Folder Name="/test/">
+    <Project Path="test/CryptoStuff.Api.IntegrationTests/CryptoStuff.Api.IntegrationTests.csproj" />
     <Project Path="test/CryptoStuff.Api.UnitTests/CryptoStuff.Api.UnitTests.csproj" />
     <Project Path="test/CryptoStuff.Cli.UnitTests/CryptoStuff.Cli.UnitTests.csproj" />
     <Project Path="test/CryptoStuff.CoinGecko.UnitTests/CryptoStuff.CoinGecko.UnitTests.csproj" />

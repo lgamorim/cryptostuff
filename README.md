@@ -21,6 +21,7 @@ hosts above it — a console app and a minimal REST API. See
 | `CryptoStuff.Composition.UnitTests` | Unit tests for `CryptoStuff.Composition` |
 | `CryptoStuff.Cli.UnitTests` | Unit tests for `CryptoStuff.Cli` |
 | `CryptoStuff.Api.UnitTests` | Unit tests for `CryptoStuff.Api` |
+| `CryptoStuff.Api.IntegrationTests` | Integration tests over `CryptoStuff.Api`, hosted for real with only its CoinGecko client faked — needs neither an API key nor network access |
 
 `CryptoStuff.Cli` and `CryptoStuff.Api` both reference `CryptoStuff.Composition`,
 which references `CryptoStuff.Core`, which references `CryptoStuff.CoinGecko`.
@@ -212,8 +213,8 @@ dotnet run --project src/CryptoStuff.Api
 | `GET /prices` | `coins`, `currencies` — comma-separated coin ids and vs_currency codes | `/prices?coins=bitcoin,ethereum&currencies=usd,eur` |
 | `GET /token-prices` | `platform`, `addresses` (comma-separated), `currencies` (comma-separated) | `/token-prices?platform=ethereum&addresses=0xaaa...,0xbbb...&currencies=usd` |
 | `GET /historical-market-data` | `coin`, `currency`, `days` (a positive whole number) | `/historical-market-data?coin=bitcoin&currency=usd&days=30` |
-| `GET /coins/{coin}` | — | `/coins/bitcoin` |
-| `GET /coins/{coin}/developer-data` | `date` in `dd-MM-yyyy` | `/coins/bitcoin/developer-data?date=29-02-2024` |
+| `GET /coins/{coin}` | `coin` (path) | `/coins/bitcoin` |
+| `GET /coins/{coin}/developer-data` | `coin` (path), `date` in `dd-MM-yyyy` | `/coins/bitcoin/developer-data?date=29-02-2024` |
 
 Each route applies the applicable [input validation](#input-validation) rules
 above to its parameters before calling CoinGecko, and reports the first

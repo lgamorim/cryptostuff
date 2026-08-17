@@ -27,3 +27,6 @@ if (app.Environment.IsDevelopment())
 }
 
 app.Run();
+
+/// <summary>Exposes the entry point to <c>WebApplicationFactory&lt;Program&gt;</c> for integration testing.</summary>
+public partial class Program;
