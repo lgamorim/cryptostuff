@@ -2,6 +2,11 @@
 
 Plan of record for building cryptostuff.
 
+**Status: complete.** All fifteen milestones across all four phases have
+shipped; every project in [Target structure](#target-structure) exists and is
+built out. The sections below are kept as the historical plan of record — see
+git history (`git log --oneline`) for the commit that closed each milestone.
+
 The deliverable is a cryptocurrency market data application: one core layer that
 owns the domain workflow, an isolated CoinGecko API client beneath it, and two
 presentation hosts above it — a console app and a minimal REST API.
