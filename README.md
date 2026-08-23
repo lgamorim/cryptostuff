@@ -1,11 +1,34 @@
 # cryptostuff
 
 [![CI](https://github.com/lgamorim/cryptostuff/actions/workflows/ci.yml/badge.svg)](https://github.com/lgamorim/cryptostuff/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 A cryptocurrency market data application: a core layer that owns the domain
 workflow, an isolated CoinGecko API client beneath it, and two presentation
 hosts above it — a console app and a minimal REST API. See
 [`ROADMAP.md`](ROADMAP.md) for the full plan of record.
+
+## Why this exists
+
+CryptoStuff is a software engineering playground and an experiment in
+AI-assisted development using Claude Code.
+
+The cryptocurrency domain provides a small but realistic application for
+exploring .NET/C#, architecture, testing, APIs, resilience, and tooling. At
+the same time, the project is used to experiment with how AI can participate
+in the development process.
+
+The workflow separates implementation and review: one Claude Code agent
+implements a change on a feature branch, while a separate agent reviews the
+resulting diff with fresh context. The maintainer then evaluates the review
+and controls the final merge.
+
+The goal isn't simply to have AI write code. It's to explore whether a
+structured, human-controlled workflow can make AI-assisted development more
+reliable, repeatable, and useful.
+
+The cryptocurrency part is the subject matter. The engineering is the point.
+The AI workflow is the experiment.
 
 ## Projects
 
