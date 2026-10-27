@@ -13,11 +13,15 @@
 ## Project-specific notes
 - Rules under `.claude/rules/` are copies synced from the `claude-rules` repo
   (`tools/sync.ps1 -Target <this repo> -Profile application-solo -Add
-  workflow-agent-review-solo`). Edit them there, not here; re-run the same
-  command with `-Check` to audit for drift — the `-Add` flag must be repeated
-  or the audit compares against the wrong set. The composition matches no
-  single profile, so the modules are imported directly above, without a
-  profile manifest.
+  workflow-agent-review-solo`). Edit them there, not here. The sync stamps
+  its source commit and that composition into `.claude/rules/.sync-source`,
+  so audit for drift with `tools/sync.ps1 -Target <this repo> -Check` alone:
+  it reads the set from the stamp and lists the upstream commits since the
+  stamped one that touched a file in the set or an extra rule file the set
+  does not hold. Flags passed with `-Check` must describe the stamped set, or it
+  reports both sets and stops; a re-sync still takes the flags above and
+  re-stamps the set. The composition matches no single profile, so the
+  modules are imported directly above, without a profile manifest.
 - This repo runs the two-role implement/review flow from
   `overlays/workflow-agent-review-solo.md`. When a `feature/` branch is
   complete, the implementer ends by invoking the `code-reviewer` subagent
