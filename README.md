@@ -7,7 +7,9 @@
 A cryptocurrency market data application: a core layer that owns the domain
 workflow, an isolated CoinGecko API client beneath it, and two presentation
 hosts above it — a console app and a minimal REST API. See
-[`ROADMAP.md`](ROADMAP.md) for the full plan of record.
+[`ROADMAP.md`](ROADMAP.md) for the full plan of record; Phases 5–7, which add
+watchlists, a portfolio ledger, and price alerts stored in SQLite, are planned
+there but not yet built.
 
 ## Why this exists
 
