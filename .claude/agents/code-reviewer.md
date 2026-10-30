@@ -4,7 +4,7 @@ description: >
   Independent reviewer for a completed change. Delegate to it when a feature
   branch (or PR) is ready for review — it reads the diff fresh and reports
   findings; it makes no changes itself.
-model: opus
+model: fable
 effort: high
 tools: Read, Grep, Glob, Bash
 ---

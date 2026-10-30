@@ -30,12 +30,14 @@
   report verbatim; the maintainer adjudicates the findings and authorizes
   the squash-merge.
 - That agent file is a filled-in copy of the `claude-rules` repo's
-  `templates/reviewer-subagent.md` — placeholders resolved to `opus` at `high`
-  effort, the template's copy-instructions comment dropped. Change the
-  reviewer's instructions there, not here. `sync.ps1` covers only
-  `.claude/rules/`, so `-Check` audits nothing about this file and its silence
-  is not evidence the copy is current; diff it against the template by hand,
-  ignoring those two deliberate differences.
+  `templates/reviewer-subagent.md` — placeholders resolved to `fable` at `high`
+  effort, the template's copy-instructions comment dropped. Fable rather than
+  the Opus model that implements most milestones, so the review adds a
+  different model's judgement on top of the fresh context the overlay
+  requires. Change the reviewer's instructions there, not here. `sync.ps1`
+  covers only `.claude/rules/`, so `-Check` audits nothing about this file and
+  its silence is not evidence the copy is current; diff it against the
+  template by hand, ignoring those two deliberate differences.
 - `.editorconfig` at the repo root encodes `core/coding-standards.md`'s naming
   and style rules so `dotnet format` and the build enforce them, not just prose.
   `EnforceCodeStyleInBuild` in `Directory.Build.props` makes style violations
