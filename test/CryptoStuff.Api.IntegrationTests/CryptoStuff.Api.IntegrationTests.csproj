@@ -19,6 +19,7 @@
     <ProjectReference Include="..\..\src\CryptoStuff.Api\CryptoStuff.Api.csproj" />
     <ProjectReference Include="..\..\src\CryptoStuff.CoinGecko\CryptoStuff.CoinGecko.csproj" />
     <ProjectReference Include="..\..\src\CryptoStuff.Core\CryptoStuff.Core.csproj" />
+    <ProjectReference Include="..\..\src\CryptoStuff.Persistence\CryptoStuff.Persistence.csproj" />
   </ItemGroup>
 
 </Project>

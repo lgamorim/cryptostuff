@@ -1,6 +1,10 @@
 using System.Globalization;
 using CryptoStuff.CoinGecko;
 using CryptoStuff.Core;
+using CryptoStuff.Core.Watchlists;
+using CryptoStuff.Persistence;
+using CryptoStuff.Persistence.Watchlists;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -10,7 +14,8 @@ namespace CryptoStuff.Composition;
 /// Registers everything <c>CryptoStuff</c> needs to serve cryptocurrency data:
 /// the CoinGecko-backed <see cref="ICryptocurrencyService"/>, wrapped in its
 /// caching decorator, wired to a CoinGecko <see cref="HttpClient"/> with the
-/// rate-limit retry handler attached.
+/// rate-limit retry handler attached, and the scoped SQLite-backed features
+/// over <see cref="CryptoStuffDbContext"/>.
 /// </summary>
 public static class CryptoStuffServiceCollectionExtensions
 {
@@ -27,16 +32,28 @@ public static class CryptoStuffServiceCollectionExtensions
     private static readonly TimeSpan HttpClientTimeout = TimeSpan.FromSeconds(30);
 
     /// <summary>
-    /// Registers <see cref="ICryptocurrencyService"/> and its dependencies.
+    /// Registers <see cref="ICryptocurrencyService"/> and its dependencies as
+    /// singletons, and <see cref="CryptoStuffDbContext"/>,
+    /// <see cref="IWatchlistRepository"/>, and <see cref="IWatchlistService"/>
+    /// as scoped. The database is located by
+    /// <see cref="DatabaseConnectionString.Resolve"/>; nothing here opens it.
     /// </summary>
     /// <exception cref="InvalidOperationException">
-    /// <c>CoinGecko:ApiKey</c> is missing or blank, or <c>CoinGecko:CacheSeconds</c>
-    /// is present and non-blank but not a positive whole number.
+    /// <c>CoinGecko:ApiKey</c> is missing or blank, <c>CoinGecko:CacheSeconds</c>
+    /// is present and non-blank but not a positive whole number, or the database
+    /// connection string cannot be resolved.
     /// </exception>
     public static IServiceCollection AddCryptoStuff(this IServiceCollection services, IConfiguration configuration)
     {
         var apiKey = ReadApiKey(configuration);
         var cacheDuration = ReadCacheDuration(configuration);
+        var connectionString = DatabaseConnectionString.Resolve(
+            configuration,
+            // DoNotVerify: the folder may not exist yet on a fresh machine, and
+            // migrating creates the database's directory anyway.
+            Environment.GetFolderPath(
+                Environment.SpecialFolder.LocalApplicationData,
+                Environment.SpecialFolderOption.DoNotVerify));
         var options = new CoinGeckoClientOptions { ApiKey = apiKey };
 
         services.AddHttpClient<ICoinGeckoClient, CoinGeckoClient>(HttpClientName, httpClient =>
@@ -71,6 +88,10 @@ public static class CryptoStuffServiceCollectionExtensions
             new CachingCryptocurrencyService(
                 sp.GetRequiredKeyedService<ICryptocurrencyService>(CryptocurrencyServiceKey),
                 cacheDuration));
+
+        services.AddDbContext<CryptoStuffDbContext>(dbContextOptions => dbContextOptions.UseSqlite(connectionString));
+        services.AddScoped<IWatchlistRepository, WatchlistRepository>();
+        services.AddScoped<IWatchlistService, WatchlistService>();
 
         return services;
     }

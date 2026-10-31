@@ -26,7 +26,13 @@ if (app.Environment.IsDevelopment())
     app.MapScalarApiReference();
 }
 
-app.Run();
+// Before the host starts listening, so no request ever meets a missing or
+// outdated schema. A failure here ends start-up with the exception, as a
+// missing API key does above. No token to pass: the host only handles Ctrl+C
+// once it runs, so until then Ctrl+C ends the process outright.
+await app.Services.MigrateCryptoStuffDatabaseAsync(CancellationToken.None);
+
+await app.RunAsync();
 
 /// <summary>Exposes the entry point to <c>WebApplicationFactory&lt;Program&gt;</c> for integration testing.</summary>
 public partial class Program;

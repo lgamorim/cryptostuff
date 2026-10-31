@@ -40,7 +40,7 @@ The AI workflow is the experiment.
 | `CryptoStuff.CoinGecko` | API client — sole owner of the wire format; covers `simple/price`, `simple/token_price/{platform}`, `coins/{id}/market_chart`, `coins/{id}`, and `coins/{id}/history` (the latter's `date` query parameter must be `dd-MM-yyyy`) |
 | `CryptoStuff.Core` | Queries (`CoinPriceQuery`, `TokenPriceQuery`, `CoinMarketChartQuery`, `CoinQuery`, `CoinDeveloperDataQuery`) and view records (`CoinPriceView`, `TokenPriceView`, `CoinMarketChartView`, `CoinView`, `CoinDeveloperDataView`), results, mapping, caching, validation; watchlists (`Watchlists/`): the `Watchlist` entity, `IWatchlistRepository`, `IWatchlistService` and `WatchlistService`, the `CreateWatchlistCommand`, `RenameWatchlistCommand` and `WatchlistCoinCommand` commands, the `WatchlistPriceQuery` query, the `WatchlistView` view, and `WatchlistMapper`; and, shared by the stored features, `PersistenceConflictException` and the `NameValidator` and `PositiveIdValidator` rules |
 | `CryptoStuff.Persistence` | EF Core over SQLite: `CryptoStuffDbContext`, the watchlist mapping (`WatchlistConfiguration`) and `WatchlistRepository`, translation of unique-constraint and concurrency failures into `PersistenceConflictException`, `CryptoStuffDatabase.MigrateAsync` (creates a file database's directory, then migrates), the design-time context factory, and the checked-in migrations (`Migrations/`) |
-| `CryptoStuff.Composition` | Registration and HTTP pipeline wiring |
+| `CryptoStuff.Composition` | Registration and HTTP pipeline wiring: `AddCryptoStuff`, `DatabaseConnectionString` (locates the shared database), and `MigrateCryptoStuffDatabaseAsync` (the start-up migration both hosts run) |
 | `CryptoStuff.Cli` | Console host |
 | `CryptoStuff.Api` | Minimal REST host |
 | `CryptoStuff.CoinGecko.UnitTests` | Unit tests for `CryptoStuff.CoinGecko` |
@@ -48,14 +48,14 @@ The AI workflow is the experiment.
 | `CryptoStuff.Composition.UnitTests` | Unit tests for `CryptoStuff.Composition` |
 | `CryptoStuff.Cli.UnitTests` | Unit tests for `CryptoStuff.Cli` |
 | `CryptoStuff.Api.UnitTests` | Unit tests for `CryptoStuff.Api` |
-| `CryptoStuff.Api.IntegrationTests` | Integration tests over `CryptoStuff.Api`, hosted for real with only its CoinGecko client faked — needs neither an API key nor network access |
+| `CryptoStuff.Api.IntegrationTests` | Integration tests over `CryptoStuff.Api`, hosted for real with only its CoinGecko client faked and each test's host on a migrated temporary database file of its own — needs neither an API key nor network access, and never touches the real database |
 
 `CryptoStuff.Cli` and `CryptoStuff.Api` both reference `CryptoStuff.Composition`,
 which references `CryptoStuff.Core`, which references `CryptoStuff.CoinGecko`.
-`CryptoStuff.Persistence` references `CryptoStuff.Core`, implementing its
-repository interfaces; no host uses it yet. Dependencies point inward; no lower
-layer references a layer above it, and `CryptoStuff.Core` never references EF
-Core.
+`CryptoStuff.Composition` also references `CryptoStuff.Persistence`, which
+references `CryptoStuff.Core`, implementing its repository interfaces.
+Dependencies point inward; no lower layer references a layer above it, and
+`CryptoStuff.Core` never references EF Core.
 
 ## Prerequisites
 
@@ -178,7 +178,14 @@ does, the failure surfaces as `RequestTimedOut` rather than `RateLimited`
 IConfiguration)`, the single extension method that registers everything
 above: the CoinGecko-backed `ICryptocurrencyService`, wrapped in the caching
 decorator, wired to the CoinGecko `HttpClient` and its rate-limit retry
-handler. Both hosts reference `CryptoStuff.Composition` to call it.
+handler. It also registers the persistence services over the
+[shared database](#data-storage): the EF Core context, `IWatchlistRepository`,
+and `IWatchlistService`. Both hosts reference `CryptoStuff.Composition` to
+call it.
+
+`ICryptocurrencyService` is a singleton, so its cache spans every request.
+The persistence services are scoped: the API gets a fresh set per request,
+and the CLI resolves its services from one scope per invocation.
 
 If `CoinGecko:ApiKey` is missing or blank, `AddCryptoStuff` throws
 immediately — before it returns, so before whichever host calls it starts
@@ -193,6 +200,51 @@ To resolve it locally, from either host project directory:
 ```bash
 dotnet user-secrets set CoinGecko:ApiKey <your-api-key>
 ```
+
+`AddCryptoStuff` likewise fails immediately when the database connection
+string cannot be resolved — see [Data storage](#data-storage).
+
+## Data storage
+
+Watchlists are stored in a single SQLite database file that both hosts share:
+whatever the CLI writes, the API reads, and the other way round, wherever
+either is launched from. By default the file is `cryptostuff/cryptostuff.db`
+under the per-user local application-data folder:
+
+| OS | Default database file |
+|---|---|
+| Windows | `%LOCALAPPDATA%\cryptostuff\cryptostuff.db` (e.g. `C:\Users\<you>\AppData\Local\cryptostuff\cryptostuff.db`) |
+| macOS | `~/Library/Application Support/cryptostuff/cryptostuff.db` |
+| Linux | `$XDG_DATA_HOME/cryptostuff/cryptostuff.db`, which is `~/.local/share/cryptostuff/cryptostuff.db` when `XDG_DATA_HOME` is unset |
+
+To use another file, set the `ConnectionStrings:CryptoStuff` setting to a
+SQLite connection string — as a user secret locally, or as the
+`ConnectionStrings__CryptoStuff` environment variable in deployment:
+
+```bash
+dotnet user-secrets set ConnectionStrings:CryptoStuff "Data Source=/path/to/cryptostuff.db"
+```
+
+User secrets belong to one host project, so set the override for both
+`CryptoStuff.Cli` and `CryptoStuff.Api` — or use the environment variable —
+if they are to keep sharing a file. A value that is not a valid SQLite
+connection string stops either host before it does anything, with
+`ConnectionStrings:CryptoStuff is not a valid SQLite connection string: …`.
+If the setting is absent and the OS reports no local application-data folder
+at all, both hosts stop with:
+
+```
+No per-user local application-data folder is available for the default database file. Set the ConnectionStrings:CryptoStuff setting (the ConnectionStrings__CryptoStuff environment variable in deployment) to a SQLite connection string, e.g. 'Data Source=/path/to/cryptostuff.db'.
+```
+
+There is no setup step. Both hosts create the file and its folder when they
+are missing and apply any pending [migrations](#database-migrations) at start
+up — the API before it starts listening, the CLI before it runs each command
+— so whichever host runs first after an upgrade brings the schema up to date.
+If the database cannot be opened or migrated (an unwritable folder, or a file
+that is not a SQLite database), the CLI prints
+`Error: the database could not be opened or migrated. …` and exits with code
+`1`, and the API fails to start with the underlying exception.
 
 ## Command-line interface
 
@@ -232,11 +284,12 @@ dotnet run --project src/CryptoStuff.Cli -- coin bitcoin --json
 | Code | Meaning |
 |---|---|
 | `0` | The command completed successfully. |
-| `1` | No command or an unrecognized command, the wrong number of arguments, an input validation failure, a CoinGecko service failure (see [Error codes](#error-codes)), or a startup configuration error (a missing or invalid `CoinGecko:ApiKey`/`CoinGecko:CacheSeconds`, see [Registration](#registration)). |
+| `1` | No command or an unrecognized command, the wrong number of arguments, an input validation failure, a CoinGecko service failure (see [Error codes](#error-codes)), a startup configuration error (a missing or invalid `CoinGecko:ApiKey`/`CoinGecko:CacheSeconds`, see [Registration](#registration), or an unresolvable database connection string, see [Data storage](#data-storage)), or a database that could not be opened or migrated (see [Data storage](#data-storage)). |
 | `130` | The command was canceled (Ctrl+C) before it completed. |
 
-Usage and validation errors, and CoinGecko service failures, are written to
-standard error; successful results are written to standard output.
+Usage and validation errors, CoinGecko service failures, and database
+failures are written to standard error; successful results are written to
+standard output.
 
 ## REST API
 
@@ -320,3 +373,5 @@ generated files as they are: `.editorconfig` marks the folder `generated_code`,
 so neither the style analyzers nor `dotnet format` touch them. A migration is
 edited only to change what it does, never its style. Forgetting one fails
 `dotnet test`, which checks that the model has no changes no migration covers.
+There is no `dotnet ef database update` step: both hosts apply pending
+migrations at start up (see [Data storage](#data-storage)).
