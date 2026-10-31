@@ -14,6 +14,10 @@ internal sealed class SpyCryptocurrencyService : ICryptocurrencyService
 
     public CancellationToken CapturedCancellationToken { get; private set; }
 
+    public CoinPriceQuery? CapturedPricesQuery { get; private set; }
+
+    public CoinQuery? CapturedCoinQuery { get; private set; }
+
     public Exception? ExceptionToThrow { get; set; }
 
     public ServiceResult<CoinPriceView> PricesResult { get; set; } =
@@ -35,6 +39,7 @@ internal sealed class SpyCryptocurrencyService : ICryptocurrencyService
     {
         GetPricesCallCount++;
         CapturedCancellationToken = cancellationToken;
+        CapturedPricesQuery = query;
         return Task.FromResult(PricesResult);
     }
 
@@ -56,6 +61,7 @@ internal sealed class SpyCryptocurrencyService : ICryptocurrencyService
     {
         GetCoinCallCount++;
         CapturedCancellationToken = cancellationToken;
+        CapturedCoinQuery = query;
         if (ExceptionToThrow is not null)
         {
             throw ExceptionToThrow;
