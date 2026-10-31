@@ -9,12 +9,14 @@
 @.claude/rules/overlays/workflow-solo.md
 @.claude/rules/archetype/application.md
 @.claude/rules/overlays/workflow-agent-review-solo.md
+@.claude/rules/overlays/persistence-efcore.md
 
 ## Project-specific notes
 - Rules under `.claude/rules/` are copies synced from the `claude-rules` repo
   (`tools/sync.ps1 -Target <this repo> -Profile application-solo -Add
-  workflow-agent-review-solo`). Edit them there, not here. The sync stamps
-  its source commit and that composition into `.claude/rules/.sync-source`,
+  workflow-agent-review-solo,persistence-efcore`). Edit them there, not here.
+  The sync stamps its source commit and that composition into
+  `.claude/rules/.sync-source`,
   so audit for drift with `tools/sync.ps1 -Target <this repo> -Check` alone:
   it reads the set from the stamp and lists the upstream commits since the
   stamped one that touched a file in the set or an extra rule file the set

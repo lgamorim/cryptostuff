@@ -1,4 +1,4 @@
 27e248fb1ca1586fffdb208c112026983542d933
 profile: application-solo
 workflow: solo
-add: workflow-agent-review-solo
+add: workflow-agent-review-solo, persistence-efcore
