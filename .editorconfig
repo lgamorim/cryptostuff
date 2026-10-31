@@ -155,3 +155,10 @@ dotnet_naming_rule.parameters_locals_are_camel_case.severity = warning
 # core/testing-philosophy.md; they do not carry the Async suffix.
 [test/**/*.cs]
 dotnet_naming_rule.async_methods_are_async_suffixed.severity = none
+
+# --- Generated migrations (overlays/persistence-efcore.md) ---
+# `dotnet ef migrations add` output is tool-owned, so the style analyzers and
+# `dotnet format` leave it alone; a migration is edited only to change what it
+# does, never to satisfy a style rule.
+[src/CryptoStuff.Persistence/Migrations/*.cs]
+generated_code = true

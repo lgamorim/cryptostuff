@@ -5,6 +5,7 @@
     <Project Path="src/CryptoStuff.CoinGecko/CryptoStuff.CoinGecko.csproj" />
     <Project Path="src/CryptoStuff.Composition/CryptoStuff.Composition.csproj" />
     <Project Path="src/CryptoStuff.Core/CryptoStuff.Core.csproj" />
+    <Project Path="src/CryptoStuff.Persistence/CryptoStuff.Persistence.csproj" />
   </Folder>
   <Folder Name="/test/">
     <Project Path="test/CryptoStuff.Api.IntegrationTests/CryptoStuff.Api.IntegrationTests.csproj" />
@@ -13,5 +14,6 @@
     <Project Path="test/CryptoStuff.CoinGecko.UnitTests/CryptoStuff.CoinGecko.UnitTests.csproj" />
     <Project Path="test/CryptoStuff.Composition.UnitTests/CryptoStuff.Composition.UnitTests.csproj" />
     <Project Path="test/CryptoStuff.Core.UnitTests/CryptoStuff.Core.UnitTests.csproj" />
+    <Project Path="test/CryptoStuff.Persistence.IntegrationTests/CryptoStuff.Persistence.IntegrationTests.csproj" />
   </Folder>
 </Solution>

@@ -39,6 +39,7 @@ The AI workflow is the experiment.
 |---|---|
 | `CryptoStuff.CoinGecko` | API client — sole owner of the wire format; covers `simple/price`, `simple/token_price/{platform}`, `coins/{id}/market_chart`, `coins/{id}`, and `coins/{id}/history` (the latter's `date` query parameter must be `dd-MM-yyyy`) |
 | `CryptoStuff.Core` | Queries (`CoinPriceQuery`, `TokenPriceQuery`, `CoinMarketChartQuery`, `CoinQuery`, `CoinDeveloperDataQuery`) and view records (`CoinPriceView`, `TokenPriceView`, `CoinMarketChartView`, `CoinView`, `CoinDeveloperDataView`), results, mapping, caching, validation; watchlists (`Watchlists/`): the `Watchlist` entity, `IWatchlistRepository`, `IWatchlistService` and `WatchlistService`, the `CreateWatchlistCommand`, `RenameWatchlistCommand` and `WatchlistCoinCommand` commands, the `WatchlistPriceQuery` query, the `WatchlistView` view, and `WatchlistMapper`; and, shared by the stored features, `PersistenceConflictException` and the `NameValidator` and `PositiveIdValidator` rules |
+| `CryptoStuff.Persistence` | EF Core over SQLite: `CryptoStuffDbContext`, the watchlist mapping (`WatchlistConfiguration`) and `WatchlistRepository`, translation of unique-constraint and concurrency failures into `PersistenceConflictException`, `CryptoStuffDatabase.MigrateAsync` (creates a file database's directory, then migrates), the design-time context factory, and the checked-in migrations (`Migrations/`) |
 | `CryptoStuff.Composition` | Registration and HTTP pipeline wiring |
 | `CryptoStuff.Cli` | Console host |
 | `CryptoStuff.Api` | Minimal REST host |
@@ -51,7 +52,10 @@ The AI workflow is the experiment.
 
 `CryptoStuff.Cli` and `CryptoStuff.Api` both reference `CryptoStuff.Composition`,
 which references `CryptoStuff.Core`, which references `CryptoStuff.CoinGecko`.
-Dependencies point inward; no lower layer references a layer above it.
+`CryptoStuff.Persistence` references `CryptoStuff.Core`, implementing its
+repository interfaces; no host uses it yet. Dependencies point inward; no lower
+layer references a layer above it, and `CryptoStuff.Core` never references EF
+Core.
 
 ## Prerequisites
 
@@ -297,3 +301,22 @@ dotnet format
 CI (`.github/workflows/ci.yml`) runs the same three commands — build and test
 in the `Release` configuration, plus a format-verification check — on both
 `ubuntu-latest` and `windows-latest`, on every push.
+
+### Database migrations
+
+The schema lives in EF Core migrations checked in under
+`src/CryptoStuff.Persistence/Migrations/`; the database is never edited by
+hand. After changing an entity's mapping, restore the pinned `dotnet-ef` local
+tool and add a migration from the repository root:
+
+```bash
+dotnet tool restore
+dotnet ef migrations add <MigrationName> --project src/CryptoStuff.Persistence
+```
+
+The persistence project doubles as the startup project through its design-time
+context factory, so the tool needs no host and no CoinGecko key. Commit the
+generated files as they are: `.editorconfig` marks the folder `generated_code`,
+so neither the style analyzers nor `dotnet format` touch them. A migration is
+edited only to change what it does, never its style. Forgetting one fails
+`dotnet test`, which checks that the model has no changes no migration covers.

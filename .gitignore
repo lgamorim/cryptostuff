@@ -430,3 +430,8 @@ FodyWeavers.xsd
 *.msix
 *.msm
 *.msp
+
+# The design-time DbContext factory's placeholder database. `dotnet ef`
+# creates it in the current directory only for commands that connect to the
+# database, such as `database update`; it is never the application's database.
+cryptostuff-design-time.db*
