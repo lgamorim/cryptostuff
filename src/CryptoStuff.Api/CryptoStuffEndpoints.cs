@@ -135,7 +135,7 @@ public static class CryptoStuffEndpoints
 
     private static IResult ToResult<TView>(ServiceResult<TView> result) =>
         // ServiceResult<T> guarantees Value is non-null when IsSuccess is true, and ErrorCode is set when it's false.
-        result.IsSuccess ? Results.Ok(result.Value) : ServiceErrorHttpMapper.ToProblem(result.ErrorCode!.Value);
+        result.IsSuccess ? Results.Ok(result.Value) : ServiceErrorHttpMapper.ToProblem(result.ErrorCode!.Value, result.ErrorDetail);
 
     // A query/path string value is never null-and-empty at once, and string.Split always
     // returns at least one element (an empty string splits to [""]), so a genuinely empty

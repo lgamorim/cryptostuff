@@ -346,4 +346,53 @@ public class CliRunnerTests
         _output.ToString().Should().BeEmpty();
         _error.ToString().Should().BeEmpty();
     }
+
+    [Theory]
+    [InlineData(ServiceErrorCode.Conflict, "Error: the request conflicts with existing data.\n")]
+    [InlineData(ServiceErrorCode.RuleViolated, "Error: the request violates a domain rule.\n")]
+    [InlineData(ServiceErrorCode.PreconditionFailed, "Error: the data has changed since it was last read.\n")]
+    public async Task Should_ReturnOneAndMappedMessage_When_ServiceFailsWithWriteErrorCode(
+        ServiceErrorCode errorCode, string expectedMessage)
+    {
+        _service.CoinResult = ServiceResult<CoinView>.Failure(errorCode);
+
+        var exitCode = await _runner.RunAsync(["coin", "bitcoin"], CancellationToken.None);
+
+        exitCode.Should().Be(1);
+        _error.ToString().Should().Be(expectedMessage);
+        _output.ToString().Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData(ServiceErrorCode.NotFound)]
+    [InlineData(ServiceErrorCode.RateLimited)]
+    [InlineData(ServiceErrorCode.RequestTimedOut)]
+    [InlineData(ServiceErrorCode.UpstreamUnavailable)]
+    [InlineData(ServiceErrorCode.Conflict)]
+    [InlineData(ServiceErrorCode.RuleViolated)]
+    [InlineData(ServiceErrorCode.PreconditionFailed)]
+    public async Task Should_PrintErrorDetail_When_ServiceFailsWithDetail(ServiceErrorCode errorCode)
+    {
+        _service.CoinResult = ServiceResult<CoinView>.Failure(errorCode, "A specific explanation.");
+
+        var exitCode = await _runner.RunAsync(["coin", "bitcoin"], CancellationToken.None);
+
+        exitCode.Should().Be(1);
+        _error.ToString().Should().Be("Error: A specific explanation.\n");
+        _output.ToString().Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Should_NotReportUnknownError_When_AnyDefinedErrorCodeFails()
+    {
+        foreach (var errorCode in Enum.GetValues<ServiceErrorCode>())
+        {
+            _error.GetStringBuilder().Clear();
+            _service.CoinResult = ServiceResult<CoinView>.Failure(errorCode);
+
+            await _runner.RunAsync(["coin", "bitcoin"], CancellationToken.None);
+
+            _error.ToString().Should().NotContain("unknown error", "{0} should have its own message", errorCode);
+        }
+    }
 }

@@ -70,14 +70,23 @@ header.
 
 ## Error codes
 
-`CryptoStuff.Core` maps a failed CoinGecko response to a `ServiceErrorCode`:
+`CryptoStuff.Core` reports a failed operation as a `ServiceErrorCode`. A failed
+CoinGecko response maps to one of the first four codes; the last three are for
+writes to the application's own stored data:
 
-| Code | Meaning | Upstream condition |
+| Code | Meaning | Condition |
 |---|---|---|
-| `NotFound` | The requested resource does not exist | CoinGecko returned `404` |
+| `NotFound` | The requested resource does not exist | CoinGecko returned `404`, or no persisted record has that id |
 | `RateLimited` | The CoinGecko rate limit was exceeded | CoinGecko returned `429` |
 | `RequestTimedOut` | The request to CoinGecko did not complete in time | The request timed out |
 | `UpstreamUnavailable` | CoinGecko failed for any other reason | Any other non-success response |
+| `Conflict` | The write conflicts with stored state | A duplicate name, or a lost concurrency race |
+| `RuleViolated` | The write breaks a domain rule | For example an oversell or an unknown coin |
+| `PreconditionFailed` | The stored version no longer matches what the caller expected | A stale `If-Match` |
+
+A failure may also carry a detail message. When it does, the API returns it as
+the ProblemDetails `detail` and the CLI prints it, in place of the fixed text
+for the code.
 
 ## Missing identifiers
 
@@ -253,9 +262,10 @@ A successful request returns `200` with the matching view record as JSON,
 serialized with ASP.NET Core's default (camelCase) naming — a validation
 failure returns `400` with an
 [RFC 7807](https://www.rfc-editor.org/rfc/rfc7807) validation-problem body,
-`{ "errors": { "<field>": ["<message>"] }, ... }`. A CoinGecko service
+`{ "errors": { "<field>": ["<message>"] }, ... }`. A service
 failure (see [Error codes](#error-codes)) returns a `ProblemDetails` body
-with one of:
+with one of the statuses below; its `detail` is the failure's detail message
+when it has one, and fixed text for the code otherwise:
 
 | Status | `ServiceErrorCode` |
 |---|---|
@@ -263,6 +273,9 @@ with one of:
 | `429` | `RateLimited` |
 | `502` | `UpstreamUnavailable` |
 | `504` | `RequestTimedOut` |
+| `409` | `Conflict` |
+| `422` | `RuleViolated` |
+| `412` | `PreconditionFailed` |
 | `500` | *(defensive fallback only — every `ServiceErrorCode` value maps above)* |
 
 ### Health, OpenAPI, and Scalar

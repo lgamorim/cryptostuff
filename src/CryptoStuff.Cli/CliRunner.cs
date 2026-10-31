@@ -256,7 +256,7 @@ public sealed class CliRunner
         // ServiceResult<T> guarantees Value is non-null when IsSuccess is true, and ErrorCode is set when it's false.
         result.IsSuccess
             ? WriteResult(format(result.Value!, json))
-            : WriteError(ServiceErrorMessages.For(result.ErrorCode!.Value));
+            : WriteError(ServiceErrorMessages.For(result.ErrorCode!.Value, result.ErrorDetail));
 
     private int WriteUsage()
     {

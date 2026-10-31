@@ -214,4 +214,55 @@ public class CryptoStuffEndpointsTests
 
         _service.CapturedCancellationToken.Should().Be(cancellationTokenSource.Token);
     }
+
+    [Theory]
+    [InlineData(ServiceErrorCode.Conflict, 409, "Conflict", "The request conflicts with the current state of the resource.")]
+    [InlineData(ServiceErrorCode.RuleViolated, 422, "Unprocessable Entity", "The request violates a domain rule.")]
+    [InlineData(ServiceErrorCode.PreconditionFailed, 412, "Precondition Failed", "The resource has changed since it was last read.")]
+    public async Task Should_ReturnMappedWriteProblem_When_ServiceFailsWithWriteErrorCode(
+        ServiceErrorCode errorCode, int expectedStatus, string expectedTitle, string expectedDetail)
+    {
+        _service.CoinResult = ServiceResult<CoinView>.Failure(errorCode);
+
+        var result = await CryptoStuffEndpoints.GetCoinAsync("bitcoin", _service, CancellationToken.None);
+
+        var problem = result.Should().BeOfType<ProblemHttpResult>().Subject;
+        problem.ProblemDetails.Status.Should().Be(expectedStatus);
+        problem.ProblemDetails.Title.Should().Be(expectedTitle);
+        problem.ProblemDetails.Detail.Should().Be(expectedDetail);
+    }
+
+    [Theory]
+    [InlineData(ServiceErrorCode.NotFound, 404)]
+    [InlineData(ServiceErrorCode.RateLimited, 429)]
+    [InlineData(ServiceErrorCode.RequestTimedOut, 504)]
+    [InlineData(ServiceErrorCode.UpstreamUnavailable, 502)]
+    [InlineData(ServiceErrorCode.Conflict, 409)]
+    [InlineData(ServiceErrorCode.RuleViolated, 422)]
+    [InlineData(ServiceErrorCode.PreconditionFailed, 412)]
+    public async Task Should_UseErrorDetailAsProblemDetail_When_ServiceFailsWithDetail(
+        ServiceErrorCode errorCode, int expectedStatus)
+    {
+        _service.CoinResult = ServiceResult<CoinView>.Failure(errorCode, "A specific explanation.");
+
+        var result = await CryptoStuffEndpoints.GetCoinAsync("bitcoin", _service, CancellationToken.None);
+
+        var problem = result.Should().BeOfType<ProblemHttpResult>().Subject;
+        problem.ProblemDetails.Status.Should().Be(expectedStatus);
+        problem.ProblemDetails.Detail.Should().Be("A specific explanation.");
+    }
+
+    [Fact]
+    public async Task Should_MapEveryErrorCodeToANonFallbackStatus_When_ServiceFails()
+    {
+        foreach (var errorCode in Enum.GetValues<ServiceErrorCode>())
+        {
+            _service.CoinResult = ServiceResult<CoinView>.Failure(errorCode);
+
+            var result = await CryptoStuffEndpoints.GetCoinAsync("bitcoin", _service, CancellationToken.None);
+
+            var problem = result.Should().BeOfType<ProblemHttpResult>().Subject;
+            problem.ProblemDetails.Status.Should().NotBe(500, "{0} should have its own mapping", errorCode);
+        }
+    }
 }

@@ -29,4 +29,42 @@ public class ServiceResultTests
 
         act.Should().Throw<ArgumentNullException>();
     }
+
+    [Fact]
+    public void Should_CarryNoErrorDetail_When_CreatedViaFailureWithoutDetail()
+    {
+        var result = ServiceResult<string>.Failure(ServiceErrorCode.NotFound);
+
+        result.ErrorDetail.Should().BeNull();
+    }
+
+    [Fact]
+    public void Should_CarryErrorDetail_When_CreatedViaFailureWithDetail()
+    {
+        var result = ServiceResult<string>.Failure(ServiceErrorCode.Conflict, "Name already in use.");
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ServiceErrorCode.Conflict);
+        result.ErrorDetail.Should().Be("Name already in use.");
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData("\t\n")]
+    public void Should_NormalizeErrorDetailToNull_When_DetailIsNullOrWhitespace(string? detail)
+    {
+        var result = ServiceResult<string>.Failure(ServiceErrorCode.RuleViolated, detail);
+
+        result.ErrorDetail.Should().BeNull();
+    }
+
+    [Fact]
+    public void Should_CarryNoErrorDetail_When_CreatedViaSuccess()
+    {
+        var result = ServiceResult<string>.Success("payload");
+
+        result.ErrorDetail.Should().BeNull();
+    }
 }
