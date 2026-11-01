@@ -138,7 +138,7 @@ Taken for Phases 5–7:
   so the CLI and the API see the same data wherever they are launched from.
   `ConnectionStrings:CryptoStuff` overrides it.
 - **Migrations are checked in and applied automatically** when either host
-  starts. A design-time `DbContext` factory in the persistence project means
+  starts (the CLI only before a command that uses the database). A design-time `DbContext` factory in the persistence project means
   `dotnet ef` never needs a CoinGecko key, and `dotnet-ef` is pinned as a local
   tool. The scaffolded `Migrations/` folder is marked `generated_code` in
   `.editorconfig`, so the style analyzers and `dotnet format` skip tool output.
@@ -451,11 +451,18 @@ string — the configured value, or the per-user default path, failing fast with
 an actionable message when no application-data folder exists — and registers the
 scoped context, repository, and service. A migrate extension runs before either
 host serves anything: the API before it starts listening, the CLI before it
-runs a command, exiting `1` if the database cannot be opened or migrated. The
-CLI builds its provider with scope validation on and resolves from a scope. The
-API integration-test factory gives each test its own temporary database file, so
-the existing suite now runs against a migrated database. Measure the CLI's added
-start-up cost here.
+runs a command that uses the database, exiting `1` if the database cannot be
+opened or migrated. The CLI builds its provider with scope validation on and
+resolves from a scope. The API integration-test factory gives each test its own
+temporary database file, so the existing suite now runs against a migrated
+database. Measure the CLI's added start-up cost here.
+
+The measurement found that migrating before every command added about 640 ms
+per CLI run (median 176 ms to 817 ms, Release, Windows), almost all of it EF
+Core's cold start rather than the migration check itself (about 28 ms). The
+maintainer therefore moved the scope in Milestone 5.5: the CLI migrates only
+before database-backed commands, and the CoinGecko-only ones skip migration and
+EF Core start-up entirely.
 
 **README:** a data-storage section — the default path on each OS, how to
 override it, and that migrations run automatically — and the new exit-code `1`
@@ -467,7 +474,9 @@ The `watchlist` command family: `list`, `create`, `show`, `rename`, `delete`,
 `add`, `remove`, and `prices`, with text and `--json` output. A
 behaviour-preserving refactor comes first, extracting the runner's output and
 argument helpers so each command family can live in its own class while the
-existing CLI tests pass untouched.
+existing CLI tests pass untouched. The CLI also stops migrating before every
+command: it migrates only before commands that use the database, as decided
+after Milestone 5.4's start-up measurement.
 
 **README:** the watchlist rows in the CLI command table.
 

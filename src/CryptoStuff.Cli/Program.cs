@@ -1,6 +1,7 @@
 using CryptoStuff.Cli;
 using CryptoStuff.Composition;
 using CryptoStuff.Core;
+using CryptoStuff.Core.Watchlists;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -41,10 +42,12 @@ Console.CancelKeyPress += (_, e) =>
     cancellationTokenSource.Cancel();
 };
 
-// Before any command, so every command sees an up-to-date schema; the CLI and
-// the API share the file, and whichever starts first after an upgrade migrates it.
-var migrationExitCode = await CliDatabaseStartup.MigrateAsync(
-    provider.MigrateCryptoStuffDatabaseAsync, Console.Error, cancellationTokenSource.Token);
+// Only before a command that uses the database, so it sees an up-to-date
+// schema; the CLI and the API share the file, and whichever starts first after
+// an upgrade migrates it. CoinGecko-only commands skip this entirely, since
+// EF Core's cold start costs about 640 ms per process.
+var migrationExitCode = await CliDatabaseStartup.MigrateIfRequiredAsync(
+    CliArgumentParser.Parse(args), provider.MigrateCryptoStuffDatabaseAsync, Console.Error, cancellationTokenSource.Token);
 if (migrationExitCode != 0)
 {
     return migrationExitCode;
@@ -55,5 +58,11 @@ if (migrationExitCode != 0)
 await using var scope = provider.CreateAsyncScope();
 var cryptocurrencyService = scope.ServiceProvider.GetRequiredService<ICryptocurrencyService>();
 
-var runner = new CliRunner(cryptocurrencyService, Console.Out, Console.Error);
+// Resolved on demand: building the watchlist service constructs the DbContext,
+// which a CoinGecko-only command must not pay for.
+var runner = new CliRunner(
+    cryptocurrencyService,
+    Console.Out,
+    Console.Error,
+    () => scope.ServiceProvider.GetRequiredService<IWatchlistService>());
 return await runner.RunAsync(args, cancellationTokenSource.Token);

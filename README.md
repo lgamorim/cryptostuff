@@ -239,17 +239,21 @@ No per-user local application-data folder is available for the default database 
 
 There is no setup step. Both hosts create the file and its folder when they
 are missing and apply any pending [migrations](#database-migrations) at start
-up — the API before it starts listening, the CLI before it runs each command
-— so whichever host runs first after an upgrade brings the schema up to date.
-If the database cannot be opened or migrated (an unwritable folder, or a file
-that is not a SQLite database), the CLI prints
+up — the API before it starts listening, the CLI before it runs a command that
+uses the database (the `watchlist` commands) — so whichever host runs first
+after an upgrade brings the schema up to date. The CLI's CoinGecko-only
+commands (`price`, `token`, `history`, `coin`, `developer`) never open the
+database, so they skip migration and start as fast as they always did. If the
+database cannot be opened or migrated (an unwritable folder, or a file that is
+not a SQLite database), the CLI prints
 `Error: the database could not be opened or migrated. …` and exits with code
 `1`, and the API fails to start with the underlying exception.
 
 ## Command-line interface
 
 `CryptoStuff.Cli` is a console front end over the same five operations as
-`ICryptocurrencyService`. Run it with `dotnet run --project src/CryptoStuff.Cli
+`ICryptocurrencyService`, plus the `watchlist` commands that manage stored
+watchlists. Run it with `dotnet run --project src/CryptoStuff.Cli
 --`, followed by a command and its arguments:
 
 ```bash
@@ -263,12 +267,29 @@ dotnet run --project src/CryptoStuff.Cli -- price bitcoin usd
 | `history` | `<coin> <currency> <days>` — a coin id, a vs_currency code, and a positive whole number of days | `cryptostuff history bitcoin usd 30` |
 | `coin` | `<id>` — a coin id | `cryptostuff coin bitcoin` |
 | `developer` | `<id> <date>` — a coin id and a date in `dd-MM-yyyy` | `cryptostuff developer bitcoin 29-02-2024` |
+| `watchlist list` | — lists every watchlist, with its id, name, and coins | `cryptostuff watchlist list` |
+| `watchlist create` | `<name>` — a new, empty watchlist; the name is at most 100 characters and unique, ignoring case | `cryptostuff watchlist create majors` |
+| `watchlist show` | `<id>` — a watchlist's id, name, and coins | `cryptostuff watchlist show 1` |
+| `watchlist rename` | `<id> <name>` — a new name for a watchlist | `cryptostuff watchlist rename 1 blue-chips` |
+| `watchlist delete` | `<id>` — deletes a watchlist | `cryptostuff watchlist delete 1` |
+| `watchlist add` | `<id> <coin>` — appends a coin id that CoinGecko knows; adding a coin already present changes nothing | `cryptostuff watchlist add 1 bitcoin` |
+| `watchlist remove` | `<id> <coin>` — removes a coin id; removing one that is absent changes nothing | `cryptostuff watchlist remove 1 bitcoin` |
+| `watchlist prices` | `<id> <currency>` — live prices of the watchlist's coins in a vs_currency | `cryptostuff watchlist prices 1 usd` |
 
 Each command applies the applicable [input validation](#input-validation)
 rules above to its arguments before calling CoinGecko, and reports the first
 violation it finds. The non-empty-collection rule doesn't apply here: a
 comma-separated list argument can never be truly empty, only contain a blank
 entry (e.g. `bitcoin,,ethereum`), which is reported as such.
+
+The `watchlist` commands take a watchlist's id as a positive whole number, which
+`create` prints and `list` shows; anything else is reported as a validation
+failure. They read and write the shared [database](#data-storage), so these are
+the only commands that open it (and migrate it first). A failure the service
+reports for them — an unknown id, a duplicate name, a coin CoinGecko doesn't
+know — is printed as `Error: …` with the service's own message, and exits `1`.
+`delete` prints `Deleted watchlist <id>.`; with `--json` it prints
+`{"Id": <id>, "Deleted": true}`, indented.
 
 ### JSON output
 
@@ -284,7 +305,7 @@ dotnet run --project src/CryptoStuff.Cli -- coin bitcoin --json
 | Code | Meaning |
 |---|---|
 | `0` | The command completed successfully. |
-| `1` | No command or an unrecognized command, the wrong number of arguments, an input validation failure, a CoinGecko service failure (see [Error codes](#error-codes)), a startup configuration error (a missing or invalid `CoinGecko:ApiKey`/`CoinGecko:CacheSeconds`, see [Registration](#registration), or an unresolvable database connection string, see [Data storage](#data-storage)), or a database that could not be opened or migrated (see [Data storage](#data-storage)). |
+| `1` | No command or an unrecognized command, the wrong number of arguments, an input validation failure, a CoinGecko service failure (see [Error codes](#error-codes)), a startup configuration error (a missing or invalid `CoinGecko:ApiKey`/`CoinGecko:CacheSeconds`, see [Registration](#registration), or an unresolvable database connection string, see [Data storage](#data-storage)), or, for a command that uses the database, a database that could not be opened or migrated (see [Data storage](#data-storage)). |
 | `130` | The command was canceled (Ctrl+C) before it completed. |
 
 Usage and validation errors, CoinGecko service failures, and database

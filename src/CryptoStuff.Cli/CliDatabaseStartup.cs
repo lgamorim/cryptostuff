@@ -1,3 +1,4 @@
+using CryptoStuff.Cli.Watchlists;
 using Microsoft.Data.Sqlite;
 
 namespace CryptoStuff.Cli;
@@ -9,6 +10,15 @@ namespace CryptoStuff.Cli;
 /// </summary>
 public static class CliDatabaseStartup
 {
+    /// <summary>
+    /// Migrates the database before <paramref name="parsed"/> runs when that
+    /// command uses it.
+    /// </summary>
+    public static Task<int> MigrateIfRequiredAsync(CliArguments parsed, Func<CancellationToken, Task> migrate, TextWriter error, CancellationToken cancellationToken) =>
+        parsed.Command == WatchlistCommands.Name
+            ? MigrateAsync(migrate, error, cancellationToken)
+            : Task.FromResult(0);
+
     /// <summary>
     /// Runs <paramref name="migrate"/>, returning the exit code to stop with:
     /// <c>0</c> when it succeeded and the command may run, <c>1</c> after

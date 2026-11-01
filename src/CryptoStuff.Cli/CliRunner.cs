@@ -1,5 +1,6 @@
-using System.Globalization;
+using CryptoStuff.Cli.Watchlists;
 using CryptoStuff.Core;
+using CryptoStuff.Core.Watchlists;
 
 namespace CryptoStuff.Cli;
 
@@ -11,31 +12,21 @@ namespace CryptoStuff.Cli;
 /// </summary>
 public sealed class CliRunner
 {
-    private const string UsageMessage =
-        """
-        Usage: cryptostuff <command> [arguments] [--json]
-
-        Commands:
-          price <coins> <currencies>                  Live coin prices (comma-separated ids/currencies)
-          token <platform> <addresses> <currencies>   Token prices by contract address
-          history <coin> <currency> <days>            Historical market series
-          coin <id>                                   Coin detail
-          developer <id> <date>                       Developer repository activity (date: dd-MM-yyyy)
-
-        Options:
-          --json    Output as JSON instead of human-readable text
-        """;
-
     private readonly ICryptocurrencyService _service;
-    private readonly TextWriter _output;
-    private readonly TextWriter _error;
+    private readonly CliResultWriter _writer;
+    private readonly Func<IWatchlistService>? _watchlists;
 
-    /// <summary>Creates a runner that calls <paramref name="service"/> and writes to the given writers.</summary>
-    public CliRunner(ICryptocurrencyService service, TextWriter output, TextWriter error)
+    /// <summary>
+    /// Creates a runner that calls <paramref name="service"/> and writes to the given writers.
+    /// <paramref name="watchlists"/> supplies the watchlist service on demand, so a
+    /// command that never touches the database never resolves it; without it the
+    /// <c>watchlist</c> command family is not available.
+    /// </summary>
+    public CliRunner(ICryptocurrencyService service, TextWriter output, TextWriter error, Func<IWatchlistService>? watchlists = null)
     {
         _service = service;
-        _output = output;
-        _error = error;
+        _writer = new CliResultWriter(output, error);
+        _watchlists = watchlists;
     }
 
     /// <summary>
@@ -57,7 +48,9 @@ public sealed class CliRunner
                 "history" => await ExecuteHistoryAsync(parsed, cancellationToken),
                 "coin" => await ExecuteCoinAsync(parsed, cancellationToken),
                 "developer" => await ExecuteDeveloperAsync(parsed, cancellationToken),
-                _ => WriteUsage(),
+                WatchlistCommands.Name when _watchlists is not null =>
+                    await new WatchlistCommands(_watchlists(), _writer).ExecuteAsync(parsed, cancellationToken),
+                _ => _writer.WriteUsage(),
             };
         }
         catch (OperationCanceledException)
@@ -70,45 +63,45 @@ public sealed class CliRunner
     {
         if (parsed.Arguments.Count != 2)
         {
-            return WriteUsage();
+            return _writer.WriteUsage();
         }
 
-        if (!TryParseIdentifierList(parsed.Arguments[0], "Coins", out var coinIds, out var error))
+        if (!CliArgumentReader.TryParseIdentifierList(parsed.Arguments[0], "Coins", out var coinIds, out var error))
         {
-            return WriteError(error);
+            return _writer.WriteError(error);
         }
 
-        if (!TryParseIdentifierList(parsed.Arguments[1], "Currencies", out var vsCurrencies, out error))
+        if (!CliArgumentReader.TryParseIdentifierList(parsed.Arguments[1], "Currencies", out var vsCurrencies, out error))
         {
-            return WriteError(error);
+            return _writer.WriteError(error);
         }
 
         var query = new CoinPriceQuery { CoinIds = coinIds, VsCurrencies = vsCurrencies };
         var result = await _service.GetPricesAsync(query, cancellationToken);
 
-        return WriteServiceResult(result, parsed.JsonOutput, CliOutputFormatter.Format);
+        return _writer.WriteServiceResult(result, parsed.JsonOutput, CliOutputFormatter.Format);
     }
 
     private async Task<int> ExecuteTokenAsync(CliArguments parsed, CancellationToken cancellationToken)
     {
         if (parsed.Arguments.Count != 3)
         {
-            return WriteUsage();
+            return _writer.WriteUsage();
         }
 
-        if (!TryValidateScalar(parsed.Arguments[0], "Platform", out var error))
+        if (!CliArgumentReader.TryValidateScalar(parsed.Arguments[0], "Platform", out var error))
         {
-            return WriteError(error);
+            return _writer.WriteError(error);
         }
 
-        if (!TryParseIdentifierList(parsed.Arguments[1], "Addresses", out var addresses, out error))
+        if (!CliArgumentReader.TryParseIdentifierList(parsed.Arguments[1], "Addresses", out var addresses, out error))
         {
-            return WriteError(error);
+            return _writer.WriteError(error);
         }
 
-        if (!TryParseIdentifierList(parsed.Arguments[2], "Currencies", out var vsCurrencies, out error))
+        if (!CliArgumentReader.TryParseIdentifierList(parsed.Arguments[2], "Currencies", out var vsCurrencies, out error))
         {
-            return WriteError(error);
+            return _writer.WriteError(error);
         }
 
         var query = new TokenPriceQuery
@@ -120,162 +113,75 @@ public sealed class CliRunner
 
         var result = await _service.GetTokenPricesAsync(query, cancellationToken);
 
-        return WriteServiceResult(result, parsed.JsonOutput, CliOutputFormatter.Format);
+        return _writer.WriteServiceResult(result, parsed.JsonOutput, CliOutputFormatter.Format);
     }
 
     private async Task<int> ExecuteHistoryAsync(CliArguments parsed, CancellationToken cancellationToken)
     {
         if (parsed.Arguments.Count != 3)
         {
-            return WriteUsage();
+            return _writer.WriteUsage();
         }
 
-        if (!TryValidateScalar(parsed.Arguments[0], "Coin", out var error))
+        if (!CliArgumentReader.TryValidateScalar(parsed.Arguments[0], "Coin", out var error))
         {
-            return WriteError(error);
+            return _writer.WriteError(error);
         }
 
-        if (!TryValidateScalar(parsed.Arguments[1], "Currency", out error))
+        if (!CliArgumentReader.TryValidateScalar(parsed.Arguments[1], "Currency", out error))
         {
-            return WriteError(error);
+            return _writer.WriteError(error);
         }
 
-        if (!TryValidateDays(parsed.Arguments[2], out var days, out error))
+        if (!CliArgumentReader.TryValidateDays(parsed.Arguments[2], out var days, out error))
         {
-            return WriteError(error);
+            return _writer.WriteError(error);
         }
 
         var query = new CoinMarketChartQuery { CoinId = parsed.Arguments[0], VsCurrency = parsed.Arguments[1], Days = days };
         var result = await _service.GetMarketChartAsync(query, cancellationToken);
 
-        return WriteServiceResult(result, parsed.JsonOutput, CliOutputFormatter.Format);
+        return _writer.WriteServiceResult(result, parsed.JsonOutput, CliOutputFormatter.Format);
     }
 
     private async Task<int> ExecuteCoinAsync(CliArguments parsed, CancellationToken cancellationToken)
     {
         if (parsed.Arguments.Count != 1)
         {
-            return WriteUsage();
+            return _writer.WriteUsage();
         }
 
-        if (!TryValidateScalar(parsed.Arguments[0], "Id", out var error))
+        if (!CliArgumentReader.TryValidateScalar(parsed.Arguments[0], "Id", out var error))
         {
-            return WriteError(error);
+            return _writer.WriteError(error);
         }
 
         var query = new CoinQuery { CoinId = parsed.Arguments[0] };
         var result = await _service.GetCoinAsync(query, cancellationToken);
 
-        return WriteServiceResult(result, parsed.JsonOutput, CliOutputFormatter.Format);
+        return _writer.WriteServiceResult(result, parsed.JsonOutput, CliOutputFormatter.Format);
     }
 
     private async Task<int> ExecuteDeveloperAsync(CliArguments parsed, CancellationToken cancellationToken)
     {
         if (parsed.Arguments.Count != 2)
         {
-            return WriteUsage();
+            return _writer.WriteUsage();
         }
 
-        if (!TryValidateScalar(parsed.Arguments[0], "Id", out var error))
+        if (!CliArgumentReader.TryValidateScalar(parsed.Arguments[0], "Id", out var error))
         {
-            return WriteError(error);
+            return _writer.WriteError(error);
         }
 
-        if (!TryValidateDate(parsed.Arguments[1], "Date", out error))
+        if (!CliArgumentReader.TryValidateDate(parsed.Arguments[1], "Date", out error))
         {
-            return WriteError(error);
+            return _writer.WriteError(error);
         }
 
         var query = new CoinDeveloperDataQuery { CoinId = parsed.Arguments[0], Date = parsed.Arguments[1] };
         var result = await _service.GetDeveloperDataAsync(query, cancellationToken);
 
-        return WriteServiceResult(result, parsed.JsonOutput, CliOutputFormatter.Format);
-    }
-
-    // A CLI positional argument is never null, and string.Split always returns
-    // at least one element (an empty string splits to [""]), so a genuinely
-    // empty list can never reach this method - only per-element blank entries
-    // can. NonEmptyCollectionValidator is therefore not invoked here; the
-    // per-element NonEmptyScalarValidator check below already rejects a blank
-    // or all-blank argument.
-    private static bool TryParseIdentifierList(string raw, string fieldName, out IReadOnlyList<string> values, out string errorMessage)
-    {
-        var split = raw.Split(',').Select(value => value.Trim()).ToArray();
-
-        foreach (var value in split)
-        {
-            if (!NonEmptyScalarValidator.Validate(value, fieldName).IsValid)
-            {
-                values = [];
-                errorMessage = $"{fieldName} contains a blank entry.";
-                return false;
-            }
-        }
-
-        values = split;
-        errorMessage = string.Empty;
-        return true;
-    }
-
-    private static bool TryValidateScalar(string value, string fieldName, out string errorMessage)
-    {
-        var outcome = NonEmptyScalarValidator.Validate(value, fieldName);
-        errorMessage = outcome.ErrorMessage ?? string.Empty;
-        return outcome.IsValid;
-    }
-
-    private static bool TryValidateDate(string value, string fieldName, out string errorMessage)
-    {
-        var scalarOutcome = NonEmptyScalarValidator.Validate(value, fieldName);
-        if (!scalarOutcome.IsValid)
-        {
-            // ValidationOutcome guarantees ErrorMessage is non-null when IsValid is false.
-            errorMessage = scalarOutcome.ErrorMessage!;
-            return false;
-        }
-
-        var dateOutcome = DateFormatValidator.Validate(value, fieldName);
-        errorMessage = dateOutcome.ErrorMessage ?? string.Empty;
-        return dateOutcome.IsValid;
-    }
-
-    private static bool TryValidateDays(string raw, out int days, out string errorMessage)
-    {
-        if (!int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out days))
-        {
-            errorMessage = "Days must be a whole number.";
-            return false;
-        }
-
-        var outcome = PositiveDayCountValidator.Validate(days, "Days");
-        errorMessage = outcome.ErrorMessage ?? string.Empty;
-        return outcome.IsValid;
-    }
-
-    private int WriteServiceResult<TView>(ServiceResult<TView> result, bool json, Func<TView, bool, string> format) =>
-        // ServiceResult<T> guarantees Value is non-null when IsSuccess is true, and ErrorCode is set when it's false.
-        result.IsSuccess
-            ? WriteResult(format(result.Value!, json))
-            : WriteError(ServiceErrorMessages.For(result.ErrorCode!.Value, result.ErrorDetail));
-
-    private int WriteUsage()
-    {
-        _error.Write(UsageMessage);
-        _error.Write('\n');
-        return 1;
-    }
-
-    private int WriteError(string message)
-    {
-        _error.Write(message);
-        _error.Write('\n');
-        return 1;
-    }
-
-    private int WriteResult(string formatted)
-    {
-        _output.Write(formatted);
-        _output.Write('\n');
-        return 0;
+        return _writer.WriteServiceResult(result, parsed.JsonOutput, CliOutputFormatter.Format);
     }
 }
