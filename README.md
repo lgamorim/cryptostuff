@@ -315,7 +315,8 @@ standard output.
 ## REST API
 
 `CryptoStuff.Api` is a minimal-API front end over the same five operations as
-`ICryptocurrencyService`. Run it with:
+`ICryptocurrencyService`, plus the watchlist operations of `IWatchlistService`.
+Run it with:
 
 ```bash
 dotnet run --project src/CryptoStuff.Api
@@ -328,6 +329,14 @@ dotnet run --project src/CryptoStuff.Api
 | `GET /historical-market-data` | `coin`, `currency`, `days` (a positive whole number) | `/historical-market-data?coin=bitcoin&currency=usd&days=30` |
 | `GET /coins/{coin}` | `coin` (path) | `/coins/bitcoin` |
 | `GET /coins/{coin}/developer-data` | `coin` (path), `date` in `dd-MM-yyyy` | `/coins/bitcoin/developer-data?date=29-02-2024` |
+| `GET /watchlists` | — | `/watchlists` |
+| `POST /watchlists` | JSON body `{ "name": "<name>" }` | `/watchlists` |
+| `GET /watchlists/{id}` | `id` (path) | `/watchlists/1` |
+| `PUT /watchlists/{id}` | `id` (path), JSON body `{ "name": "<name>" }` | `/watchlists/1` |
+| `DELETE /watchlists/{id}` | `id` (path) | `/watchlists/1` |
+| `PUT /watchlists/{id}/coins/{coin}` | `id`, `coin` (path); no body | `/watchlists/1/coins/bitcoin` |
+| `DELETE /watchlists/{id}/coins/{coin}` | `id`, `coin` (path); no body | `/watchlists/1/coins/bitcoin` |
+| `GET /watchlists/{id}/prices` | `id` (path), `currency` | `/watchlists/1/prices?currency=usd` |
 
 Each route applies the applicable [input validation](#input-validation) rules
 above to its parameters before calling CoinGecko, and reports the first
@@ -336,7 +345,8 @@ apply here: a comma-separated list parameter can never be truly empty, only
 contain a blank entry (e.g. `coins=bitcoin,,ethereum`), which is reported as
 such.
 
-A successful request returns `200` with the matching view record as JSON,
+A successful request returns `200` with the matching view record as JSON
+(`201` and `204` for the watchlist routes noted [below](#watchlist-routes)),
 serialized with ASP.NET Core's default (camelCase) naming — a validation
 failure returns `400` with an
 [RFC 7807](https://www.rfc-editor.org/rfc/rfc7807) validation-problem body,
@@ -355,6 +365,53 @@ when it has one, and fixed text for the code otherwise:
 | `422` | `RuleViolated` |
 | `412` | `PreconditionFailed` |
 | `500` | *(defensive fallback only — every `ServiceErrorCode` value maps above)* |
+
+### Watchlist routes
+
+The `/watchlists` routes drive the same watchlists as the CLI's
+[`watchlist` commands](#command-line-interface), stored in the shared
+[database](#data-storage). Ids are the positive whole numbers the database
+assigns.
+
+Create and rename take a JSON body with the watchlist's name — at most 100
+characters, unique ignoring case, as for the CLI:
+
+```bash
+curl -i -X POST http://localhost:5200/watchlists -H 'Content-Type: application/json' -d '{ "name": "majors" }'
+```
+
+```
+HTTP/1.1 201 Created
+Location: /watchlists/1
+
+{ "id": 1, "name": "majors", "coinIds": [] }
+```
+
+`PUT /watchlists/{id}` replaces the whole resource, so its body is the same
+`{ "name": "<name>" }` and the watchlist's coins are left as they are. Every
+route that returns a watchlist returns it in that shape: `id`, `name`, and
+`coinIds` (lowercased, in the order they were added).
+
+| Route | Success | Notes |
+|---|---|---|
+| `GET /watchlists` | `200` | An array of watchlists, ordered by id |
+| `POST /watchlists` | `201` with a `Location` header | The new, empty watchlist |
+| `GET /watchlists/{id}` | `200` | |
+| `PUT /watchlists/{id}` | `200` | The renamed watchlist |
+| `DELETE /watchlists/{id}` | `204` | No body |
+| `PUT /watchlists/{id}/coins/{coin}` | `200` | Idempotent: adding a coin already present changes nothing |
+| `DELETE /watchlists/{id}/coins/{coin}` | `200` | Idempotent: removing a coin that is absent changes nothing |
+| `GET /watchlists/{id}/prices` | `200` | A `CoinPriceView`, as `GET /prices` returns, in the watchlist's coin order; an empty watchlist returns no coins without calling CoinGecko |
+
+Failures use the [ProblemDetails](#rest-api) contract above:
+
+| Status | When |
+|---|---|
+| `400` | A blank or over-long `name`, a missing body or malformed JSON, a blank `coin` or `currency`, or an `id` of zero or below |
+| `404` | No watchlist has that `id`, or the `id` is not a whole number (no route matches it) |
+| `409` | The name is taken by another watchlist (ignoring case), or a concurrent change won the race |
+| `422` | Adding a coin that CoinGecko does not know; the `detail` names it |
+| `429`, `502`, `504` | CoinGecko failed while checking a coin to add or while pricing |
 
 ### Health, OpenAPI, and Scalar
 

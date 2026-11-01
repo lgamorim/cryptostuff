@@ -1,4 +1,5 @@
 using CryptoStuff.Api;
+using CryptoStuff.Api.Watchlists;
 using CryptoStuff.Composition;
 using Scalar.AspNetCore;
 
@@ -18,6 +19,7 @@ var app = builder.Build();
 app.UseStatusCodePages();
 
 app.MapCryptoStuffEndpoints();
+app.MapWatchlistEndpoints();
 app.MapHealthChecks("/health");
 app.MapOpenApi();
 
