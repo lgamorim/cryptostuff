@@ -39,7 +39,7 @@ The AI workflow is the experiment.
 |---|---|
 | `CryptoStuff.CoinGecko` | API client — sole owner of the wire format; covers `simple/price`, `simple/token_price/{platform}`, `coins/{id}/market_chart`, `coins/{id}`, and `coins/{id}/history` (the latter's `date` query parameter must be `dd-MM-yyyy`) |
 | `CryptoStuff.Core` | Queries (`CoinPriceQuery`, `TokenPriceQuery`, `CoinMarketChartQuery`, `CoinQuery`, `CoinDeveloperDataQuery`) and view records (`CoinPriceView`, `TokenPriceView`, `CoinMarketChartView`, `CoinView`, `CoinDeveloperDataView`), results, mapping, caching, validation; watchlists (`Watchlists/`): the `Watchlist` entity, `IWatchlistRepository`, `IWatchlistService` and `WatchlistService`, the `CreateWatchlistCommand`, `RenameWatchlistCommand` and `WatchlistCoinCommand` commands, the `WatchlistPriceQuery` query, the `WatchlistView` view, and `WatchlistMapper`; portfolios (`Portfolios/`): the `Portfolio` entity, whose ledger of `PortfolioTransaction` buys and sells never takes a holding below zero, `TransactionDetails`, the `CostBasisMethod` and `TransactionKind` enumerations with their token parsers (`CostBasisMethodParser`, `TransactionKindParser`), `IPortfolioRepository`, `IPortfolioService` and `PortfolioService`, the `CreatePortfolioCommand`, `UpdatePortfolioCommand`, `AddTransactionCommand`, `ReplaceTransactionCommand` and `RemoveTransactionCommand` commands, the `PortfolioView` and `PortfolioTransactionView` views, and `PortfolioMapper`; and, shared by the stored features, `PersistenceConflictException` and the `NameValidator`, `PositiveIdValidator`, `PositiveDecimalValidator`, `NonNegativeDecimalValidator` and `TimestampFormatValidator` rules |
-| `CryptoStuff.Persistence` | EF Core over SQLite: `CryptoStuffDbContext`, the watchlist mapping (`WatchlistConfiguration`) and `WatchlistRepository`, translation of unique-constraint and concurrency failures into `PersistenceConflictException`, `CryptoStuffDatabase.MigrateAsync` (creates a file database's directory, then migrates), the design-time context factory, and the checked-in migrations (`Migrations/`) |
+| `CryptoStuff.Persistence` | EF Core over SQLite: `CryptoStuffDbContext`, the watchlist mapping (`WatchlistConfiguration`) and `WatchlistRepository`, the portfolio mapping (`PortfolioConfiguration`, which owns the portfolio's transactions) and `PortfolioRepository`, translation of unique-constraint and concurrency failures (and, for portfolios, a portfolio deleted under a pending save) into `PersistenceConflictException`, `CryptoStuffDatabase.MigrateAsync` (creates a file database's directory, then migrates), the design-time context factory, and the checked-in migrations (`Migrations/`) |
 | `CryptoStuff.Composition` | Registration and HTTP pipeline wiring: `AddCryptoStuff`, `DatabaseConnectionString` (locates the shared database), and `MigrateCryptoStuffDatabaseAsync` (the start-up migration both hosts run) |
 | `CryptoStuff.Cli` | Console host |
 | `CryptoStuff.Api` | Minimal REST host |
@@ -179,8 +179,8 @@ IConfiguration)`, the single extension method that registers everything
 above: the CoinGecko-backed `ICryptocurrencyService`, wrapped in the caching
 decorator, wired to the CoinGecko `HttpClient` and its rate-limit retry
 handler. It also registers the persistence services over the
-[shared database](#data-storage): the EF Core context, `IWatchlistRepository`,
-and `IWatchlistService`. The clock the portfolio rules read is
+[shared database](#data-storage): the EF Core context, the watchlist and portfolio
+repositories and services. The clock the portfolio rules read is
 `TimeProvider.System`, registered as a singleton unless a `TimeProvider` is
 already registered, so a test can substitute its own first. Both hosts
 reference `CryptoStuff.Composition` to call it.
@@ -208,7 +208,7 @@ string cannot be resolved — see [Data storage](#data-storage).
 
 ## Data storage
 
-Watchlists are stored in a single SQLite database file that both hosts share:
+Watchlists and portfolios are stored in a single SQLite database file that both hosts share:
 whatever the CLI writes, the API reads, and the other way round, wherever
 either is launched from. By default the file is `cryptostuff/cryptostuff.db`
 under the per-user local application-data folder:
@@ -238,6 +238,13 @@ at all, both hosts stop with:
 ```
 No per-user local application-data folder is available for the default database file. Set the ConnectionStrings:CryptoStuff setting (the ConnectionStrings__CryptoStuff environment variable in deployment) to a SQLite connection string, e.g. 'Data Source=/path/to/cryptostuff.db'.
 ```
+
+A portfolio and its transactions live in two tables, `Portfolios` and
+`PortfolioTransactions`, and deleting a portfolio deletes its transactions.
+Decimal amounts are stored as exact text and timestamps as UTC, so nothing is
+rounded on the way to the file, and ids are never reused after a delete.
+Upgrading from a release that stored only watchlists adds the two tables and
+leaves the watchlists as they were.
 
 There is no setup step. Both hosts create the file and its folder when they
 are missing and apply any pending [migrations](#database-migrations) at start

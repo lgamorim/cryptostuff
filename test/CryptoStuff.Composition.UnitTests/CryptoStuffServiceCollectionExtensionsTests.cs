@@ -1,8 +1,10 @@
 using System.Reflection;
 using CryptoStuff.CoinGecko;
 using CryptoStuff.Core;
+using CryptoStuff.Core.Portfolios;
 using CryptoStuff.Core.Watchlists;
 using CryptoStuff.Persistence;
+using CryptoStuff.Persistence.Portfolios;
 using CryptoStuff.Persistence.Watchlists;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -314,6 +316,8 @@ public class CryptoStuffServiceCollectionExtensionsTests
     [InlineData(typeof(CryptoStuffDbContext))]
     [InlineData(typeof(IWatchlistRepository))]
     [InlineData(typeof(IWatchlistService))]
+    [InlineData(typeof(IPortfolioRepository))]
+    [InlineData(typeof(IPortfolioService))]
     public void Should_RegisterPersistenceServicesAsScoped_When_Called(Type serviceType)
     {
         var services = new ServiceCollection();
@@ -387,6 +391,21 @@ public class CryptoStuffServiceCollectionExtensionsTests
 
         service.Should().BeOfType<WatchlistService>();
         repository.Should().BeOfType<WatchlistRepository>();
+    }
+
+    [Fact]
+    public async Task Should_ResolvePortfolioServiceOverSqliteRepository_When_ResolvedFromScope()
+    {
+        var services = new ServiceCollection();
+        services.AddCryptoStuff(BuildPersistenceConfiguration());
+        await using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
+        await using var scope = provider.CreateAsyncScope();
+
+        var service = scope.ServiceProvider.GetRequiredService<IPortfolioService>();
+        var repository = scope.ServiceProvider.GetRequiredService<IPortfolioRepository>();
+
+        service.Should().BeOfType<PortfolioService>();
+        repository.Should().BeOfType<PortfolioRepository>();
     }
 
     [Fact]

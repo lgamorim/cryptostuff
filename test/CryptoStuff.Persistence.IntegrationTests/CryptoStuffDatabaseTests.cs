@@ -1,6 +1,8 @@
 using CryptoStuff.Core.Watchlists;
 using CryptoStuff.Persistence.IntegrationTests.TestSupport;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 
 namespace CryptoStuff.Persistence.IntegrationTests;
 
@@ -120,6 +122,44 @@ public class CryptoStuffDatabaseTests
         await using var verification = database.CreateContext();
         var names = await verification.Watchlists.Select(w => w.Name).ToListAsync(TestContext.Current.CancellationToken);
         names.Should().Equal("Majors");
+    }
+
+    [Fact]
+    public async Task Should_KeepWatchlistData_When_UpgradingFromInitialCreateToAddPortfolios()
+    {
+        var filePath = Path.Combine(TestDatabase.Root, $"{Guid.NewGuid():N}.db");
+        try
+        {
+            await using (var before = TestDatabase.CreateContextFor(filePath))
+            {
+                // Stops at the schema the first release shipped, which
+                // CryptoStuffDatabase offers no way to do.
+                Directory.CreateDirectory(TestDatabase.Root);
+                await before.GetService<IMigrator>().MigrateAsync("InitialCreate", TestContext.Current.CancellationToken);
+                await before.Database.ExecuteSqlRawAsync(
+                    """INSERT INTO "Watchlists" ("Name", "CoinIds") VALUES ('Majors', '["bitcoin","ethereum"]')""",
+                    TestContext.Current.CancellationToken);
+                (await before.Database.GetAppliedMigrationsAsync(TestContext.Current.CancellationToken))
+                    .Should().ContainSingle().Which.Should().EndWith("InitialCreate");
+            }
+
+            await using (var upgrading = TestDatabase.CreateContextFor(filePath))
+            {
+                await CryptoStuffDatabase.MigrateAsync(upgrading, TestContext.Current.CancellationToken);
+            }
+
+            await using var verification = TestDatabase.CreateContextFor(filePath);
+            var watchlist = await verification.Watchlists.SingleAsync(TestContext.Current.CancellationToken);
+            watchlist.Name.Should().Be("Majors");
+            watchlist.CoinIds.Should().Equal("bitcoin", "ethereum");
+            (await verification.Portfolios.CountAsync(TestContext.Current.CancellationToken)).Should().Be(0);
+            (await verification.Database.GetAppliedMigrationsAsync(TestContext.Current.CancellationToken))
+                .Should().HaveCount(2).And.Contain(name => name.EndsWith("AddPortfolios", StringComparison.Ordinal));
+        }
+        finally
+        {
+            File.Delete(filePath);
+        }
     }
 
     [Fact]

@@ -1,3 +1,4 @@
+using CryptoStuff.Core.Portfolios;
 using CryptoStuff.Core.Watchlists;
 using Microsoft.EntityFrameworkCore;
 
@@ -11,6 +12,9 @@ namespace CryptoStuff.Persistence;
 /// </summary>
 public sealed class CryptoStuffDbContext(DbContextOptions<CryptoStuffDbContext> options) : DbContext(options)
 {
+    /// <summary>The stored portfolios, each with its transactions.</summary>
+    public DbSet<Portfolio> Portfolios => Set<Portfolio>();
+
     /// <summary>The stored watchlists.</summary>
     public DbSet<Watchlist> Watchlists => Set<Watchlist>();
 

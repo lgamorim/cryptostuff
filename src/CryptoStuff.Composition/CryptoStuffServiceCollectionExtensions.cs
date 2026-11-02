@@ -1,8 +1,10 @@
 using System.Globalization;
 using CryptoStuff.CoinGecko;
 using CryptoStuff.Core;
+using CryptoStuff.Core.Portfolios;
 using CryptoStuff.Core.Watchlists;
 using CryptoStuff.Persistence;
+using CryptoStuff.Persistence.Portfolios;
 using CryptoStuff.Persistence.Watchlists;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -37,7 +39,8 @@ public static class CryptoStuffServiceCollectionExtensions
     /// singletons, <see cref="TimeProvider.System"/> as the singleton
     /// <see cref="TimeProvider"/> unless one is already registered, and
     /// <see cref="CryptoStuffDbContext"/>,
-    /// <see cref="IWatchlistRepository"/>, and <see cref="IWatchlistService"/>
+    /// <see cref="IWatchlistRepository"/>, <see cref="IWatchlistService"/>,
+    /// <see cref="IPortfolioRepository"/>, and <see cref="IPortfolioService"/>
     /// as scoped. The database is located by
     /// <see cref="DatabaseConnectionString.Resolve"/>; nothing here opens it.
     /// </summary>
@@ -99,6 +102,8 @@ public static class CryptoStuffServiceCollectionExtensions
         services.AddDbContext<CryptoStuffDbContext>(dbContextOptions => dbContextOptions.UseSqlite(connectionString));
         services.AddScoped<IWatchlistRepository, WatchlistRepository>();
         services.AddScoped<IWatchlistService, WatchlistService>();
+        services.AddScoped<IPortfolioRepository, PortfolioRepository>();
+        services.AddScoped<IPortfolioService, PortfolioService>();
 
         return services;
     }
