@@ -132,6 +132,102 @@ public sealed class PortfolioService(
         return await SaveLedgerChangeAsync(portfolio, portfolio.RemoveTransaction(transaction), cancellationToken);
     }
 
+    /// <inheritdoc />
+    public async Task<ServiceResult<PortfolioValuationView>> GetValuationAsync(int id, CancellationToken cancellationToken)
+    {
+        var portfolio = await repository.FindAsync(id, cancellationToken);
+        if (portfolio is null)
+        {
+            return ServiceResult<PortfolioValuationView>.Failure(ServiceErrorCode.NotFound, NotFoundDetail(id));
+        }
+
+        var method = CostBasisMethods.For(portfolio.CostBasisMethod);
+        var positions = portfolio.Transactions
+            .GroupBy(t => t.CoinId)
+            .OrderBy(g => g.Key, StringComparer.Ordinal)
+            .Select(g => (CoinId: g.Key, Position: method.CalculatePosition(g)))
+            .ToList();
+
+        // Only the units still held need a price: a closed position is worth
+        // nothing, and with none open there is nothing to ask CoinGecko.
+        IReadOnlyList<CoinPrice> livePrices = [];
+        var openCoinIds = positions.Where(p => p.Position.Quantity > 0m).Select(p => p.CoinId).ToList();
+        if (openCoinIds.Count > 0)
+        {
+            var priceQuery = new CoinPriceQuery { CoinIds = openCoinIds, VsCurrencies = [portfolio.VsCurrency] };
+            var prices = await cryptocurrencyService.GetPricesAsync(priceQuery, cancellationToken);
+            if (prices.ErrorCode is { } errorCode)
+            {
+                // The portfolio exists, so a coin CoinGecko no longer knows is
+                // an upstream problem, not a missing portfolio.
+                return errorCode == ServiceErrorCode.NotFound
+                    ? ServiceResult<PortfolioValuationView>.Failure(
+                        ServiceErrorCode.UpstreamUnavailable,
+                        $"CoinGecko does not know one of the coins held: {string.Join(", ", openCoinIds)}.")
+                    : ServiceResult<PortfolioValuationView>.Failure(errorCode, prices.ErrorDetail);
+            }
+
+            // `!` is safe: a successful result always carries its value.
+            livePrices = prices.Value!.Coins;
+        }
+
+        return Value(portfolio, positions, livePrices);
+    }
+
+    /// <summary>
+    /// Joins each coin's position with its live price, or reports the open
+    /// coin CoinGecko returned no price for, in the portfolio's vs_currency,
+    /// as <see cref="ServiceErrorCode.UpstreamUnavailable"/>.
+    /// </summary>
+    private static ServiceResult<PortfolioValuationView> Value(
+        Portfolio portfolio,
+        IReadOnlyList<(string CoinId, CoinPosition Position)> positions,
+        IReadOnlyList<CoinPrice> livePrices)
+    {
+        var coins = new List<CoinValuationView>();
+        foreach (var (coinId, position) in positions)
+        {
+            var marketValue = 0m;
+            if (position.Quantity > 0m)
+            {
+                var livePrice = livePrices.FirstOrDefault(c => c.CoinId == coinId)?.Amounts.FirstOrDefault(a => a.Currency == portfolio.VsCurrency);
+                if (livePrice is null)
+                {
+                    return ServiceResult<PortfolioValuationView>.Failure(
+                        ServiceErrorCode.UpstreamUnavailable,
+                        $"CoinGecko returned no price for '{coinId}' in '{portfolio.VsCurrency}'.");
+                }
+
+                marketValue = position.Quantity * livePrice.Amount;
+            }
+
+            coins.Add(new CoinValuationView
+            {
+                CoinId = coinId,
+                Quantity = position.Quantity,
+                MarketValue = marketValue,
+                CostBasis = position.CostBasis,
+                UnrealizedProfitAndLoss = marketValue - position.CostBasis,
+                RealizedProfitAndLoss = position.RealizedProfitAndLoss,
+            });
+        }
+
+        return ServiceResult<PortfolioValuationView>.Success(new PortfolioValuationView
+        {
+            PortfolioId = portfolio.Id,
+            VsCurrency = portfolio.VsCurrency,
+            CostBasisMethod = portfolio.CostBasisMethod,
+            Coins = coins,
+            Totals = new PortfolioValuationTotals
+            {
+                MarketValue = coins.Sum(c => c.MarketValue),
+                CostBasis = coins.Sum(c => c.CostBasis),
+                UnrealizedProfitAndLoss = coins.Sum(c => c.UnrealizedProfitAndLoss),
+                RealizedProfitAndLoss = coins.Sum(c => c.RealizedProfitAndLoss),
+            },
+        });
+    }
+
     /// <summary>
     /// Checks the rules on a transaction's details that need more than the
     /// ledger — the clock and CoinGecko — returning the failure to report, or
