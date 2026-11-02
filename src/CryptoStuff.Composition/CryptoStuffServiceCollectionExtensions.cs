@@ -7,6 +7,7 @@ using CryptoStuff.Persistence.Watchlists;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace CryptoStuff.Composition;
 
@@ -33,7 +34,9 @@ public static class CryptoStuffServiceCollectionExtensions
 
     /// <summary>
     /// Registers <see cref="ICryptocurrencyService"/> and its dependencies as
-    /// singletons, and <see cref="CryptoStuffDbContext"/>,
+    /// singletons, <see cref="TimeProvider.System"/> as the singleton
+    /// <see cref="TimeProvider"/> unless one is already registered, and
+    /// <see cref="CryptoStuffDbContext"/>,
     /// <see cref="IWatchlistRepository"/>, and <see cref="IWatchlistService"/>
     /// as scoped. The database is located by
     /// <see cref="DatabaseConnectionString.Resolve"/>; nothing here opens it.
@@ -88,6 +91,10 @@ public static class CryptoStuffServiceCollectionExtensions
             new CachingCryptocurrencyService(
                 sp.GetRequiredKeyedService<ICryptocurrencyService>(CryptocurrencyServiceKey),
                 cacheDuration));
+
+        // The clock the portfolio rules read. TryAdd leaves one a host or a
+        // test registered first in place.
+        services.TryAddSingleton(TimeProvider.System);
 
         services.AddDbContext<CryptoStuffDbContext>(dbContextOptions => dbContextOptions.UseSqlite(connectionString));
         services.AddScoped<IWatchlistRepository, WatchlistRepository>();

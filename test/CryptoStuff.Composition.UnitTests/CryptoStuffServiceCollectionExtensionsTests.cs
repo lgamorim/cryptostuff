@@ -336,6 +336,34 @@ public class CryptoStuffServiceCollectionExtensionsTests
     }
 
     [Fact]
+    public void Should_RegisterSystemTimeProviderAsSingleton_When_NoneIsRegistered()
+    {
+        var services = new ServiceCollection();
+
+        services.AddCryptoStuff(BuildPersistenceConfiguration());
+
+        services.Should().ContainSingle(descriptor => descriptor.ServiceType == typeof(TimeProvider))
+            .Which.Should().Match<ServiceDescriptor>(descriptor =>
+                descriptor.Lifetime == ServiceLifetime.Singleton && descriptor.ImplementationInstance == TimeProvider.System);
+    }
+
+    [Fact]
+    public void Should_KeepRegisteredTimeProvider_When_OneIsRegisteredBefore()
+    {
+        var services = new ServiceCollection();
+        var clock = new FixedTimeProvider();
+        services.AddSingleton<TimeProvider>(clock);
+
+        services.AddCryptoStuff(BuildPersistenceConfiguration());
+
+        services.Should().ContainSingle(descriptor => descriptor.ServiceType == typeof(TimeProvider))
+            .Which.ImplementationInstance.Should().BeSameAs(clock);
+    }
+
+    // TimeProvider is abstract, so a clock distinct from TimeProvider.System needs a subclass.
+    private sealed class FixedTimeProvider : TimeProvider;
+
+    [Fact]
     public void Should_BuildProvider_When_ScopesAndRegistrationsAreValidated()
     {
         var services = new ServiceCollection();
