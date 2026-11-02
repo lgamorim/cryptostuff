@@ -38,7 +38,7 @@ The AI workflow is the experiment.
 | Project | Purpose |
 |---|---|
 | `CryptoStuff.CoinGecko` | API client — sole owner of the wire format; covers `simple/price`, `simple/token_price/{platform}`, `coins/{id}/market_chart`, `coins/{id}`, and `coins/{id}/history` (the latter's `date` query parameter must be `dd-MM-yyyy`) |
-| `CryptoStuff.Core` | Queries (`CoinPriceQuery`, `TokenPriceQuery`, `CoinMarketChartQuery`, `CoinQuery`, `CoinDeveloperDataQuery`) and view records (`CoinPriceView`, `TokenPriceView`, `CoinMarketChartView`, `CoinView`, `CoinDeveloperDataView`), results, mapping, caching, validation; watchlists (`Watchlists/`): the `Watchlist` entity, `IWatchlistRepository`, `IWatchlistService` and `WatchlistService`, the `CreateWatchlistCommand`, `RenameWatchlistCommand` and `WatchlistCoinCommand` commands, the `WatchlistPriceQuery` query, the `WatchlistView` view, and `WatchlistMapper`; portfolios (`Portfolios/`): the `Portfolio` entity, whose ledger of `PortfolioTransaction` buys and sells never takes a holding below zero, `TransactionDetails`, the `CostBasisMethod` and `TransactionKind` enumerations with their token parsers (`CostBasisMethodParser`, `TransactionKindParser`), `IPortfolioRepository`, `IPortfolioService` and `PortfolioService`, the `CreatePortfolioCommand`, `UpdatePortfolioCommand`, `AddTransactionCommand`, `ReplaceTransactionCommand` and `RemoveTransactionCommand` commands, the `PortfolioView` and `PortfolioTransactionView` views, and `PortfolioMapper`; and, shared by the stored features, `PersistenceConflictException` and the `NameValidator`, `PositiveIdValidator`, `PositiveDecimalValidator`, `NonNegativeDecimalValidator` and `TimestampFormatValidator` rules |
+| `CryptoStuff.Core` | Queries (`CoinPriceQuery`, `TokenPriceQuery`, `CoinMarketChartQuery`, `CoinQuery`, `CoinDeveloperDataQuery`) and view records (`CoinPriceView`, `TokenPriceView`, `CoinMarketChartView`, `CoinView`, `CoinDeveloperDataView`), results, mapping, caching, validation; watchlists (`Watchlists/`): the `Watchlist` entity, `IWatchlistRepository`, `IWatchlistService` and `WatchlistService`, the `CreateWatchlistCommand`, `RenameWatchlistCommand` and `WatchlistCoinCommand` commands, the `WatchlistPriceQuery` query, the `WatchlistView` view, and `WatchlistMapper`; portfolios (`Portfolios/`): the `Portfolio` entity, whose ledger of `PortfolioTransaction` buys and sells never takes a holding below zero, `TransactionDetails`, the `CostBasisMethod` and `TransactionKind` enumerations with their token parsers (`CostBasisMethodParser`, `TransactionKindParser`), `IPortfolioRepository`, `IPortfolioService` and `PortfolioService`, the `CreatePortfolioCommand`, `UpdatePortfolioCommand`, `AddTransactionCommand`, `ReplaceTransactionCommand` and `RemoveTransactionCommand` commands, the `PortfolioView` and `PortfolioTransactionView` views, `PortfolioMapper`, and the [cost-basis](#cost-basis) strategy (`ICostBasisMethod`, implemented by `AverageCostMethod` and `FifoMethod`, chosen through `CostBasisMethods`, each reducing a coin's transactions to a `CoinPosition`); and, shared by the stored features, `PersistenceConflictException` and the `NameValidator`, `PositiveIdValidator`, `PositiveDecimalValidator`, `NonNegativeDecimalValidator` and `TimestampFormatValidator` rules |
 | `CryptoStuff.Persistence` | EF Core over SQLite: `CryptoStuffDbContext`, the watchlist mapping (`WatchlistConfiguration`) and `WatchlistRepository`, the portfolio mapping (`PortfolioConfiguration`, which owns the portfolio's transactions) and `PortfolioRepository`, translation of unique-constraint and concurrency failures (and, for portfolios, a portfolio deleted under a pending save) into `PersistenceConflictException`, `CryptoStuffDatabase.MigrateAsync` (creates a file database's directory, then migrates), the design-time context factory, and the checked-in migrations (`Migrations/`) |
 | `CryptoStuff.Composition` | Registration and HTTP pipeline wiring: `AddCryptoStuff`, `DatabaseConnectionString` (locates the shared database), and `MigrateCryptoStuffDatabaseAsync` (the start-up migration both hosts run) |
 | `CryptoStuff.Cli` | Console host |
@@ -257,6 +257,54 @@ database cannot be opened or migrated (an unwritable folder, or a file that is
 not a SQLite database), the CLI prints
 `Error: the database could not be opened or migrated. …` and exits with code
 `1`, and the API fails to start with the underlying exception.
+
+## Cost basis
+
+A portfolio's cost-basis method decides what the units a sell takes had
+cost, and so how much of the sale is profit. Core reduces each coin's
+transactions, in ledger order (by when each happened, then by the order they
+were recorded), to a position: the quantity still held, the cost basis of
+those units, and the profit and loss the sells have realized. A buy's fee adds
+to what its units cost, and a sell's fee comes off what the sale brought in.
+
+- **Average cost** (`average-cost`): every unit held costs the average of what
+  the units held cost. A sell releases its share of the cost basis (cost basis
+  × units sold ÷ units held), so the average of the units left is unchanged.
+  Selling everything releases the whole cost basis, so it returns to exactly
+  zero with the quantity, and a later buy starts a fresh average.
+- **FIFO** (`fifo`): each buy is a lot, and a sell uses up the oldest lots
+  first. A lot the sell takes only part of gives up a pro-rata share of its
+  cost, fee included, and keeps the rest; a lot used up entirely gives up all
+  of the cost it has left.
+
+The two diverge as soon as units bought at different prices are sold. Take
+one ledger:
+
+| Day | Transaction | Quantity | Unit price | Fee |
+|-----|-------------|---------:|-----------:|----:|
+| 1   | buy         | 1        | 10,000     | 10  |
+| 2   | buy         | 1        | 20,000     | 20  |
+| 3   | sell        | 1        | 30,000     | 30  |
+
+With their fees the two units cost 10,010 and 20,020, 30,030 in all, and the
+sale brings in 30,000 − 30 = 29,970.
+
+|                          | Average cost             | FIFO                     |
+|--------------------------|--------------------------|--------------------------|
+| Cost of the unit sold    | 30,030 ÷ 2 = 15,015      | the day-1 unit, 10,010   |
+| Realized profit and loss | 29,970 − 15,015 = 14,955 | 29,970 − 10,010 = 19,960 |
+| Quantity held            | 1                        | 1                        |
+| Cost basis held          | 15,015                   | 20,020                   |
+
+Both account for the same 30,030 paid, as cost released by the sale plus cost
+basis still held; they differ only in which cost the sale takes. Here, with
+prices rising, FIFO realizes more profit now and keeps the dearer unit, so
+less profit is left to come.
+
+Every figure is an exact `decimal`, and Core rounds nothing to currency
+places. The one inexact step is a share that does not divide evenly, such as
+a third of an average cost, which is kept to the 28 significant digits a
+`decimal` holds.
 
 ## Command-line interface
 

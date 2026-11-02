@@ -171,8 +171,9 @@ public sealed class Portfolio
 
     // The stored list's order means nothing, since loading fills it in
     // whatever order rows come back; Sequence breaks ties between
-    // transactions that happened at the same instant.
-    private static IEnumerable<PortfolioTransaction> InLedgerOrder(IEnumerable<PortfolioTransaction> transactions) =>
+    // transactions that happened at the same instant. The cost-basis methods
+    // replay in this order too.
+    internal static IEnumerable<PortfolioTransaction> InLedgerOrder(IEnumerable<PortfolioTransaction> transactions) =>
         transactions.OrderBy(t => t.OccurredAt).ThenBy(t => t.Sequence);
 
     private static ValidationOutcome Oversold(PortfolioTransaction sell, decimal held) =>
