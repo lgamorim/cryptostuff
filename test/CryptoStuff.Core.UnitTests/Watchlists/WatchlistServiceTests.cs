@@ -502,6 +502,19 @@ public class WatchlistServiceTests
         result.ErrorCode.Should().Be(ServiceErrorCode.RateLimited);
     }
 
+    [Fact]
+    public async Task Should_ReturnUpstreamUnavailableNamingTheCoins_When_GetPricesAsyncUpstreamDoesNotKnowACoin()
+    {
+        var (repository, upstream, service) = CreateSut();
+        var watchlist = SeedWatchlist(repository, "Majors", "bitcoin", "ethereum");
+        upstream.PricesResult = ServiceResult<CoinPriceView>.Failure(ServiceErrorCode.NotFound);
+
+        var result = await service.GetPricesAsync(new WatchlistPriceQuery { WatchlistId = watchlist.Id, VsCurrency = "usd" }, CancellationToken.None);
+
+        result.ErrorCode.Should().Be(ServiceErrorCode.UpstreamUnavailable);
+        result.ErrorDetail.Should().Contain("bitcoin").And.Contain("ethereum");
+    }
+
     // Cancellation.
 
     [Fact]

@@ -126,7 +126,15 @@ public sealed class WatchlistService(IWatchlistRepository repository, ICryptocur
         }
 
         var priceQuery = new CoinPriceQuery { CoinIds = [.. watchlist.CoinIds], VsCurrencies = [query.VsCurrency] };
-        return await cryptocurrencyService.GetPricesAsync(priceQuery, cancellationToken);
+        var prices = await cryptocurrencyService.GetPricesAsync(priceQuery, cancellationToken);
+
+        // The watchlist exists, so a coin CoinGecko no longer knows is an
+        // upstream problem, not a missing watchlist.
+        return prices.ErrorCode == ServiceErrorCode.NotFound
+            ? ServiceResult<CoinPriceView>.Failure(
+                ServiceErrorCode.UpstreamUnavailable,
+                $"CoinGecko does not know one of the watchlist's coins: {string.Join(", ", watchlist.CoinIds)}.")
+            : prices;
     }
 
     private async Task<ServiceResult<WatchlistView>> SaveCoinChangeAsync(Watchlist watchlist, CancellationToken cancellationToken) =>

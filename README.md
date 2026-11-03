@@ -506,7 +506,7 @@ Failures use the [ProblemDetails](#rest-api) contract above:
 | `404` | No watchlist has that `id`, or the `id` is not a whole number (no route matches it) |
 | `409` | The name is taken by another watchlist (ignoring case), or a concurrent change won the race |
 | `422` | Adding a coin that CoinGecko does not know; the `detail` names it |
-| `429`, `502`, `504` | CoinGecko failed while checking a coin to add or while pricing |
+| `429`, `502`, `504` | CoinGecko failed while checking a coin to add or while pricing; pricing a watchlist that holds a coin CoinGecko no longer knows is a `502`, because the watchlist itself exists |
 
 ### Health, OpenAPI, and Scalar
 
