@@ -1,4 +1,7 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using CryptoStuff.Api;
+using CryptoStuff.Api.Portfolios;
 using CryptoStuff.Api.Watchlists;
 using CryptoStuff.Composition;
 using Scalar.AspNetCore;
@@ -7,6 +10,11 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddCryptoStuff(builder.Configuration);
 builder.Services.AddProblemDetails();
+
+// Enumerations travel as the same lowercase tokens the CLI prints and Core's
+// parsers accept (`average-cost`, `buy`), never as numbers.
+builder.Services.ConfigureHttpJsonOptions(options =>
+    options.SerializerOptions.Converters.Add(new JsonStringEnumConverter(JsonNamingPolicy.KebabCaseLower)));
 builder.Services.AddHealthChecks();
 builder.Services.AddOpenApi();
 
@@ -20,6 +28,7 @@ app.UseStatusCodePages();
 
 app.MapCryptoStuffEndpoints();
 app.MapWatchlistEndpoints();
+app.MapPortfolioEndpoints();
 app.MapHealthChecks("/health");
 app.MapOpenApi();
 

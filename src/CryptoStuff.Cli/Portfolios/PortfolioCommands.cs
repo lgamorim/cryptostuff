@@ -112,7 +112,7 @@ public sealed class PortfolioCommands
             return _writer.WriteError(error);
         }
 
-        var result = await _service.DeleteAsync(id, cancellationToken);
+        var result = await _service.DeleteAsync(id, expectedVersion: null, cancellationToken);
         return _writer.WriteServiceResult(result, PortfolioOutputFormatter.FormatDeleted(id, parsed.JsonOutput));
     }
 

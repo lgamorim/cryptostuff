@@ -445,8 +445,8 @@ standard output.
 ## REST API
 
 `CryptoStuff.Api` is a minimal-API front end over the same five operations as
-`ICryptocurrencyService`, plus the watchlist operations of `IWatchlistService`.
-Run it with:
+`ICryptocurrencyService`, plus the watchlist operations of `IWatchlistService`
+and the portfolio operations of `IPortfolioService`. Run it with:
 
 ```bash
 dotnet run --project src/CryptoStuff.Api
@@ -467,6 +467,15 @@ dotnet run --project src/CryptoStuff.Api
 | `PUT /watchlists/{id}/coins/{coin}` | `id`, `coin` (path); no body | `/watchlists/1/coins/bitcoin` |
 | `DELETE /watchlists/{id}/coins/{coin}` | `id`, `coin` (path); no body | `/watchlists/1/coins/bitcoin` |
 | `GET /watchlists/{id}/prices` | `id` (path), `currency` | `/watchlists/1/prices?currency=usd` |
+| `GET /portfolios` | — | `/portfolios` |
+| `POST /portfolios` | JSON body `{ "name": "<name>", "vsCurrency": "<currency>", "costBasisMethod": "<method>" }` | `/portfolios` |
+| `GET /portfolios/{id}` | `id` (path) | `/portfolios/1` |
+| `PUT /portfolios/{id}` | `id` (path), JSON body `{ "name": "<name>", "costBasisMethod": "<method>" }`, optional `If-Match` | `/portfolios/1` |
+| `DELETE /portfolios/{id}` | `id` (path), optional `If-Match` | `/portfolios/1` |
+| `POST /portfolios/{id}/transactions` | `id` (path), JSON [transaction body](#portfolio-routes), optional `If-Match` | `/portfolios/1/transactions` |
+| `PUT /portfolios/{id}/transactions/{txId}` | `id`, `txId` (path), JSON [transaction body](#portfolio-routes), optional `If-Match` | `/portfolios/1/transactions/1` |
+| `DELETE /portfolios/{id}/transactions/{txId}` | `id`, `txId` (path), optional `If-Match` | `/portfolios/1/transactions/1` |
+| `GET /portfolios/{id}/valuation` | `id` (path) | `/portfolios/1/valuation` |
 
 Each route applies the applicable [input validation](#input-validation) rules
 above to its parameters before calling CoinGecko, and reports the first
@@ -476,8 +485,10 @@ contain a blank entry (e.g. `coins=bitcoin,,ethereum`), which is reported as
 such.
 
 A successful request returns `200` with the matching view record as JSON
-(`201` and `204` for the watchlist routes noted [below](#watchlist-routes)),
-serialized with ASP.NET Core's default (camelCase) naming — a validation
+(`201` and `204` for the [watchlist](#watchlist-routes) and
+[portfolio](#portfolio-routes) routes noted below), serialized with ASP.NET
+Core's default (camelCase) naming and enumerations as their lowercase tokens
+(`average-cost`, `buy`) — a validation
 failure returns `400` with an
 [RFC 7807](https://www.rfc-editor.org/rfc/rfc7807) validation-problem body,
 `{ "errors": { "<field>": ["<message>"] }, ... }`. A service
@@ -542,6 +553,98 @@ Failures use the [ProblemDetails](#rest-api) contract above:
 | `409` | The name is taken by another watchlist (ignoring case), or a concurrent change won the race |
 | `422` | Adding a coin that CoinGecko does not know; the `detail` names it |
 | `429`, `502`, `504` | CoinGecko failed while checking a coin to add or while pricing; pricing a watchlist that holds a coin CoinGecko no longer knows is a `502`, because the watchlist itself exists |
+
+### Portfolio routes
+
+The `/portfolios` routes drive the same portfolios as the CLI's
+[`portfolio` commands](#command-line-interface), stored in the shared
+[database](#data-storage), and accept exactly what the CLI accepts: each value
+goes through the same Core validators and token parsers. Ids are the positive
+whole numbers the database assigns.
+
+Create takes the name (at most 100 characters, unique ignoring case), the
+vs_currency every amount is in (fixed for good once created), and the
+[cost-basis method](#cost-basis), `average-cost` or `fifo`:
+
+```bash
+curl -i -X POST http://localhost:5200/portfolios -H 'Content-Type: application/json'   -d '{ "name": "main", "vsCurrency": "usd", "costBasisMethod": "fifo" }'
+```
+
+```
+HTTP/1.1 201 Created
+Location: /portfolios/1
+ETag: "1"
+
+{ "id": 1, "name": "main", "vsCurrency": "usd", "costBasisMethod": "fifo", "version": 1, "transactions": [] }
+```
+
+`PUT /portfolios/{id}` replaces everything a client can change about a
+portfolio, `{ "name": "<name>", "costBasisMethod": "<method>" }`; the
+vs_currency cannot change, and the transactions change only through their own
+routes. Recording or replacing a transaction takes this body:
+
+```json
+{ "kind": "buy", "coinId": "bitcoin", "quantity": 0.5, "unitPrice": 42000, "fee": 2.5, "occurredAt": "2024-01-31T14:30:00Z" }
+```
+
+- `kind` is `buy` or `sell`; `coinId` is a CoinGecko coin id, checked against
+  CoinGecko and stored lowercased.
+- `quantity` is a JSON number greater than zero; `unitPrice` and `fee` are
+  JSON numbers of zero or more, in the portfolio's vs_currency. `fee` is
+  optional and zero when omitted. A comma decimal or digit grouping (`"1,5"`)
+  is a `400`.
+- `occurredAt` is an ISO 8601 timestamp with `Z` or a `±hh:mm` offset, and
+  stored as UTC; it cannot be in the future.
+
+Every route that returns a portfolio returns it whole, as above, with its
+transactions in ledger order, each shaped like the body plus its `id` and
+`sequence`, so one can be edited and sent back to `PUT`.
+
+| Route | Success | Notes |
+|---|---|---|
+| `GET /portfolios` | `200` | An array of portfolios, ordered by id |
+| `POST /portfolios` | `201` with `Location` and `ETag` | The new, empty portfolio |
+| `GET /portfolios/{id}` | `200` with `ETag` | |
+| `PUT /portfolios/{id}` | `200` with `ETag` | The updated portfolio |
+| `DELETE /portfolios/{id}` | `204` | No body; its transactions go with it |
+| `POST /portfolios/{id}/transactions` | `201` with `Location` and `ETag` | The portfolio; `Location` names the new transaction, `/portfolios/{id}/transactions/{txId}` |
+| `PUT /portfolios/{id}/transactions/{txId}` | `200` with `ETag` | The portfolio; the transaction keeps its id and sequence |
+| `DELETE /portfolios/{id}/transactions/{txId}` | `200` with `ETag` | The portfolio, without the transaction |
+| `GET /portfolios/{id}/valuation` | `200` | A [valuation](#valuation): one CoinGecko call for the coins still held |
+
+#### `ETag` and `If-Match`
+
+A portfolio's version, which goes up by one with every change to it or its
+ledger, is its entity tag. Every response that carries a portfolio carries
+its version as a strong `ETag`, such as `ETag: "3"`, and every write
+(`PUT`, `DELETE`, and the three transaction routes) honours an optional
+`If-Match`:
+
+- Without `If-Match`, or with `If-Match: *`, the write is unconditional.
+- With the current tag, the write goes ahead and the response carries the new
+  one.
+- With any other tag, the write is refused with `412` and changes nothing; the
+  `detail` names the version the portfolio is at. `If-Match` compares
+  strongly, so a weak tag (`W/"3"`) never matches.
+- A value that is not one entity tag (`3` unquoted, or a list such as
+  `"3", "4"`) is a `400`.
+
+`If-Match` is checked against the version the write has just read. A
+concurrent write that saves between that read and this write's own save is
+still caught, by the database's version check, and returns `409`. The CLI
+does not use entity tags: one user drives it, and a lost race there is the
+same `Conflict` error.
+
+Failures use the [ProblemDetails](#rest-api) contract above:
+
+| Status | When |
+|---|---|
+| `400` | A missing body or malformed JSON; a blank or over-long `name`; a blank `vsCurrency` or `coinId`; a `costBasisMethod` or `kind` that is not one of its tokens; a missing or out-of-range `quantity`, `unitPrice` or `fee`; an `occurredAt` that is not an ISO 8601 timestamp with an offset; an `id` or `txId` of zero or below; an `If-Match` that is not one entity tag |
+| `404` | No portfolio has that `id`, the portfolio has no transaction with that `txId`, or either is not a whole number (no route matches it) |
+| `409` | The name is taken by another portfolio (ignoring case), or a concurrent write won the race |
+| `412` | `If-Match` does not match the portfolio's current `ETag` |
+| `422` | The ledger would oversell (the `detail` names the coin and date of the sell), the transaction is dated in the future, or CoinGecko does not know the coin or has no price for it in the portfolio's vs_currency |
+| `429`, `502`, `504` | CoinGecko failed while checking a transaction's coin or while valuing; valuing a portfolio that holds a coin CoinGecko no longer knows is a `502`, because the portfolio itself exists |
 
 ### Health, OpenAPI, and Scalar
 

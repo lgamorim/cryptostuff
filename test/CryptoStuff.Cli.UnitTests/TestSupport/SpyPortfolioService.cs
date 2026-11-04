@@ -108,7 +108,7 @@ internal sealed class SpyPortfolioService : IPortfolioService
         return Task.FromResult(UpdateResult);
     }
 
-    public Task<ServiceResult> DeleteAsync(int id, CancellationToken cancellationToken)
+    public Task<ServiceResult> DeleteAsync(int id, int? expectedVersion, CancellationToken cancellationToken)
     {
         Record(cancellationToken);
         CapturedId = id;

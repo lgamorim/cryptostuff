@@ -11,4 +11,11 @@ public sealed record ReplaceTransactionCommand
 
     /// <summary>The transaction's new details.</summary>
     public required TransactionDetails Transaction { get; init; }
+
+    /// <summary>
+    /// The version the caller last read, or null to write unconditionally.
+    /// When given and the stored portfolio is at another version, the write
+    /// is a <see cref="ServiceErrorCode.PreconditionFailed"/>.
+    /// </summary>
+    public int? ExpectedVersion { get; init; }
 }

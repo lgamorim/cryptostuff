@@ -5,7 +5,10 @@ namespace CryptoStuff.Core.Portfolios;
 /// transaction id is <see cref="ServiceErrorCode.NotFound"/>; a write that
 /// conflicts with stored state is <see cref="ServiceErrorCode.Conflict"/>; a
 /// write that breaks a ledger rule is <see cref="ServiceErrorCode.RuleViolated"/>
-/// with a detail explaining it. Names, currencies, tokens, and transaction
+/// with a detail explaining it. A write that carries the version its caller
+/// last read is a <see cref="ServiceErrorCode.PreconditionFailed"/> when the
+/// stored portfolio is at another one, checked before anything else but the
+/// portfolio's existence; without one it is unconditional. Names, currencies, tokens, and transaction
 /// details are expected to have passed the shared validators already: input
 /// that breaks the entities' rules throws <see cref="ArgumentException"/>.
 /// </summary>
@@ -31,8 +34,13 @@ public interface IPortfolioService
     /// </summary>
     Task<ServiceResult<PortfolioView>> UpdateAsync(UpdatePortfolioCommand command, CancellationToken cancellationToken);
 
-    /// <summary>Deletes a portfolio with all its transactions.</summary>
-    Task<ServiceResult> DeleteAsync(int id, CancellationToken cancellationToken);
+    /// <summary>
+    /// Deletes a portfolio with all its transactions. When
+    /// <paramref name="expectedVersion"/> is given and the stored portfolio is
+    /// at another version, it is a <see cref="ServiceErrorCode.PreconditionFailed"/>;
+    /// null deletes unconditionally.
+    /// </summary>
+    Task<ServiceResult> DeleteAsync(int id, int? expectedVersion, CancellationToken cancellationToken);
 
     /// <summary>
     /// Records a transaction in a portfolio. It is a

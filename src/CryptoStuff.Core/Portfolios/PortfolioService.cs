@@ -49,6 +49,11 @@ public sealed class PortfolioService(
             return NotFound(command.PortfolioId);
         }
 
+        if (StaleVersionDetail(portfolio, command.ExpectedVersion) is { } staleVersion)
+        {
+            return ServiceResult<PortfolioView>.Failure(ServiceErrorCode.PreconditionFailed, staleVersion);
+        }
+
         if (await repository.NameExistsAsync(command.Name, command.PortfolioId, cancellationToken))
         {
             return NameTaken(command.Name);
@@ -66,12 +71,17 @@ public sealed class PortfolioService(
     }
 
     /// <inheritdoc />
-    public async Task<ServiceResult> DeleteAsync(int id, CancellationToken cancellationToken)
+    public async Task<ServiceResult> DeleteAsync(int id, int? expectedVersion, CancellationToken cancellationToken)
     {
         var portfolio = await repository.FindAsync(id, cancellationToken);
         if (portfolio is null)
         {
             return ServiceResult.Failure(ServiceErrorCode.NotFound, NotFoundDetail(id));
+        }
+
+        if (StaleVersionDetail(portfolio, expectedVersion) is { } staleVersion)
+        {
+            return ServiceResult.Failure(ServiceErrorCode.PreconditionFailed, staleVersion);
         }
 
         repository.Remove(portfolio);
@@ -89,6 +99,11 @@ public sealed class PortfolioService(
             return NotFound(command.PortfolioId);
         }
 
+        if (StaleVersionDetail(portfolio, command.ExpectedVersion) is { } staleVersion)
+        {
+            return ServiceResult<PortfolioView>.Failure(ServiceErrorCode.PreconditionFailed, staleVersion);
+        }
+
         return await CheckTransactionAsync(command.Transaction, portfolio.VsCurrency, recordedCoinId: null, cancellationToken) is { } rejected
             ? rejected
             : await SaveLedgerChangeAsync(portfolio, portfolio.AddTransaction(command.Transaction), cancellationToken);
@@ -101,6 +116,11 @@ public sealed class PortfolioService(
         if (portfolio is null)
         {
             return NotFound(command.PortfolioId);
+        }
+
+        if (StaleVersionDetail(portfolio, command.ExpectedVersion) is { } staleVersion)
+        {
+            return ServiceResult<PortfolioView>.Failure(ServiceErrorCode.PreconditionFailed, staleVersion);
         }
 
         var transaction = portfolio.FindTransaction(command.TransactionId);
@@ -121,6 +141,11 @@ public sealed class PortfolioService(
         if (portfolio is null)
         {
             return NotFound(command.PortfolioId);
+        }
+
+        if (StaleVersionDetail(portfolio, command.ExpectedVersion) is { } staleVersion)
+        {
+            return ServiceResult<PortfolioView>.Failure(ServiceErrorCode.PreconditionFailed, staleVersion);
         }
 
         var transaction = portfolio.FindTransaction(command.TransactionId);
@@ -329,6 +354,16 @@ public sealed class PortfolioService(
             return false;
         }
     }
+
+    /// <summary>
+    /// Returns the detail to report when the caller expected
+    /// <paramref name="portfolio"/> at a version other than its own, or null
+    /// when it expected none or the one it is at.
+    /// </summary>
+    private static string? StaleVersionDetail(Portfolio portfolio, int? expectedVersion) =>
+        expectedVersion is { } expected && expected != portfolio.Version
+            ? $"Portfolio {portfolio.Id} is at version {portfolio.Version}, not the expected version {expected}; reload it and try again."
+            : null;
 
     private static ServiceResult<PortfolioView> Success(Portfolio portfolio) =>
         ServiceResult<PortfolioView>.Success(PortfolioMapper.ToView(portfolio));
