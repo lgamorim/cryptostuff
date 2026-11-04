@@ -1,5 +1,7 @@
+using CryptoStuff.Cli.Portfolios;
 using CryptoStuff.Cli.Watchlists;
 using CryptoStuff.Core;
+using CryptoStuff.Core.Portfolios;
 using CryptoStuff.Core.Watchlists;
 
 namespace CryptoStuff.Cli;
@@ -15,18 +17,26 @@ public sealed class CliRunner
     private readonly ICryptocurrencyService _service;
     private readonly CliResultWriter _writer;
     private readonly Func<IWatchlistService>? _watchlists;
+    private readonly Func<IPortfolioService>? _portfolios;
 
     /// <summary>
     /// Creates a runner that calls <paramref name="service"/> and writes to the given writers.
     /// <paramref name="watchlists"/> supplies the watchlist service on demand, so a
     /// command that never touches the database never resolves it; without it the
-    /// <c>watchlist</c> command family is not available.
+    /// <c>watchlist</c> command family is not available. <paramref name="portfolios"/>
+    /// does the same for the <c>portfolio</c> family.
     /// </summary>
-    public CliRunner(ICryptocurrencyService service, TextWriter output, TextWriter error, Func<IWatchlistService>? watchlists = null)
+    public CliRunner(
+        ICryptocurrencyService service,
+        TextWriter output,
+        TextWriter error,
+        Func<IWatchlistService>? watchlists = null,
+        Func<IPortfolioService>? portfolios = null)
     {
         _service = service;
         _writer = new CliResultWriter(output, error);
         _watchlists = watchlists;
+        _portfolios = portfolios;
     }
 
     /// <summary>
@@ -43,6 +53,9 @@ public sealed class CliRunner
 
             return parsed.Command switch
             {
+                // Only portfolio transactions take --fee; swallowing it silently
+                // elsewhere would hide a mistyped invocation.
+                _ when parsed.Fee is not null && parsed.Command != PortfolioCommands.Name => _writer.WriteUsage(),
                 "price" => await ExecutePriceAsync(parsed, cancellationToken),
                 "token" => await ExecuteTokenAsync(parsed, cancellationToken),
                 "history" => await ExecuteHistoryAsync(parsed, cancellationToken),
@@ -50,6 +63,8 @@ public sealed class CliRunner
                 "developer" => await ExecuteDeveloperAsync(parsed, cancellationToken),
                 WatchlistCommands.Name when _watchlists is not null =>
                     await new WatchlistCommands(_watchlists(), _writer).ExecuteAsync(parsed, cancellationToken),
+                PortfolioCommands.Name when _portfolios is not null =>
+                    await new PortfolioCommands(_portfolios(), _writer).ExecuteAsync(parsed, cancellationToken),
                 _ => _writer.WriteUsage(),
             };
         }

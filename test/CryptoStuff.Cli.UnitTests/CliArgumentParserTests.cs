@@ -67,4 +67,50 @@ public class CliArgumentParserTests
 
         result.JsonOutput.Should().BeFalse();
     }
+
+    [Fact]
+    public void Should_CaptureFeeValueAndRemoveBothTokens_When_FeeOptionGiven()
+    {
+        var result = CliArgumentParser.Parse(["portfolio", "tx", "add", "1", "buy", "bitcoin", "--fee", "0.5", "2", "100", "2024-01-31T14:30:00Z"]);
+
+        result.Fee.Should().Be("0.5");
+        result.Command.Should().Be("portfolio");
+        result.Arguments.Should().Equal("tx", "add", "1", "buy", "bitcoin", "2", "100", "2024-01-31T14:30:00Z");
+    }
+
+    [Fact]
+    public void Should_LeaveFeeOptionPositional_When_NoValueFollowsIt()
+    {
+        var result = CliArgumentParser.Parse(["portfolio", "tx", "add", "--fee"]);
+
+        result.Fee.Should().BeNull();
+        result.Arguments.Should().Equal("tx", "add", "--fee");
+    }
+
+    [Fact]
+    public void Should_KeepSecondFeeOptionPositional_When_FeeGivenTwice()
+    {
+        var result = CliArgumentParser.Parse(["portfolio", "tx", "add", "--fee", "1", "--fee", "2"]);
+
+        result.Fee.Should().Be("1");
+        result.Arguments.Should().Equal("tx", "add", "--fee", "2");
+    }
+
+    [Fact]
+    public void Should_TreatJsonAsFlagNotFeeValue_When_JsonFollowsFeeOption()
+    {
+        var result = CliArgumentParser.Parse(["portfolio", "tx", "add", "--fee", "--json"]);
+
+        result.Fee.Should().BeNull();
+        result.JsonOutput.Should().BeTrue();
+        result.Arguments.Should().Equal("tx", "add", "--fee");
+    }
+
+    [Fact]
+    public void Should_KeepNegativeFeeValueVerbatim_When_FeeIsNegative()
+    {
+        var result = CliArgumentParser.Parse(["portfolio", "tx", "add", "--fee", "-1"]);
+
+        result.Fee.Should().Be("-1");
+    }
 }

@@ -395,4 +395,24 @@ public class CliRunnerTests
             _error.ToString().Should().NotContain("unknown error", "{0} should have its own message", errorCode);
         }
     }
+
+    [Theory]
+    [InlineData("price", "bitcoin", "usd")]
+    [InlineData("token", "ethereum", "0xabc", "usd")]
+    [InlineData("history", "bitcoin", "usd", "7")]
+    [InlineData("coin", "bitcoin")]
+    [InlineData("developer", "bitcoin", "31-01-2024")]
+    public async Task Should_ReturnOneAndUsageWithoutCallingService_When_CommandIsGivenFeeOption(params string[] args)
+    {
+        var exitCode = await _runner.RunAsync([.. args, "--fee", "1"], CancellationToken.None);
+
+        exitCode.Should().Be(1);
+        _error.ToString().Should().Contain("Usage:");
+        _output.ToString().Should().BeEmpty();
+        _service.CapturedPricesQuery.Should().BeNull();
+        _service.CapturedTokenPricesQuery.Should().BeNull();
+        _service.CapturedMarketChartQuery.Should().BeNull();
+        _service.CapturedCoinQuery.Should().BeNull();
+        _service.CapturedDeveloperDataQuery.Should().BeNull();
+    }
 }

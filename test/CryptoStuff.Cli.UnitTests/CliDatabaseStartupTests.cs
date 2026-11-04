@@ -136,6 +136,7 @@ public class CliDatabaseStartupTests
     [InlineData(null)]
     [InlineData("bogus")]
     [InlineData("WATCHLIST")]
+    [InlineData("PORTFOLIO")]
     public async Task Should_NotInvokeMigration_When_CommandIsMissingOrUnrecognized(string? command)
     {
         var migrated = false;
@@ -184,5 +185,27 @@ public class CliDatabaseStartupTests
 
         exitCode.Should().Be(130);
         _error.ToString().Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData("watchlist", "list")]
+    [InlineData("portfolio", "list")]
+    [InlineData("portfolio", "tx", "delete", "1", "2")]
+    public async Task Should_InvokeMigrationOnce_When_CommandIsAStoredFeature(params string[] args)
+    {
+        var migrations = 0;
+
+        var exitCode = await CliDatabaseStartup.MigrateIfRequiredAsync(
+            CliArgumentParser.Parse(args),
+            _ =>
+            {
+                migrations++;
+                return Task.CompletedTask;
+            },
+            _error,
+            CancellationToken.None);
+
+        exitCode.Should().Be(0);
+        migrations.Should().Be(1);
     }
 }

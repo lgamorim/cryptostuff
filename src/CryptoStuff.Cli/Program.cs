@@ -1,6 +1,7 @@
 using CryptoStuff.Cli;
 using CryptoStuff.Composition;
 using CryptoStuff.Core;
+using CryptoStuff.Core.Portfolios;
 using CryptoStuff.Core.Watchlists;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -58,11 +59,12 @@ if (migrationExitCode != 0)
 await using var scope = provider.CreateAsyncScope();
 var cryptocurrencyService = scope.ServiceProvider.GetRequiredService<ICryptocurrencyService>();
 
-// Resolved on demand: building the watchlist service constructs the DbContext,
-// which a CoinGecko-only command must not pay for.
+// Resolved on demand: building a stored-feature service constructs the
+// DbContext, which a CoinGecko-only command must not pay for.
 var runner = new CliRunner(
     cryptocurrencyService,
     Console.Out,
     Console.Error,
-    () => scope.ServiceProvider.GetRequiredService<IWatchlistService>());
+    () => scope.ServiceProvider.GetRequiredService<IWatchlistService>(),
+    () => scope.ServiceProvider.GetRequiredService<IPortfolioService>());
 return await runner.RunAsync(args, cancellationTokenSource.Token);

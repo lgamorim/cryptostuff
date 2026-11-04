@@ -249,7 +249,7 @@ leaves the watchlists as they were.
 There is no setup step. Both hosts create the file and its folder when they
 are missing and apply any pending [migrations](#database-migrations) at start
 up — the API before it starts listening, the CLI before it runs a command that
-uses the database (the `watchlist` commands) — so whichever host runs first
+uses the database (the `watchlist` and `portfolio` commands) — so whichever host runs first
 after an upgrade brings the schema up to date. The CLI's CoinGecko-only
 commands (`price`, `token`, `history`, `coin`, `developer`) never open the
 database, so they skip migration and start as fast as they always did. If the
@@ -347,8 +347,8 @@ currency places rounds when it formats.
 ## Command-line interface
 
 `CryptoStuff.Cli` is a console front end over the same five operations as
-`ICryptocurrencyService`, plus the `watchlist` commands that manage stored
-watchlists. Run it with `dotnet run --project src/CryptoStuff.Cli
+`ICryptocurrencyService`, plus the `watchlist` and `portfolio` commands that
+manage stored watchlists and portfolios. Run it with `dotnet run --project src/CryptoStuff.Cli
 --`, followed by a command and its arguments:
 
 ```bash
@@ -370,6 +370,15 @@ dotnet run --project src/CryptoStuff.Cli -- price bitcoin usd
 | `watchlist add` | `<id> <coin>` — appends a coin id that CoinGecko knows; adding a coin already present changes nothing | `cryptostuff watchlist add 1 bitcoin` |
 | `watchlist remove` | `<id> <coin>` — removes a coin id; removing one that is absent changes nothing | `cryptostuff watchlist remove 1 bitcoin` |
 | `watchlist prices` | `<id> <currency>` — live prices of the watchlist's coins in a vs_currency | `cryptostuff watchlist prices 1 usd` |
+| `portfolio list` | — lists every portfolio, with its id, name, currency, method, and transaction count | `cryptostuff portfolio list` |
+| `portfolio create` | `<name> <currency> <method>` — a new, empty portfolio priced in a vs_currency that never changes; `<method>` is `average-cost` or `fifo`; the name is at most 100 characters and unique, ignoring case | `cryptostuff portfolio create main usd fifo` |
+| `portfolio show` | `<id>` — a portfolio's id, name, currency, method, version, and transactions | `cryptostuff portfolio show 1` |
+| `portfolio update` | `<id> <name> <method>` — replaces the portfolio's name and cost-basis method | `cryptostuff portfolio update 1 retirement average-cost` |
+| `portfolio delete` | `<id>` — deletes a portfolio with all its transactions | `cryptostuff portfolio delete 1` |
+| `portfolio value` | `<id>` — the portfolio's holdings at live prices; see [Valuation](#valuation) | `cryptostuff portfolio value 1` |
+| `portfolio tx add` | `<id> <kind> <coin> <qty> <price> <when> [--fee <fee>]` — records a buy or sell (`<kind>` is `buy` or `sell`); the coin must be one CoinGecko knows | `cryptostuff portfolio tx add 1 buy bitcoin 0.5 40000 2024-01-31T14:30:00Z --fee 12.5` |
+| `portfolio tx edit` | `<id> <txid> <kind> <coin> <qty> <price> <when> [--fee <fee>]` — replaces every detail of a transaction, so an omitted `--fee` becomes `0` | `cryptostuff portfolio tx edit 1 3 sell bitcoin 0.25 42000 2024-02-15T09:00:00Z` |
+| `portfolio tx delete` | `<id> <txid>` — deletes a transaction | `cryptostuff portfolio tx delete 1 3` |
 
 Each command applies the applicable [input validation](#input-validation)
 rules above to its arguments before calling CoinGecko, and reports the first
@@ -379,12 +388,38 @@ entry (e.g. `bitcoin,,ethereum`), which is reported as such.
 
 The `watchlist` commands take a watchlist's id as a positive whole number, which
 `create` prints and `list` shows; anything else is reported as a validation
-failure. They read and write the shared [database](#data-storage), so these are
-the only commands that open it (and migrate it first). A failure the service
+failure. They read and write the shared [database](#data-storage), so these
+and the `portfolio` commands are the only commands that open it (and migrate it
+first). A failure the service
 reports for them — an unknown id, a duplicate name, a coin CoinGecko doesn't
 know — is printed as `Error: …` with the service's own message, and exits `1`.
 `delete` prints `Deleted watchlist <id>.`; with `--json` it prints
 `{"Id": <id>, "Deleted": true}`, indented.
+
+The `portfolio` commands work the same way: ids are positive whole numbers
+(`create` prints the portfolio's, and its listing shows each transaction's),
+they open the shared [database](#data-storage), and a failure the service
+reports is printed as `Error: …` and exits `1`. The ledger rules reach you that
+way: selling more of a coin than the portfolio held at that moment, or editing
+or deleting a transaction a later sell depends on, is refused with a message
+naming the coin and date, and so is a transaction dated in the future. `show`,
+`create`, `update` and the three `tx` commands print the resulting portfolio;
+`delete` prints `Deleted portfolio <id>.`, or `{"Id": <id>, "Deleted": true}`
+with `--json`.
+
+Arguments stay positional; the one option besides `--json` is `--fee`, which
+only `tx add` and `tx edit` take (anywhere on the command line, followed by its
+value) and which defaults to `0`. Numbers are read the same way on every
+machine, whatever its regional settings: a plain decimal with a point for the
+decimal mark, and no thousands separators or exponent. `0.5` is accepted;
+`0,5`, `1,000` and `1e3` are rejected as `Quantity must be a number.` (or
+`Price`, or `Fee`) rather than read as something else. A quantity must be
+greater than zero, a price and a fee zero or greater. `<when>` is an ISO 8601
+timestamp with a UTC offset, `2024-01-31T14:30:00Z` or
+`2024-01-31T16:30:00+02:00`; a date alone, or a timestamp without an offset,
+is rejected, and the portfolio shows it back in UTC. The CLI runs one user's
+commands, so it sends no `ETag`; a write that loses a race with another is
+reported as a conflict.
 
 ### JSON output
 

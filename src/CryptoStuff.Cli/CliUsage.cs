@@ -22,8 +22,22 @@ public static class CliUsage
           watchlist add <id> <coin>                   Add a coin to a watchlist
           watchlist remove <id> <coin>                Remove a coin from a watchlist
           watchlist prices <id> <currency>            Live prices of a watchlist's coins
+          portfolio list                              List portfolios
+          portfolio create <name> <currency> <average-cost|fifo>
+                                                      Create an empty portfolio
+          portfolio show <id>                         Show a portfolio and its transactions
+          portfolio update <id> <name> <average-cost|fifo>
+                                                      Replace a portfolio's name and cost-basis method
+          portfolio delete <id>                       Delete a portfolio with its transactions
+          portfolio value <id>                        Value a portfolio at live prices
+          portfolio tx add <id> <buy|sell> <coin> <qty> <price> <when> [--fee <fee>]
+                                                      Record a transaction (when: ISO 8601, e.g. 2024-01-31T14:30:00Z)
+          portfolio tx edit <id> <txid> <buy|sell> <coin> <qty> <price> <when> [--fee <fee>]
+                                                      Replace a transaction
+          portfolio tx delete <id> <txid>             Delete a transaction
 
         Options:
-          --json    Output as JSON instead of human-readable text
+          --json         Output as JSON instead of human-readable text
+          --fee <fee>    Fee of a portfolio transaction, in the portfolio's currency (default 0)
         """;
 }
