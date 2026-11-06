@@ -33,6 +33,14 @@ public sealed class AlertRepository(CryptoStuffDbContext context) : IAlertReposi
     public void Remove(PriceAlert alert) => context.Alerts.Remove(alert);
 
     /// <inheritdoc />
+    /// <remarks>
+    /// Detaches the alert from the context. A save that failed on it leaves the
+    /// change tracked and pending, so without this every later save would fail
+    /// on the same stale alert.
+    /// </remarks>
+    public void Discard(PriceAlert alert) => context.Entry(alert).State = EntityState.Detached;
+
+    /// <inheritdoc />
     public async Task SaveChangesAsync(CancellationToken cancellationToken)
     {
         try

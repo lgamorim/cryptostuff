@@ -25,6 +25,15 @@ public interface IAlertRepository
     /// <summary>Marks an alert to be deleted on the next save.</summary>
     void Remove(PriceAlert alert);
 
+    /// <summary>
+    /// Forgets an alert returned by this repository and any change made to it
+    /// that has not been saved, so no later save writes it. A save that threw a
+    /// <see cref="PersistenceConflictException"/> leaves the change that
+    /// conflicted pending, so the next save would fail on it again; discarding
+    /// that alert lets the rest of the work be saved.
+    /// </summary>
+    void Discard(PriceAlert alert);
+
     /// <summary>Writes every pending change, assigning ids to new alerts.</summary>
     /// <exception cref="PersistenceConflictException">
     /// The write lost a race with a concurrent write, detected through

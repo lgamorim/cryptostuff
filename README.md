@@ -38,8 +38,8 @@ The AI workflow is the experiment.
 | Project | Purpose |
 |---|---|
 | `CryptoStuff.CoinGecko` | API client — sole owner of the wire format; covers `simple/price`, `simple/token_price/{platform}`, `coins/{id}/market_chart`, `coins/{id}`, and `coins/{id}/history` (the latter's `date` query parameter must be `dd-MM-yyyy`) |
-| `CryptoStuff.Core` | Queries (`CoinPriceQuery`, `TokenPriceQuery`, `CoinMarketChartQuery`, `CoinQuery`, `CoinDeveloperDataQuery`) and view records (`CoinPriceView`, `TokenPriceView`, `CoinMarketChartView`, `CoinView`, `CoinDeveloperDataView`), results, mapping, caching, validation; watchlists (`Watchlists/`): the `Watchlist` entity, `IWatchlistRepository`, `IWatchlistService` and `WatchlistService`, the `CreateWatchlistCommand`, `RenameWatchlistCommand` and `WatchlistCoinCommand` commands, the `WatchlistPriceQuery` query, the `WatchlistView` view, and `WatchlistMapper`; portfolios (`Portfolios/`): the `Portfolio` entity, whose ledger of `PortfolioTransaction` buys and sells never takes a holding below zero, `TransactionDetails`, the `CostBasisMethod` and `TransactionKind` enumerations with their token parsers (`CostBasisMethodParser`, `TransactionKindParser`), `IPortfolioRepository`, `IPortfolioService` and `PortfolioService`, the `CreatePortfolioCommand`, `UpdatePortfolioCommand`, `AddTransactionCommand`, `ReplaceTransactionCommand` and `RemoveTransactionCommand` commands, the `PortfolioView` and `PortfolioTransactionView` views, `PortfolioMapper`, and the [cost-basis](#cost-basis) strategy (`ICostBasisMethod`, implemented by `AverageCostMethod` and `FifoMethod`, chosen through `CostBasisMethods`, each reducing a coin's transactions to a `CoinPosition`), and [valuation](#valuation) (`IPortfolioService.GetValuationAsync`, returning a `PortfolioValuationView` of `CoinValuationView` rows and `PortfolioValuationTotals`); price alerts (`Alerts/`): the `PriceAlert` entity, an armed or triggered alert met inclusively by a price at or past its threshold, whose coin and vs_currency are fixed at creation, the `AlertDirection` and `AlertState` enumerations with their token parsers (`AlertDirectionParser`, `AlertStateParser`), `IAlertRepository`, `IAlertService` and `AlertService`, the `CreateAlertCommand` and `UpdateAlertCommand` commands, the `AlertView` view, and `AlertMapper`; and, shared by the stored features, `PersistenceConflictException` and the `NameValidator`, `PositiveIdValidator`, `PositiveDecimalValidator`, `NonNegativeDecimalValidator` and `TimestampFormatValidator` rules |
-| `CryptoStuff.Persistence` | EF Core over SQLite: `CryptoStuffDbContext`, the watchlist mapping (`WatchlistConfiguration`) and `WatchlistRepository`, the portfolio mapping (`PortfolioConfiguration`, which owns the portfolio's transactions) and `PortfolioRepository`, the alert mapping (`AlertConfiguration`) and `AlertRepository`, which also lists the armed alerts, translation of unique-constraint and concurrency failures (and, for portfolios, a portfolio deleted under a pending save) into `PersistenceConflictException`, `CryptoStuffDatabase.MigrateAsync` (creates a file database's directory, then migrates), the design-time context factory, and the checked-in migrations (`Migrations/`) |
+| `CryptoStuff.Core` | Queries (`CoinPriceQuery`, `TokenPriceQuery`, `CoinMarketChartQuery`, `CoinQuery`, `CoinDeveloperDataQuery`) and view records (`CoinPriceView`, `TokenPriceView`, `CoinMarketChartView`, `CoinView`, `CoinDeveloperDataView`), results, mapping, caching, validation; watchlists (`Watchlists/`): the `Watchlist` entity, `IWatchlistRepository`, `IWatchlistService` and `WatchlistService`, the `CreateWatchlistCommand`, `RenameWatchlistCommand` and `WatchlistCoinCommand` commands, the `WatchlistPriceQuery` query, the `WatchlistView` view, and `WatchlistMapper`; portfolios (`Portfolios/`): the `Portfolio` entity, whose ledger of `PortfolioTransaction` buys and sells never takes a holding below zero, `TransactionDetails`, the `CostBasisMethod` and `TransactionKind` enumerations with their token parsers (`CostBasisMethodParser`, `TransactionKindParser`), `IPortfolioRepository`, `IPortfolioService` and `PortfolioService`, the `CreatePortfolioCommand`, `UpdatePortfolioCommand`, `AddTransactionCommand`, `ReplaceTransactionCommand` and `RemoveTransactionCommand` commands, the `PortfolioView` and `PortfolioTransactionView` views, `PortfolioMapper`, and the [cost-basis](#cost-basis) strategy (`ICostBasisMethod`, implemented by `AverageCostMethod` and `FifoMethod`, chosen through `CostBasisMethods`, each reducing a coin's transactions to a `CoinPosition`), and [valuation](#valuation) (`IPortfolioService.GetValuationAsync`, returning a `PortfolioValuationView` of `CoinValuationView` rows and `PortfolioValuationTotals`); price alerts (`Alerts/`): the `PriceAlert` entity, an armed or triggered alert met inclusively by a price at or past its threshold, whose coin and vs_currency are fixed at creation, the `AlertDirection` and `AlertState` enumerations with their token parsers (`AlertDirectionParser`, `AlertStateParser`), `IAlertRepository`, `IAlertService` and `AlertService`, the `CreateAlertCommand` and `UpdateAlertCommand` commands, the `AlertView` view, `AlertMapper`, and [evaluation](#alert-evaluation) (`IAlertEvaluator` and `AlertEvaluator`, returning an `AlertEvaluationView` of `TriggeredAlertView` rows); and, shared by the stored features, `PersistenceConflictException` and the `NameValidator`, `PositiveIdValidator`, `PositiveDecimalValidator`, `NonNegativeDecimalValidator` and `TimestampFormatValidator` rules |
+| `CryptoStuff.Persistence` | EF Core over SQLite: `CryptoStuffDbContext`, the watchlist mapping (`WatchlistConfiguration`) and `WatchlistRepository`, the portfolio mapping (`PortfolioConfiguration`, which owns the portfolio's transactions) and `PortfolioRepository`, the alert mapping (`AlertConfiguration`) and `AlertRepository`, which also lists the armed alerts and can discard an alert whose save conflicted, translation of unique-constraint and concurrency failures (and, for portfolios, a portfolio deleted under a pending save) into `PersistenceConflictException`, `CryptoStuffDatabase.MigrateAsync` (creates a file database's directory, then migrates), the design-time context factory, and the checked-in migrations (`Migrations/`) |
 | `CryptoStuff.Composition` | Registration and HTTP pipeline wiring: `AddCryptoStuff`, `DatabaseConnectionString` (locates the shared database), and `MigrateCryptoStuffDatabaseAsync` (the start-up migration both hosts run) |
 | `CryptoStuff.Cli` | Console host |
 | `CryptoStuff.Api` | Minimal REST host |
@@ -180,7 +180,7 @@ above: the CoinGecko-backed `ICryptocurrencyService`, wrapped in the caching
 decorator, wired to the CoinGecko `HttpClient` and its rate-limit retry
 handler. It also registers the persistence services over the
 [shared database](#data-storage): the EF Core context, and the watchlist, portfolio and
-alert repositories and services. The clock the portfolio rules read is
+alert repositories and services, and the alert evaluator. The clock the portfolio and alert rules read is
 `TimeProvider.System`, registered as a singleton unless a `TimeProvider` is
 already registered, so a test can substitute its own first. Both hosts
 reference `CryptoStuff.Composition` to call it.
@@ -352,6 +352,57 @@ passes through with its code.
 
 Every figure is an exact `decimal`: Core rounds nothing, so a host that shows
 currency places rounds when it formats.
+
+## Alert evaluation
+
+An alert only changes state when something evaluates it. One evaluator,
+`IAlertEvaluator` in Core, does the work for every trigger, so the CLI and the
+API behave identically:
+
+| Trigger | When it runs |
+|---|---|
+| `alert check` (CLI) | Once, when the command is run. The CLI exits after each command, so it never evaluates in the background |
+| `POST /alerts/check` (API) | Once per request |
+| The API's background evaluation | Periodically for as long as the API host is running, every `Alerts:EvaluationSeconds` seconds (60 by default), each tick on its own |
+
+The two on-demand triggers are added by milestone `7.4` and the API's routes
+and periodic evaluation by milestone `7.5`; this milestone adds the evaluator
+they will all call. Nothing is notified outwardly: a triggered alert is
+recorded in its own state (`triggered`, with when and at what price) and
+reported by the evaluation that triggered it.
+
+One evaluation:
+
+1. Loads the armed alerts. With none, it makes no upstream call and reports
+   nothing triggered.
+2. Makes one price lookup (`GetPricesAsync`) for every coin and currency the
+   armed alerts need, however many alerts there are.
+3. Triggers each alert whose price meets it, inclusively: at or above the
+   threshold for `above`, at or below it for `below`. An alert whose price has
+   not reached it stays armed and is checked again by the next evaluation.
+   Every alert triggered by one evaluation carries the same time, read from
+   the clock once the prices arrived.
+4. Reports each alert it triggered: its id, coin, currency, direction,
+   threshold, the price that met it, and when.
+
+A triggered alert is not evaluated again until it is
+re-armed or edited.
+
+**When something goes wrong.** An upstream failure, such as `RateLimited` or
+`RequestTimedOut`, fails the evaluation with that code and leaves every alert
+armed, so the next evaluation simply tries again. If CoinGecko reports one of
+the coins as unknown, or its response lacks a price for a coin in an alert's
+currency, the evaluation fails with `UpstreamUnavailable` and a detail naming
+the coin, as a [valuation](#valuation) does, and triggers nothing: one alert
+that cannot be priced holds up the others until it is edited or deleted.
+
+**Two writers.** Evaluations can overlap another write to the same alert,
+such as another evaluation (the CLI beside the API, or a doubled tick), an
+edit, a re-arm, or a delete. Each trigger is saved on its own, and the alert's
+version turns a lost race into a skip rather than an overwrite: that alert is
+left as the other writer made it and is checked again by the next evaluation,
+while the rest of the evaluation's triggers are still saved. The skipped alert
+does not appear in the report.
 
 ## Command-line interface
 

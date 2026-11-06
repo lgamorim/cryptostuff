@@ -225,6 +225,30 @@ public sealed class AlertRepositoryTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Should_SaveLaterChanges_When_ConflictingAlertIsDiscarded()
+    {
+        var stale = await SaveNewAsync("bitcoin");
+        var other = await SaveNewAsync("ethereum");
+        await using var context = _database.CreateContext();
+        var repository = new AlertRepository(context);
+        var staleCopy = await FindSavedAsync(repository, stale.Id);
+        var otherCopy = await FindSavedAsync(repository, other.Id);
+        await UpdateFreshAsync(stale.Id, AlertDirection.Below, 50m);
+        staleCopy.Trigger(150m, new DateTimeOffset(2026, 1, 5, 12, 0, 0, TimeSpan.Zero)).IsValid.Should().BeTrue();
+        await SaveExpectingConflictAsync(repository);
+        repository.Discard(staleCopy);
+        otherCopy.Trigger(150m, new DateTimeOffset(2026, 1, 5, 12, 0, 0, TimeSpan.Zero)).IsValid.Should().BeTrue();
+
+        await repository.SaveChangesAsync(Token);
+
+        var foundStale = await FindFreshAsync(stale.Id);
+        foundStale.State.Should().Be(AlertState.Armed);
+        foundStale.Direction.Should().Be(AlertDirection.Below);
+        foundStale.Threshold.Should().Be(50m);
+        (await FindFreshAsync(other.Id)).State.Should().Be(AlertState.Triggered);
+    }
+
+    [Fact]
     public async Task Should_ThrowPersistenceConflictException_When_RemovingAlertChangedSinceItWasRead()
     {
         var saved = await SaveNewAsync("bitcoin");
@@ -395,6 +419,21 @@ public sealed class AlertRepositoryTests : IAsyncLifetime
         var alert = PriceAlert.Create(coinId, "usd", AlertDirection.Above, 100m);
         alert.Trigger(150m, new DateTimeOffset(2026, 1, 5, 12, 0, 0, TimeSpan.Zero)).IsValid.Should().BeTrue();
         return alert;
+    }
+
+    // Leaves the conflicting change pending in the repository's context, as a
+    // failed save does; the conflict itself is the starting point of the test
+    // using it, so it is absorbed here rather than asserted.
+    private static async Task SaveExpectingConflictAsync(AlertRepository repository)
+    {
+        try
+        {
+            await repository.SaveChangesAsync(Token);
+        }
+        catch (PersistenceConflictException)
+        {
+            // Expected: the starting state the caller wants.
+        }
     }
 
     private async Task ExecuteAsync(string sql)

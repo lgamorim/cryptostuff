@@ -322,6 +322,7 @@ public class CryptoStuffServiceCollectionExtensionsTests
     [InlineData(typeof(IPortfolioService))]
     [InlineData(typeof(IAlertRepository))]
     [InlineData(typeof(IAlertService))]
+    [InlineData(typeof(IAlertEvaluator))]
     public void Should_RegisterPersistenceServicesAsScoped_When_Called(Type serviceType)
     {
         var services = new ServiceCollection();
@@ -425,6 +426,19 @@ public class CryptoStuffServiceCollectionExtensionsTests
 
         service.Should().BeOfType<AlertService>();
         repository.Should().BeOfType<AlertRepository>();
+    }
+
+    [Fact]
+    public async Task Should_ResolveAlertEvaluatorOverSqliteRepository_When_ProviderValidatesScopesAndRegistrations()
+    {
+        var services = new ServiceCollection();
+        services.AddCryptoStuff(BuildPersistenceConfiguration());
+        await using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
+        await using var scope = provider.CreateAsyncScope();
+
+        var evaluator = scope.ServiceProvider.GetRequiredService<IAlertEvaluator>();
+
+        evaluator.Should().BeOfType<AlertEvaluator>();
     }
 
     [Fact]

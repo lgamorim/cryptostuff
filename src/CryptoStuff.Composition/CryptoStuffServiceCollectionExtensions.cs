@@ -43,8 +43,8 @@ public static class CryptoStuffServiceCollectionExtensions
     /// <see cref="CryptoStuffDbContext"/>,
     /// <see cref="IWatchlistRepository"/>, <see cref="IWatchlistService"/>,
     /// <see cref="IPortfolioRepository"/>, <see cref="IPortfolioService"/>,
-    /// <see cref="IAlertRepository"/>, and <see cref="IAlertService"/>
-    /// as scoped. The database is located by
+    /// <see cref="IAlertRepository"/>, <see cref="IAlertService"/>, and
+    /// <see cref="IAlertEvaluator"/> as scoped. The database is located by
     /// <see cref="DatabaseConnectionString.Resolve"/>; nothing here opens it.
     /// </summary>
     /// <exception cref="InvalidOperationException">
@@ -109,6 +109,7 @@ public static class CryptoStuffServiceCollectionExtensions
         services.AddScoped<IPortfolioService, PortfolioService>();
         services.AddScoped<IAlertRepository, AlertRepository>();
         services.AddScoped<IAlertService, AlertService>();
+        services.AddScoped<IAlertEvaluator, AlertEvaluator>();
 
         return services;
     }
