@@ -1,9 +1,11 @@
 using System.Reflection;
 using CryptoStuff.CoinGecko;
 using CryptoStuff.Core;
+using CryptoStuff.Core.Alerts;
 using CryptoStuff.Core.Portfolios;
 using CryptoStuff.Core.Watchlists;
 using CryptoStuff.Persistence;
+using CryptoStuff.Persistence.Alerts;
 using CryptoStuff.Persistence.Portfolios;
 using CryptoStuff.Persistence.Watchlists;
 using Microsoft.EntityFrameworkCore;
@@ -318,6 +320,8 @@ public class CryptoStuffServiceCollectionExtensionsTests
     [InlineData(typeof(IWatchlistService))]
     [InlineData(typeof(IPortfolioRepository))]
     [InlineData(typeof(IPortfolioService))]
+    [InlineData(typeof(IAlertRepository))]
+    [InlineData(typeof(IAlertService))]
     public void Should_RegisterPersistenceServicesAsScoped_When_Called(Type serviceType)
     {
         var services = new ServiceCollection();
@@ -406,6 +410,21 @@ public class CryptoStuffServiceCollectionExtensionsTests
 
         service.Should().BeOfType<PortfolioService>();
         repository.Should().BeOfType<PortfolioRepository>();
+    }
+
+    [Fact]
+    public async Task Should_ResolveAlertServiceOverSqliteRepository_When_ResolvedFromScope()
+    {
+        var services = new ServiceCollection();
+        services.AddCryptoStuff(BuildPersistenceConfiguration());
+        await using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
+        await using var scope = provider.CreateAsyncScope();
+
+        var service = scope.ServiceProvider.GetRequiredService<IAlertService>();
+        var repository = scope.ServiceProvider.GetRequiredService<IAlertRepository>();
+
+        service.Should().BeOfType<AlertService>();
+        repository.Should().BeOfType<AlertRepository>();
     }
 
     [Fact]

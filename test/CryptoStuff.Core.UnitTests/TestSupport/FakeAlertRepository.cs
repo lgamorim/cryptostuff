@@ -38,6 +38,12 @@ internal sealed class FakeAlertRepository : IAlertRepository
         return Task.FromResult<IReadOnlyList<PriceAlert>>(_saved.OrderBy(a => a.Id).ToArray());
     }
 
+    public Task<IReadOnlyList<PriceAlert>> ListArmedAsync(CancellationToken cancellationToken)
+    {
+        CapturedCancellationTokens.Add(cancellationToken);
+        return Task.FromResult<IReadOnlyList<PriceAlert>>(_saved.Where(a => a.State == AlertState.Armed).OrderBy(a => a.Id).ToArray());
+    }
+
     public Task<PriceAlert?> FindAsync(int id, CancellationToken cancellationToken)
     {
         CapturedCancellationTokens.Add(cancellationToken);

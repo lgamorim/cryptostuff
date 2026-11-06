@@ -154,7 +154,60 @@ public class CryptoStuffDatabaseTests
             watchlist.CoinIds.Should().Equal("bitcoin", "ethereum");
             (await verification.Portfolios.CountAsync(TestContext.Current.CancellationToken)).Should().Be(0);
             (await verification.Database.GetAppliedMigrationsAsync(TestContext.Current.CancellationToken))
-                .Should().HaveCount(2).And.Contain(name => name.EndsWith("AddPortfolios", StringComparison.Ordinal));
+                .Should().Contain(name => name.EndsWith("AddPortfolios", StringComparison.Ordinal));
+        }
+        finally
+        {
+            File.Delete(filePath);
+        }
+    }
+
+    [Fact]
+    public async Task Should_KeepWatchlistAndPortfolioData_When_UpgradingFromAddPortfoliosToAddPriceAlerts()
+    {
+        var filePath = Path.Combine(TestDatabase.Root, $"{Guid.NewGuid():N}.db");
+        try
+        {
+            await using (var before = TestDatabase.CreateContextFor(filePath))
+            {
+                // Stops at the schema the portfolio release shipped, which
+                // CryptoStuffDatabase offers no way to do.
+                Directory.CreateDirectory(TestDatabase.Root);
+                await before.GetService<IMigrator>().MigrateAsync("AddPortfolios", TestContext.Current.CancellationToken);
+                await before.Database.ExecuteSqlRawAsync(
+                    """INSERT INTO "Watchlists" ("Name", "CoinIds") VALUES ('Majors', '["bitcoin","ethereum"]')""",
+                    TestContext.Current.CancellationToken);
+                await before.Database.ExecuteSqlRawAsync(
+                    """INSERT INTO "Portfolios" ("Name", "VsCurrency", "CostBasisMethod", "Version") VALUES ('Long term', 'eur', 'fifo', 2)""",
+                    TestContext.Current.CancellationToken);
+                await before.Database.ExecuteSqlRawAsync(
+                    """
+                    INSERT INTO "PortfolioTransactions" ("Sequence", "Kind", "CoinId", "Quantity", "UnitPrice", "Fee", "OccurredAt", "PortfolioId")
+                    VALUES (1, 'buy', 'bitcoin', '0.00000001', '40000.25', '0', '2026-01-05 12:30:15', 1)
+                    """,
+                    TestContext.Current.CancellationToken);
+                (await before.Database.GetAppliedMigrationsAsync(TestContext.Current.CancellationToken))
+                    .Should().HaveCount(2).And.Contain(name => name.EndsWith("AddPortfolios", StringComparison.Ordinal));
+            }
+
+            await using (var upgrading = TestDatabase.CreateContextFor(filePath))
+            {
+                await CryptoStuffDatabase.MigrateAsync(upgrading, TestContext.Current.CancellationToken);
+            }
+
+            await using var verification = TestDatabase.CreateContextFor(filePath);
+            var watchlist = await verification.Watchlists.SingleAsync(TestContext.Current.CancellationToken);
+            watchlist.Name.Should().Be("Majors");
+            watchlist.CoinIds.Should().Equal("bitcoin", "ethereum");
+            var portfolio = await verification.Portfolios.SingleAsync(TestContext.Current.CancellationToken);
+            portfolio.Name.Should().Be("Long term");
+            portfolio.Version.Should().Be(2);
+            var transaction = portfolio.Transactions.Should().ContainSingle().Subject;
+            transaction.CoinId.Should().Be("bitcoin");
+            transaction.Quantity.Should().Be(0.00000001m);
+            (await verification.Alerts.CountAsync(TestContext.Current.CancellationToken)).Should().Be(0);
+            (await verification.Database.GetAppliedMigrationsAsync(TestContext.Current.CancellationToken))
+                .Should().HaveCount(3).And.Contain(name => name.EndsWith("AddPriceAlerts", StringComparison.Ordinal));
         }
         finally
         {

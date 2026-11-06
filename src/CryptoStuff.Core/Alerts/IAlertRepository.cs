@@ -10,6 +10,12 @@ public interface IAlertRepository
     /// <summary>Gets every alert, ordered by id.</summary>
     Task<IReadOnlyList<PriceAlert>> ListAsync(CancellationToken cancellationToken);
 
+    /// <summary>
+    /// Gets every alert that is <see cref="AlertState.Armed"/>, ordered by id: the
+    /// ones an evaluation has to check against current prices.
+    /// </summary>
+    Task<IReadOnlyList<PriceAlert>> ListArmedAsync(CancellationToken cancellationToken);
+
     /// <summary>Gets the alert with the given id, or null when none has it.</summary>
     Task<PriceAlert?> FindAsync(int id, CancellationToken cancellationToken);
 

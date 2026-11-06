@@ -17,6 +17,45 @@ namespace CryptoStuff.Persistence.Migrations
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.11");
 
+            modelBuilder.Entity("CryptoStuff.Core.Alerts.PriceAlert", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("CoinId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Direction")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<decimal>("Threshold")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("TriggeredAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<decimal?>("TriggeredPrice")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Version")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("VsCurrency")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("PriceAlerts", (string)null);
+                });
+
             modelBuilder.Entity("CryptoStuff.Core.Portfolios.Portfolio", b =>
                 {
                     b.Property<int>("Id")
