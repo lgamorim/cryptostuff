@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using CryptoStuff.Api;
+using CryptoStuff.Api.Alerts;
 using CryptoStuff.Api.Portfolios;
 using CryptoStuff.Api.Watchlists;
 using CryptoStuff.Composition;
@@ -10,6 +11,11 @@ using Scalar.AspNetCore;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddCryptoStuff(builder.Configuration);
+
+// Only this host evaluates alerts continuously; the CLI exits after each
+// command, so it evaluates only on `alert check`.
+builder.Services.AddAlertEvaluationSchedule(builder.Configuration);
+builder.Services.AddHostedService<AlertEvaluationBackgroundService>();
 builder.Services.AddProblemDetails();
 
 // Enumerations travel as the same lowercase tokens the CLI prints and Core's
@@ -34,6 +40,7 @@ app.UseStatusCodePages();
 app.MapCryptoStuffEndpoints();
 app.MapWatchlistEndpoints();
 app.MapPortfolioEndpoints();
+app.MapAlertEndpoints();
 app.MapHealthChecks("/health");
 app.MapOpenApi();
 

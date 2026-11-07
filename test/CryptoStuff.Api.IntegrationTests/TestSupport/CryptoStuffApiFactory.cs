@@ -1,3 +1,4 @@
+using CryptoStuff.Api.Alerts;
 using CryptoStuff.CoinGecko;
 using CryptoStuff.Persistence;
 using Microsoft.AspNetCore.Hosting;
@@ -8,6 +9,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Hosting;
 
 namespace CryptoStuff.Api.IntegrationTests.TestSupport;
 
@@ -17,7 +19,9 @@ namespace CryptoStuff.Api.IntegrationTests.TestSupport;
 /// at a file of this factory's own — every other registration from
 /// <c>AddCryptoStuff</c> (the service, the caching decorator, validation, the
 /// persistence services) and the API host's own routing and start-up migration
-/// run unmodified.
+/// run unmodified, except that <see cref="AlertEvaluationBackgroundService"/>
+/// is removed unless asked for, so no timer-driven evaluation runs beside a
+/// test's own requests.
 /// </summary>
 /// <remarks>
 /// The database file is GUID-named under <c>&lt;OS temp&gt;/cryptostuff-tests</c>,
@@ -30,8 +34,16 @@ internal sealed class CryptoStuffApiFactory : WebApplicationFactory<Program>
 {
     private static readonly string DatabaseRoot = Path.Combine(Path.GetTempPath(), "cryptostuff-tests");
 
-    public CryptoStuffApiFactory()
+    private readonly bool _hostAlertEvaluation;
+
+    /// <param name="hostAlertEvaluation">
+    /// Keeps the background alert evaluation registered, for tests about the
+    /// host's own registrations; every other test leaves it out.
+    /// </param>
+    public CryptoStuffApiFactory(bool hostAlertEvaluation = false)
     {
+        _hostAlertEvaluation = hostAlertEvaluation;
+
         // AddCryptoStuff reads CoinGecko:ApiKey synchronously in Program.cs,
         // before the host builds - i.e. before WebApplicationFactory's own
         // configuration-override hooks are guaranteed to have applied. A real
@@ -80,6 +92,14 @@ internal sealed class CryptoStuffApiFactory : WebApplicationFactory<Program>
             services.RemoveAll<IDbContextOptionsConfiguration<CryptoStuffDbContext>>();
             services.RemoveAll<DbContextOptions<CryptoStuffDbContext>>();
             services.AddDbContext<CryptoStuffDbContext>(options => options.UseSqlite(ConnectionString));
+
+            if (!_hostAlertEvaluation)
+            {
+                var backgroundEvaluation = services.Single(descriptor =>
+                    descriptor.ServiceType == typeof(IHostedService)
+                    && descriptor.ImplementationType == typeof(AlertEvaluationBackgroundService));
+                services.Remove(backgroundEvaluation);
+            }
         });
     }
 

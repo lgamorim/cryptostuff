@@ -7,9 +7,9 @@
 A cryptocurrency market data application: a core layer that owns the domain
 workflow, an isolated CoinGecko API client beneath it, and two presentation
 hosts above it — a console app and a minimal REST API. See
-[`ROADMAP.md`](ROADMAP.md) for the full plan of record; Phases 5–7, which add
-watchlists, a portfolio ledger, and price alerts stored in SQLite, are planned
-there but not yet built.
+[`ROADMAP.md`](ROADMAP.md) for the full plan of record. Both hosts also manage
+watchlists, a portfolio ledger, and price alerts, stored in a SQLite database
+they share, and the API evaluates the price alerts in the background.
 
 ## Why this exists
 
@@ -40,9 +40,9 @@ The AI workflow is the experiment.
 | `CryptoStuff.CoinGecko` | API client — sole owner of the wire format; covers `simple/price`, `simple/token_price/{platform}`, `coins/{id}/market_chart`, `coins/{id}`, and `coins/{id}/history` (the latter's `date` query parameter must be `dd-MM-yyyy`) |
 | `CryptoStuff.Core` | Queries (`CoinPriceQuery`, `TokenPriceQuery`, `CoinMarketChartQuery`, `CoinQuery`, `CoinDeveloperDataQuery`) and view records (`CoinPriceView`, `TokenPriceView`, `CoinMarketChartView`, `CoinView`, `CoinDeveloperDataView`), results, mapping, caching, validation; watchlists (`Watchlists/`): the `Watchlist` entity, `IWatchlistRepository`, `IWatchlistService` and `WatchlistService`, the `CreateWatchlistCommand`, `RenameWatchlistCommand` and `WatchlistCoinCommand` commands, the `WatchlistPriceQuery` query, the `WatchlistView` view, and `WatchlistMapper`; portfolios (`Portfolios/`): the `Portfolio` entity, whose ledger of `PortfolioTransaction` buys and sells never takes a holding below zero, `TransactionDetails`, the `CostBasisMethod` and `TransactionKind` enumerations with their token parsers (`CostBasisMethodParser`, `TransactionKindParser`), `IPortfolioRepository`, `IPortfolioService` and `PortfolioService`, the `CreatePortfolioCommand`, `UpdatePortfolioCommand`, `AddTransactionCommand`, `ReplaceTransactionCommand` and `RemoveTransactionCommand` commands, the `PortfolioView` and `PortfolioTransactionView` views, `PortfolioMapper`, and the [cost-basis](#cost-basis) strategy (`ICostBasisMethod`, implemented by `AverageCostMethod` and `FifoMethod`, chosen through `CostBasisMethods`, each reducing a coin's transactions to a `CoinPosition`), and [valuation](#valuation) (`IPortfolioService.GetValuationAsync`, returning a `PortfolioValuationView` of `CoinValuationView` rows and `PortfolioValuationTotals`); price alerts (`Alerts/`): the `PriceAlert` entity, an armed or triggered alert met inclusively by a price at or past its threshold, whose coin and vs_currency are fixed at creation, the `AlertDirection` and `AlertState` enumerations with their token parsers (`AlertDirectionParser`, `AlertStateParser`), `IAlertRepository`, `IAlertService` and `AlertService`, the `CreateAlertCommand` and `UpdateAlertCommand` commands, the `AlertView` view, `AlertMapper`, and [evaluation](#alert-evaluation) (`IAlertEvaluator` and `AlertEvaluator`, returning an `AlertEvaluationView` of `TriggeredAlertView` rows); and, shared by the stored features, `PersistenceConflictException` and the `NameValidator`, `PositiveIdValidator`, `PositiveDecimalValidator`, `NonNegativeDecimalValidator` and `TimestampFormatValidator` rules |
 | `CryptoStuff.Persistence` | EF Core over SQLite: `CryptoStuffDbContext`, the watchlist mapping (`WatchlistConfiguration`) and `WatchlistRepository`, the portfolio mapping (`PortfolioConfiguration`, which owns the portfolio's transactions) and `PortfolioRepository`, the alert mapping (`AlertConfiguration`) and `AlertRepository`, which also lists the armed alerts and can discard an alert whose save conflicted, translation of unique-constraint and concurrency failures (and, for portfolios, a portfolio deleted under a pending save) into `PersistenceConflictException`, `CryptoStuffDatabase.MigrateAsync` (creates a file database's directory, then migrates), the design-time context factory, and the checked-in migrations (`Migrations/`) |
-| `CryptoStuff.Composition` | Registration and HTTP pipeline wiring: `AddCryptoStuff`, `DatabaseConnectionString` (locates the shared database), and `MigrateCryptoStuffDatabaseAsync` (the start-up migration both hosts run) |
+| `CryptoStuff.Composition` | Registration and HTTP pipeline wiring: `AddCryptoStuff`, `AddAlertEvaluationSchedule` (the API's [background evaluation](#background-evaluation) interval, as an `AlertEvaluationSchedule`), `DatabaseConnectionString` (locates the shared database), and `MigrateCryptoStuffDatabaseAsync` (the start-up migration both hosts run) |
 | `CryptoStuff.Cli` | Console host |
-| `CryptoStuff.Api` | Minimal REST host |
+| `CryptoStuff.Api` | Minimal REST host, including `AlertEvaluationBackgroundService`, the [background alert evaluation](#background-evaluation) |
 | `CryptoStuff.CoinGecko.UnitTests` | Unit tests for `CryptoStuff.CoinGecko` |
 | `CryptoStuff.Core.UnitTests` | Unit tests for `CryptoStuff.Core` |
 | `CryptoStuff.Composition.UnitTests` | Unit tests for `CryptoStuff.Composition` |
@@ -365,11 +365,10 @@ API behave identically:
 | `POST /alerts/check` (API) | Once per request |
 | The API's background evaluation | Periodically for as long as the API host is running, every `Alerts:EvaluationSeconds` seconds (60 by default), each tick on its own |
 
-The CLI's `alert check` is added by milestone `7.4`, and the API's routes and
-periodic evaluation by milestone `7.5`; the evaluator they all call is already
-in place. Nothing is notified outwardly: a triggered alert is
+Nothing is notified outwardly: a triggered alert is
 recorded in its own state (`triggered`, with when and at what price) and
-reported by the evaluation that triggered it.
+reported by the evaluation that triggered it: printed by `alert check`,
+returned by `POST /alerts/check`, and logged by the background evaluation.
 
 One evaluation:
 
@@ -403,6 +402,48 @@ version turns a lost race into a skip rather than an overwrite: that alert is
 left as the other writer made it and is checked again by the next evaluation,
 while the rest of the evaluation's triggers are still saved. The skipped alert
 does not appear in the report.
+
+### Background evaluation
+
+While the API host runs, `AlertEvaluationBackgroundService` evaluates the armed
+alerts every `Alerts:EvaluationSeconds` seconds. The first evaluation runs one
+interval after start-up, not at start-up; each one gets a fresh scope, so a
+fresh database context, and one ends before the next can start. The
+interval is set in `appsettings.json`, or as the `Alerts__EvaluationSeconds`
+environment variable:
+
+```json
+{ "Alerts": { "EvaluationSeconds": 60 } }
+```
+
+It must be a whole number of seconds from `1` to `4294967` (about 49.7 days,
+the longest period .NET's `PeriodicTimer` accepts); absent or blank, it is
+`60`. Anything else stops the API at start-up, before it serves a request, with
+a message naming the value, such as:
+
+```
+Alerts:EvaluationSeconds is set to '1.5', which is not a whole number of seconds from 1 to 4294967. Set it to the number of seconds between background alert evaluations, or remove it to evaluate every 60 seconds.
+```
+
+Only the API reads the setting (through `AddAlertEvaluationSchedule`); the CLI
+never evaluates in the background, so a bad value there does not stop it.
+
+Each alert a background evaluation triggers is logged at `Information`, giving
+the alert's id, its coin, the price that met it, and its condition:
+
+```
+Alert 3 triggered: bitcoin is at 52000.5 usd, meeting its condition above 50000.
+```
+
+The alert itself is then `triggered` in the database, exactly as if
+`POST /alerts/check` had triggered it, so `GET /alerts/3` shows when and at
+what price. A tick that fails costs only that tick, and the next one tries
+again: an evaluation that returns an [error code](#error-codes) is logged at
+`Warning` with its code and detail
+(`Alert evaluation failed with RateLimited: …`), and one that throws, such as on a database error, is logged at `Error`
+with the exception. Either way every alert it had not triggered stays armed.
+Stopping the host cancels an evaluation in progress, and that is not logged as
+a failure.
 
 ## Command-line interface
 
@@ -540,8 +581,9 @@ standard output.
 ## REST API
 
 `CryptoStuff.Api` is a minimal-API front end over the same five operations as
-`ICryptocurrencyService`, plus the watchlist operations of `IWatchlistService`
-and the portfolio operations of `IPortfolioService`. Run it with:
+`ICryptocurrencyService`, plus the watchlist operations of `IWatchlistService`,
+the portfolio operations of `IPortfolioService`, and the alert operations of
+`IAlertService` and `IAlertEvaluator`. Run it with:
 
 ```bash
 dotnet run --project src/CryptoStuff.Api
@@ -571,6 +613,13 @@ dotnet run --project src/CryptoStuff.Api
 | `PUT /portfolios/{id}/transactions/{txId}` | `id`, `txId` (path), JSON [transaction body](#portfolio-routes), optional `If-Match` | `/portfolios/1/transactions/1` |
 | `DELETE /portfolios/{id}/transactions/{txId}` | `id`, `txId` (path), optional `If-Match` | `/portfolios/1/transactions/1` |
 | `GET /portfolios/{id}/valuation` | `id` (path) | `/portfolios/1/valuation` |
+| `GET /alerts` | — | `/alerts` |
+| `POST /alerts` | JSON body `{ "coinId": "<coin>", "vsCurrency": "<currency>", "direction": "<direction>", "threshold": <number> }` | `/alerts` |
+| `GET /alerts/{id}` | `id` (path) | `/alerts/1` |
+| `PUT /alerts/{id}` | `id` (path), JSON body `{ "direction": "<direction>", "threshold": <number> }` | `/alerts/1` |
+| `DELETE /alerts/{id}` | `id` (path) | `/alerts/1` |
+| `POST /alerts/{id}/rearm` | `id` (path); no body | `/alerts/1/rearm` |
+| `POST /alerts/check` | — no body | `/alerts/check` |
 
 Each route applies the applicable [input validation](#input-validation) rules
 above to its parameters before calling CoinGecko, and reports the first
@@ -580,10 +629,10 @@ contain a blank entry (e.g. `coins=bitcoin,,ethereum`), which is reported as
 such.
 
 A successful request returns `200` with the matching view record as JSON
-(`201` and `204` for the [watchlist](#watchlist-routes) and
-[portfolio](#portfolio-routes) routes noted below), serialized with ASP.NET
+(`201` and `204` for the [watchlist](#watchlist-routes),
+[portfolio](#portfolio-routes) and [alert](#alert-routes) routes noted below), serialized with ASP.NET
 Core's default (camelCase) naming and enumerations as their lowercase tokens
-(`average-cost`, `buy`) — a validation
+(`average-cost`, `buy`, `above`) — a validation
 failure returns `400` with an
 [RFC 7807](https://www.rfc-editor.org/rfc/rfc7807) validation-problem body,
 `{ "errors": { "<field>": ["<message>"] }, ... }`. A service
@@ -741,6 +790,85 @@ Failures use the [ProblemDetails](#rest-api) contract above:
 | `412` | `If-Match` does not match the portfolio's current `ETag` |
 | `422` | The ledger would oversell (the `detail` names the coin and date of the sell), the transaction is dated in the future, or CoinGecko does not know the coin or has no price for it in the portfolio's vs_currency |
 | `429`, `502`, `504` | CoinGecko failed while checking a transaction's coin or while valuing; valuing a portfolio that holds a coin CoinGecko no longer knows is a `502`, because the portfolio itself exists |
+
+### Alert routes
+
+The `/alerts` routes drive the same price alerts as the CLI's
+[`alert` commands](#command-line-interface), stored in the shared
+[database](#data-storage), and accept exactly what the CLI accepts: each value
+goes through the same Core validators and token parsers. Ids are the positive
+whole numbers the database assigns.
+
+Create takes the CoinGecko coin id and the vs_currency it is priced in (both
+checked against CoinGecko, stored lowercased, and fixed for good once created),
+the direction, `above` or `below`, and the threshold, a JSON number greater
+than zero in that vs_currency:
+
+```bash
+curl -i -X POST http://localhost:5200/alerts -H 'Content-Type: application/json'   -d '{ "coinId": "bitcoin", "vsCurrency": "usd", "direction": "above", "threshold": 50000 }'
+```
+
+```
+HTTP/1.1 201 Created
+Location: /alerts/1
+
+{ "id": 1, "coinId": "bitcoin", "vsCurrency": "usd", "direction": "above", "threshold": 50000, "state": "armed", "triggeredAt": null, "triggeredPrice": null, "version": 1 }
+```
+
+`PUT /alerts/{id}` replaces everything a client can change about an alert,
+`{ "direction": "<direction>", "threshold": <number> }`, and re-arms it whether
+or not it had triggered. A comma decimal or digit grouping (`"1,5"`) in a
+threshold is a `400`. Every route that returns an alert returns it in the shape
+above.
+
+`POST /alerts/check` runs one [evaluation](#alert-evaluation), as the
+[background evaluation](#background-evaluation) does, and returns the alerts it
+triggered, an empty `triggered` list when none did. A triggered alert looks
+like this, both in that report and when read back:
+
+```bash
+curl -s -X POST http://localhost:5200/alerts/check
+```
+
+```json
+{ "triggered": [ { "id": 1, "coinId": "bitcoin", "vsCurrency": "usd", "direction": "above", "threshold": 50000, "price": 52000.5, "triggeredAt": "2026-11-07T12:30:00Z" } ] }
+```
+
+```bash
+curl -s http://localhost:5200/alerts/1
+```
+
+```json
+{ "id": 1, "coinId": "bitcoin", "vsCurrency": "usd", "direction": "above", "threshold": 50000, "state": "triggered", "triggeredAt": "2026-11-07T12:30:00Z", "triggeredPrice": 52000.5, "version": 2 }
+```
+
+It stays `triggered`, and is not evaluated again, until `POST /alerts/{id}/rearm`
+moves it back to `armed` or a `PUT` replaces its condition.
+
+| Route | Success | Notes |
+|---|---|---|
+| `GET /alerts` | `200` | An array of alerts, ordered by id |
+| `POST /alerts` | `201` with a `Location` header | The new, armed alert |
+| `GET /alerts/{id}` | `200` | |
+| `PUT /alerts/{id}` | `200` | The updated, armed alert |
+| `DELETE /alerts/{id}` | `204` | No body |
+| `POST /alerts/{id}/rearm` | `200` | The armed alert |
+| `POST /alerts/check` | `200` | The alerts this evaluation triggered |
+
+Alerts carry a `version`, but no `ETag`: as with the CLI, every alert write is
+unconditional, and the entity-tag contract above belongs to the portfolio
+routes alone. A concurrent write that wins the race still turns this one into
+a `409`.
+
+Failures use the [ProblemDetails](#rest-api) contract above:
+
+| Status | When |
+|---|---|
+| `400` | A missing body or malformed JSON; a blank `coinId` or `vsCurrency`; a `direction` that is not `above` or `below`; a missing `threshold`, or one of zero or below; an `id` of zero or below |
+| `404` | No alert has that `id`, or the `id` is not a whole number (no route matches it) |
+| `409` | Re-arming an alert that is already armed (`Alert 1 is already armed.`), or a concurrent write won the race |
+| `422` | Creating an alert on a coin CoinGecko does not know, or that has no price in that vs_currency; the `detail` names it |
+| `429`, `502`, `504` | CoinGecko failed while checking a new alert's coin or while evaluating; evaluating an alert whose coin CoinGecko no longer knows is a `502`, as described under [Alert evaluation](#alert-evaluation) |
 
 ### Health, OpenAPI, and Scalar
 

@@ -93,6 +93,22 @@ internal static class RequestValidation
         return outcome.IsValid ? (days, null) : (0, ValidationProblem("days", outcome.ErrorMessage!));
     }
 
+    // JSON's number grammar already rules out what the CLI's invariant
+    // parsing rejects (grouping separators, a decimal comma); what is left to
+    // check is presence and the same range rule the CLI applies.
+    public static IResult? ValidateAmount(decimal? value, string fieldName, Func<decimal, string, ValidationOutcome> validate)
+    {
+        if (value is not { } amount)
+        {
+            return ValidationProblem(fieldName, $"{fieldName} is required.");
+        }
+
+        var outcome = validate(amount, fieldName);
+
+        // ValidationOutcome guarantees ErrorMessage is non-null when IsValid is false.
+        return outcome.IsValid ? null : ValidationProblem(fieldName, outcome.ErrorMessage!);
+    }
+
     public static IResult ValidationProblem(string fieldName, string message) =>
         TypedResults.ValidationProblem(new Dictionary<string, string[]> { [fieldName] = [message] });
 }

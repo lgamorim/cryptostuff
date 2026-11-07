@@ -32,6 +32,11 @@ public static class CryptoStuffServiceCollectionExtensions
 
     private const int MaxRetryAttempts = 3;
     private const int DefaultCacheSeconds = 300;
+    private const int DefaultEvaluationSeconds = 60;
+
+    // The longest whole-second period a PeriodicTimer accepts: its limit is
+    // 4294967294 ms, and a longer one would only fail once the host started.
+    private const int MaxEvaluationSeconds = 4294967;
 
     private static readonly TimeSpan ConstantBackoff = TimeSpan.FromSeconds(2);
     private static readonly TimeSpan HttpClientTimeout = TimeSpan.FromSeconds(30);
@@ -114,6 +119,23 @@ public static class CryptoStuffServiceCollectionExtensions
         return services;
     }
 
+    /// <summary>
+    /// Registers the singleton <see cref="AlertEvaluationSchedule"/> the API
+    /// host's background alert evaluation runs on: every
+    /// <c>Alerts:EvaluationSeconds</c> seconds, or every 60 when that is absent
+    /// or blank. Only the API host evaluates in the background, so only it
+    /// calls this; the CLI never reads the setting.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">
+    /// <c>Alerts:EvaluationSeconds</c> is present and non-blank but not a whole
+    /// number from 1 to 4294967, the longest period a <see cref="PeriodicTimer"/> accepts.
+    /// </exception>
+    public static IServiceCollection AddAlertEvaluationSchedule(this IServiceCollection services, IConfiguration configuration)
+    {
+        services.AddSingleton(new AlertEvaluationSchedule { Interval = ReadEvaluationInterval(configuration) });
+        return services;
+    }
+
     private static string ReadApiKey(IConfiguration configuration)
     {
         var apiKey = configuration["CoinGecko:ApiKey"];
@@ -127,6 +149,24 @@ public static class CryptoStuffServiceCollectionExtensions
         }
 
         return apiKey;
+    }
+
+    private static TimeSpan ReadEvaluationInterval(IConfiguration configuration)
+    {
+        var evaluationSeconds = configuration["Alerts:EvaluationSeconds"];
+        if (string.IsNullOrWhiteSpace(evaluationSeconds))
+        {
+            return TimeSpan.FromSeconds(DefaultEvaluationSeconds);
+        }
+
+        if (!int.TryParse(evaluationSeconds, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed) || parsed is <= 0 or > MaxEvaluationSeconds)
+        {
+            throw new InvalidOperationException(
+                $"Alerts:EvaluationSeconds is set to '{evaluationSeconds}', which is not a whole number of seconds from 1 to {MaxEvaluationSeconds}. "
+                + $"Set it to the number of seconds between background alert evaluations, or remove it to evaluate every {DefaultEvaluationSeconds} seconds.");
+        }
+
+        return TimeSpan.FromSeconds(parsed);
     }
 
     private static TimeSpan ReadCacheDuration(IConfiguration configuration)

@@ -35,13 +35,13 @@ internal static class PortfolioRequestValidation
             return (null, coinProblem);
         }
 
-        var quantityProblem = ValidateAmount(request?.Quantity, "quantity", PositiveDecimalValidator.Validate);
+        var quantityProblem = RequestValidation.ValidateAmount(request?.Quantity, "quantity", PositiveDecimalValidator.Validate);
         if (quantityProblem is not null)
         {
             return (null, quantityProblem);
         }
 
-        var unitPriceProblem = ValidateAmount(request?.UnitPrice, "unitPrice", NonNegativeDecimalValidator.Validate);
+        var unitPriceProblem = RequestValidation.ValidateAmount(request?.UnitPrice, "unitPrice", NonNegativeDecimalValidator.Validate);
         if (unitPriceProblem is not null)
         {
             return (null, unitPriceProblem);
@@ -55,7 +55,7 @@ internal static class PortfolioRequestValidation
         }
 
         var fee = request?.Fee ?? 0m;
-        var feeProblem = ValidateAmount(fee, "fee", NonNegativeDecimalValidator.Validate);
+        var feeProblem = RequestValidation.ValidateAmount(fee, "fee", NonNegativeDecimalValidator.Validate);
         if (feeProblem is not null)
         {
             return (null, feeProblem);
@@ -72,21 +72,5 @@ internal static class PortfolioRequestValidation
             OccurredAt = occurredAt,
         };
         return (details, null);
-    }
-
-    // JSON's number grammar already rules out what the CLI's invariant
-    // parsing rejects (grouping separators, a decimal comma); what is left to
-    // check is presence and the same range rule the CLI applies.
-    private static IResult? ValidateAmount(decimal? value, string fieldName, Func<decimal, string, ValidationOutcome> validate)
-    {
-        if (value is not { } amount)
-        {
-            return RequestValidation.ValidationProblem(fieldName, $"{fieldName} is required.");
-        }
-
-        var outcome = validate(amount, fieldName);
-
-        // ValidationOutcome guarantees ErrorMessage is non-null when IsValid is false.
-        return outcome.IsValid ? null : RequestValidation.ValidationProblem(fieldName, outcome.ErrorMessage!);
     }
 }

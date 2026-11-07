@@ -2,12 +2,12 @@
 
 Plan of record for building cryptostuff.
 
-**Status: Phases 1–4 complete; Phases 5–7 planned.** All fifteen milestones of
-Phases 1–4 have shipped, and their sections are kept as the historical plan of
-record — see git history (`git log --oneline`) for the commit that closed each
-milestone. Phases 5–7 add persistence-backed create, update, and delete
-operations; none of their milestones has started, so the two projects they
-introduce are not yet in the repo.
+**Status: complete.** All thirty-three milestones across all seven phases have
+shipped — the fifteen of Phases 1–4 and the eighteen of Phases 5–7, which added
+persistence-backed create, update, and delete operations — and every project
+in [Target structure](#target-structure) exists and is built out. The sections
+below are kept as the historical plan of record — see git history
+(`git log --oneline`) for the commit that closed each milestone.
 
 The deliverable is a cryptocurrency market data application: one core layer that
 owns the domain workflow, an isolated CoinGecko API client beneath it, and two
