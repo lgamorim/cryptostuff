@@ -37,6 +37,8 @@ public class WatchlistServiceTests
         var result = await service.ListAsync(CancellationToken.None);
 
         result.IsSuccess.Should().BeTrue();
+        // `!` is safe: the assertion above fails the test unless the result
+        // succeeded, and a successful result always carries its value.
         result.Value!.Select(w => w.Name).Should().Equal("Majors", "Memes");
         result.Value![1].CoinIds.Should().Equal("dogecoin");
     }
@@ -88,6 +90,8 @@ public class WatchlistServiceTests
         var result = await service.CreateAsync(new CreateWatchlistCommand { Name = "Majors" }, CancellationToken.None);
 
         result.IsSuccess.Should().BeTrue();
+        // `!` is safe: the assertion above fails the test unless the result
+        // succeeded, and a successful result always carries its value.
         result.Value!.Id.Should().BePositive();
         result.Value.Name.Should().Be("Majors");
         result.Value.CoinIds.Should().BeEmpty();
@@ -155,6 +159,8 @@ public class WatchlistServiceTests
         var result = await service.RenameAsync(new RenameWatchlistCommand { WatchlistId = watchlist.Id, Name = "Large caps" }, CancellationToken.None);
 
         result.IsSuccess.Should().BeTrue();
+        // `!` is safe: the assertion above fails the test unless the result
+        // succeeded, and a successful result always carries its value.
         result.Value!.Name.Should().Be("Large caps");
         result.Value.CoinIds.Should().Equal("bitcoin");
         watchlist.Name.Should().Be("Large caps");
@@ -170,6 +176,8 @@ public class WatchlistServiceTests
         var result = await service.RenameAsync(new RenameWatchlistCommand { WatchlistId = watchlist.Id, Name = "MAJORS" }, CancellationToken.None);
 
         result.IsSuccess.Should().BeTrue();
+        // `!` is safe: the assertion above fails the test unless the result
+        // succeeded, and a successful result always carries its value.
         result.Value!.Name.Should().Be("MAJORS");
     }
 
@@ -276,6 +284,8 @@ public class WatchlistServiceTests
         var result = await service.AddCoinAsync(new WatchlistCoinCommand { WatchlistId = watchlist.Id, CoinId = "bitcoin" }, CancellationToken.None);
 
         result.IsSuccess.Should().BeTrue();
+        // `!` is safe: the assertion above fails the test unless the result
+        // succeeded, and a successful result always carries its value.
         result.Value!.CoinIds.Should().Equal("ethereum", "bitcoin");
         upstream.CapturedCoinQuery.Should().Be(new CoinQuery { CoinId = "bitcoin" });
         repository.SaveChangesCallCount.Should().Be(1);
@@ -289,6 +299,8 @@ public class WatchlistServiceTests
 
         var result = await service.AddCoinAsync(new WatchlistCoinCommand { WatchlistId = watchlist.Id, CoinId = "BitCoin" }, CancellationToken.None);
 
+        // `!` is safe: adding a known coin asks CoinGecko about it and then succeeds, and a null
+        // query or value would fail the test with a NullReferenceException anyway.
         upstream.CapturedCoinQuery!.CoinId.Should().Be("bitcoin");
         result.Value!.CoinIds.Should().Equal("bitcoin");
     }
@@ -333,6 +345,8 @@ public class WatchlistServiceTests
         var result = await service.AddCoinAsync(new WatchlistCoinCommand { WatchlistId = watchlist.Id, CoinId = "BITCOIN" }, CancellationToken.None);
 
         result.IsSuccess.Should().BeTrue();
+        // `!` is safe: the assertion above fails the test unless the result
+        // succeeded, and a successful result always carries its value.
         result.Value!.CoinIds.Should().Equal("bitcoin", "ethereum");
         upstream.GetCoinCallCount.Should().Be(0);
         repository.SaveChangesCallCount.Should().Be(0);
@@ -386,6 +400,8 @@ public class WatchlistServiceTests
         var result = await service.RemoveCoinAsync(new WatchlistCoinCommand { WatchlistId = watchlist.Id, CoinId = "Ethereum" }, CancellationToken.None);
 
         result.IsSuccess.Should().BeTrue();
+        // `!` is safe: the assertion above fails the test unless the result
+        // succeeded, and a successful result always carries its value.
         result.Value!.CoinIds.Should().Equal("bitcoin", "solana");
         repository.SaveChangesCallCount.Should().Be(1);
         upstream.GetCoinCallCount.Should().Be(0);
@@ -400,6 +416,8 @@ public class WatchlistServiceTests
         var result = await service.RemoveCoinAsync(new WatchlistCoinCommand { WatchlistId = watchlist.Id, CoinId = "ethereum" }, CancellationToken.None);
 
         result.IsSuccess.Should().BeTrue();
+        // `!` is safe: the assertion above fails the test unless the result
+        // succeeded, and a successful result always carries its value.
         result.Value!.CoinIds.Should().Equal("bitcoin");
         repository.SaveChangesCallCount.Should().Be(0);
     }
@@ -461,6 +479,7 @@ public class WatchlistServiceTests
 
         result.IsSuccess.Should().BeTrue();
         result.Value.Should().Be(prices);
+        // `!` is safe: the service asked CoinGecko for these prices, so the query was captured.
         upstream.CapturedPricesQuery!.CoinIds.Should().Equal("ethereum", "bitcoin");
         upstream.CapturedPricesQuery.VsCurrencies.Should().Equal("eur");
     }
@@ -474,6 +493,8 @@ public class WatchlistServiceTests
         var result = await service.GetPricesAsync(new WatchlistPriceQuery { WatchlistId = watchlist.Id, VsCurrency = "usd" }, CancellationToken.None);
 
         result.IsSuccess.Should().BeTrue();
+        // `!` is safe: the assertion above fails the test unless the result
+        // succeeded, and a successful result always carries its value.
         result.Value!.Coins.Should().BeEmpty();
         upstream.GetPricesCallCount.Should().Be(0);
     }

@@ -25,6 +25,7 @@ public class WatchlistApiTests
         var response = await client.PostAsJsonAsync("/watchlists", new { name = "majors" }, cancellationToken);
 
         response.StatusCode.Should().Be(HttpStatusCode.Created);
+        // `!` is safe: a 201 always carries Location.
         response.Headers.Location!.OriginalString.Should().Be("/watchlists/1");
         var body = await response.Content.ReadFromJsonAsync<WatchlistView>(JsonOptions, cancellationToken);
         body.Should().BeEquivalentTo(new WatchlistView { Id = 1, Name = "majors", CoinIds = [] });
@@ -75,6 +76,7 @@ public class WatchlistApiTests
         var body = await response.Content.ReadFromJsonAsync<WatchlistView>(JsonOptions, cancellationToken);
         body.Should().BeEquivalentTo(new WatchlistView { Id = created.Id, Name = "blue-chips", CoinIds = [] });
         var reloaded = await client.GetFromJsonAsync<WatchlistView>($"/watchlists/{created.Id}", JsonOptions, cancellationToken);
+        // `!` is safe: the GET above succeeds, or GetFromJsonAsync throws.
         reloaded!.Name.Should().Be("blue-chips");
     }
 
@@ -165,6 +167,7 @@ public class WatchlistApiTests
         var response = await client.PostAsync("/watchlists", content, cancellationToken);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        // `!` is safe: a 400 always carries its validation-problem body, so ContentType is set.
         response.Content.Headers.ContentType!.MediaType.Should().Be("application/problem+json");
     }
 
@@ -182,6 +185,7 @@ public class WatchlistApiTests
 
         response.StatusCode.Should().Be(HttpStatusCode.Conflict);
         var problem = await response.Content.ReadFromJsonAsync<ProblemDetails>(JsonOptions, cancellationToken);
+        // `!` is safe: every error response carries a ProblemDetails body.
         problem!.Title.Should().Be("Conflict");
         problem.Detail.Should().Be($"A watchlist named '{duplicate}' already exists.");
     }
@@ -211,6 +215,7 @@ public class WatchlistApiTests
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
         var problem = await response.Content.ReadFromJsonAsync<ProblemDetails>(JsonOptions, cancellationToken);
+        // `!` is safe: every error response carries a ProblemDetails body.
         problem!.Title.Should().Be("Not Found");
         problem.Detail.Should().Contain("99");
     }
@@ -246,8 +251,10 @@ public class WatchlistApiTests
 
         response.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
         var problem = await response.Content.ReadFromJsonAsync<ProblemDetails>(JsonOptions, cancellationToken);
+        // `!` is safe: every error response carries a ProblemDetails body.
         problem!.Detail.Should().Be("CoinGecko has no coin with id 'not-a-coin'.");
         var reloaded = await client.GetFromJsonAsync<WatchlistView>($"/watchlists/{created.Id}", JsonOptions, cancellationToken);
+        // `!` is safe: the GET above succeeds, or GetFromJsonAsync throws.
         reloaded!.CoinIds.Should().BeEmpty();
     }
 
@@ -267,6 +274,7 @@ public class WatchlistApiTests
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         var problem = await response.Content.ReadFromJsonAsync<HttpValidationProblemDetails>(JsonOptions, cancellationToken);
+        // `!` is safe: a 400 always carries a validation-problem body.
         problem!.Errors.Should().ContainKey("name").WhoseValue.Should().Equal("name is required.");
     }
 
@@ -282,6 +290,7 @@ public class WatchlistApiTests
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         var reloaded = await client.GetFromJsonAsync<WatchlistView>($"/watchlists/{created.Id}", JsonOptions, cancellationToken);
+        // `!` is safe: the GET above succeeds, or GetFromJsonAsync throws.
         reloaded!.Name.Should().Be("majors");
     }
 
@@ -297,6 +306,7 @@ public class WatchlistApiTests
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         var problem = await response.Content.ReadFromJsonAsync<HttpValidationProblemDetails>(JsonOptions, cancellationToken);
+        // `!` is safe: a 400 always carries a validation-problem body.
         problem!.Errors.Should().ContainKey("currency").WhoseValue.Should().Equal("currency is required.");
     }
 
@@ -311,6 +321,7 @@ public class WatchlistApiTests
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         var problem = await response.Content.ReadFromJsonAsync<HttpValidationProblemDetails>(JsonOptions, cancellationToken);
+        // `!` is safe: a 400 always carries a validation-problem body.
         problem!.Errors.Should().ContainKey("id");
     }
 
@@ -405,6 +416,7 @@ public class WatchlistApiTests
     {
         var response = await client.PostAsJsonAsync("/watchlists", new { name }, cancellationToken);
         response.StatusCode.Should().Be(HttpStatusCode.Created);
+        // `!` is safe: a 201 always carries the created watchlist.
         return (await response.Content.ReadFromJsonAsync<WatchlistView>(JsonOptions, cancellationToken))!;
     }
 

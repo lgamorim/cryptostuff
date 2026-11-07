@@ -188,6 +188,7 @@ public class PortfolioValuationTests
 
         upstream.GetPricesCallCount.Should().Be(1);
         upstream.CapturedPricesQuery.Should().NotBeNull();
+        // `!` is safe: the assertion above fails the test unless the query was captured.
         upstream.CapturedPricesQuery!.CoinIds.Should().Equal("bitcoin", "dogecoin");
         upstream.CapturedPricesQuery.VsCurrencies.Should().Equal("eur");
     }

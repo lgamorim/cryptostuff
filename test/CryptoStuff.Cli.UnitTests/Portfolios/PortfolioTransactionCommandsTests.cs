@@ -70,6 +70,7 @@ public class PortfolioTransactionCommandsTests
 
         // Assert
         exitCode.Should().Be(0);
+        // `!` is safe: a command that exits 0 has reached the service, so the command was captured.
         _portfolios.CapturedAddTransactionCommand!.Transaction.Fee.Should().Be(decimal.Parse(rawFee, CultureInfo.InvariantCulture));
         _portfolios.CapturedAddTransactionCommand.Transaction.Kind.Should().Be(TransactionKind.Sell);
     }
@@ -84,6 +85,7 @@ public class PortfolioTransactionCommandsTests
 
         // Assert
         exitCode.Should().Be(0);
+        // `!` is safe: a command that exits 0 has reached the service, so the command was captured.
         _portfolios.CapturedAddTransactionCommand!.Transaction.Fee.Should().Be(2m);
     }
 
@@ -188,6 +190,7 @@ public class PortfolioTransactionCommandsTests
 
         // Assert
         exitCode.Should().Be(0);
+        // `!` is safe: a command that exits 0 has reached the service, so the command was captured.
         _portfolios.CapturedAddTransactionCommand!.Transaction.UnitPrice.Should().Be(0m);
     }
 
@@ -221,6 +224,7 @@ public class PortfolioTransactionCommandsTests
 
         // Assert
         exitCode.Should().Be(0);
+        // `!` is safe: a command that exits 0 has reached the service, so the command was captured.
         _portfolios.CapturedAddTransactionCommand!.Transaction.Kind.Should().Be(expected);
     }
 
@@ -261,6 +265,7 @@ public class PortfolioTransactionCommandsTests
 
         // Assert
         exitCode.Should().Be(0);
+        // `!` is safe: a command that exits 0 has reached the service, so the command was captured.
         _portfolios.CapturedAddTransactionCommand!.Transaction.OccurredAt.Should().Be(Moment);
         _portfolios.CapturedAddTransactionCommand.Transaction.OccurredAt.Offset.Should().Be(TimeSpan.Zero);
     }
@@ -315,6 +320,7 @@ public class PortfolioTransactionCommandsTests
 
             // Assert
             exitCode.Should().Be(0);
+            // `!` is safe: a command that exits 0 has reached the service, so the command was captured.
             var transaction = _portfolios.CapturedAddTransactionCommand!.Transaction;
             transaction.Quantity.Should().Be(0.5m);
             transaction.UnitPrice.Should().Be(40000.25m);
@@ -445,6 +451,7 @@ public class PortfolioTransactionCommandsTests
 
         // Assert
         exitCode.Should().Be(0);
+        // `!` is safe: a command that exits 0 has reached the service, so the command was captured.
         _portfolios.CapturedReplaceTransactionCommand!.Transaction.Fee.Should().Be(0m);
     }
 
@@ -517,6 +524,7 @@ public class PortfolioTransactionCommandsTests
         // Assert
         exitCode.Should().Be(0);
         _output.ToString().Should().Contain("\"Name\": \"main\"").And.Contain("\"CostBasisMethod\": \"average-cost\"");
+        // `!` is safe: a command that exits 0 has reached the service, so the command was captured.
         _portfolios.CapturedAddTransactionCommand!.Transaction.Fee.Should().Be(1m);
     }
 }

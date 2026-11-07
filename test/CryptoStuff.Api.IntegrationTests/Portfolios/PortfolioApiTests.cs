@@ -34,6 +34,7 @@ public class PortfolioApiTests
             "/portfolios", new { name = "main", vsCurrency = "USD", costBasisMethod = "average-cost" }, cancellationToken);
 
         response.StatusCode.Should().Be(HttpStatusCode.Created);
+        // `!` is safe: a 201 always carries Location, and every portfolio response carries its ETag.
         response.Headers.Location!.OriginalString.Should().Be("/portfolios/1");
         response.Headers.ETag!.Tag.Should().Be("\"1\"");
         response.Headers.ETag.IsWeak.Should().BeFalse();
@@ -69,6 +70,7 @@ public class PortfolioApiTests
         var response = await client.GetAsync($"/portfolios/{created.Id}", cancellationToken);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
+        // `!` is safe: a portfolio response always carries its ETag.
         response.Headers.ETag!.Tag.Should().Be("\"1\"");
         var body = await response.Content.ReadFromJsonAsync<PortfolioView>(JsonOptions, cancellationToken);
         body.Should().BeEquivalentTo(created);
@@ -102,6 +104,7 @@ public class PortfolioApiTests
             $"/portfolios/{created.Id}", new { name = "long term", costBasisMethod = "average-cost" }, cancellationToken);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
+        // `!` is safe: a portfolio response always carries its ETag.
         response.Headers.ETag!.Tag.Should().Be("\"2\"");
         var reloaded = await client.GetFromJsonAsync<PortfolioView>($"/portfolios/{created.Id}", JsonOptions, cancellationToken);
         reloaded.Should().BeEquivalentTo(created with { Name = "long term", CostBasisMethod = CostBasisMethod.AverageCost, Version = 2 });
@@ -156,6 +159,7 @@ public class PortfolioApiTests
             cancellationToken);
 
         response.StatusCode.Should().Be(HttpStatusCode.Created);
+        // `!` is safe: a 201 always carries Location, and every portfolio response carries its ETag.
         response.Headers.Location!.OriginalString.Should().Be($"/portfolios/{created.Id}/transactions/1");
         response.Headers.ETag!.Tag.Should().Be("\"2\"");
         var body = await response.Content.ReadFromJsonAsync<PortfolioView>(JsonOptions, cancellationToken);
@@ -190,6 +194,7 @@ public class PortfolioApiTests
             $"/portfolios/{created.Id}/transactions/{transactionId}", Buy(2m, "2024-02-01T00:00:00Z"), cancellationToken);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
+        // `!` is safe: a portfolio response always carries its ETag.
         response.Headers.ETag!.Tag.Should().Be("\"3\"");
         var reloaded = await client.GetFromJsonAsync<PortfolioView>($"/portfolios/{created.Id}", JsonOptions, cancellationToken);
 
@@ -213,6 +218,7 @@ public class PortfolioApiTests
         var response = await client.DeleteAsync($"/portfolios/{created.Id}/transactions/{added.Transactions.Single().Id}", cancellationToken);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
+        // `!` is safe: a portfolio response always carries its ETag.
         response.Headers.ETag!.Tag.Should().Be("\"3\"");
         var body = await response.Content.ReadFromJsonAsync<PortfolioView>(JsonOptions, cancellationToken);
 
@@ -326,6 +332,7 @@ public class PortfolioApiTests
         var response = await client.SendAsync(request, cancellationToken);
 
         response.StatusCode.Should().Be(HttpStatusCode.Created);
+        // `!` is safe: a portfolio response always carries its ETag.
         response.Headers.ETag!.Tag.Should().Be("\"2\"");
         response.Headers.ETag.Should().NotBe(read.Headers.ETag);
     }
@@ -467,6 +474,7 @@ public class PortfolioApiTests
         var response = await client.SendAsync(request, cancellationToken);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        // `!` is safe: a 400 always carries its validation-problem body, so ContentType is set.
         response.Content.Headers.ContentType!.MediaType.Should().Be("application/problem+json");
     }
 
