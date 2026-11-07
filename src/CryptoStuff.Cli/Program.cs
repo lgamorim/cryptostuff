@@ -1,6 +1,7 @@
 using CryptoStuff.Cli;
 using CryptoStuff.Composition;
 using CryptoStuff.Core;
+using CryptoStuff.Core.Alerts;
 using CryptoStuff.Core.Portfolios;
 using CryptoStuff.Core.Watchlists;
 using Microsoft.Extensions.Configuration;
@@ -66,5 +67,7 @@ var runner = new CliRunner(
     Console.Out,
     Console.Error,
     () => scope.ServiceProvider.GetRequiredService<IWatchlistService>(),
-    () => scope.ServiceProvider.GetRequiredService<IPortfolioService>());
+    () => scope.ServiceProvider.GetRequiredService<IPortfolioService>(),
+    () => scope.ServiceProvider.GetRequiredService<IAlertService>(),
+    () => scope.ServiceProvider.GetRequiredService<IAlertEvaluator>());
 return await runner.RunAsync(args, cancellationTokenSource.Token);

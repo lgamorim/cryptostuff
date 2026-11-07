@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using CryptoStuff.Core;
 using CryptoStuff.Core.Portfolios;
 
 namespace CryptoStuff.Cli.Portfolios;
@@ -8,11 +9,11 @@ namespace CryptoStuff.Cli.Portfolios;
 /// <summary>Renders portfolio views as either indented JSON or human-readable text.</summary>
 public static class PortfolioOutputFormatter
 {
-    // Enums travel as the kebab-case tokens Core parses, in JSON as in text.
+    // Enums travel as the kebab-case tokens Core parses, in JSON as in text; timestamps as UTC ending in Z.
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         WriteIndented = true,
-        Converters = { new JsonStringEnumConverter(JsonNamingPolicy.KebabCaseLower) },
+        Converters = { new JsonStringEnumConverter(JsonNamingPolicy.KebabCaseLower), new UtcTimestampJsonConverter() },
     };
 
     /// <summary>Formats one portfolio and its transactions.</summary>
@@ -84,11 +85,8 @@ public static class PortfolioOutputFormatter
         $"market value {Invariant(marketValue)}, cost basis {Invariant(costBasis)}, unrealized {Invariant(unrealized)}, realized {Invariant(realized)}";
 
     private static string FormatTransaction(PortfolioTransactionView transaction, string vsCurrency) =>
-        $"  {transaction.Id}: {FormatTimestamp(transaction.OccurredAt)} {Token(transaction.Kind)} {Invariant(transaction.Quantity)} {transaction.CoinId}"
+        $"  {transaction.Id}: {UtcTimestamp.Format(transaction.OccurredAt)} {Token(transaction.Kind)} {Invariant(transaction.Quantity)} {transaction.CoinId}"
         + $" @ {Invariant(transaction.UnitPrice)} {vsCurrency}, fee {Invariant(transaction.Fee)} {vsCurrency}";
-
-    private static string FormatTimestamp(DateTimeOffset timestamp) =>
-        timestamp.ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss.FFFFFFF'Z'", CultureInfo.InvariantCulture);
 
     private static string Invariant(decimal value) => value.ToString(CultureInfo.InvariantCulture);
 

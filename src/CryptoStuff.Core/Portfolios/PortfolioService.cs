@@ -306,7 +306,7 @@ public sealed class PortfolioService(
                 ServiceErrorCode.RuleViolated,
                 string.Create(
                     CultureInfo.InvariantCulture,
-                    $"A transaction cannot be dated in the future: {transaction.OccurredAt.UtcDateTime:yyyy-MM-dd'T'HH:mm:ss.FFFFFFF'Z'} is after the current time, {now.UtcDateTime:yyyy-MM-dd'T'HH:mm:ss.FFFFFFF'Z'}."))
+                    $"A transaction cannot be dated in the future: {UtcTimestamp.Format(transaction.OccurredAt)} is after the current time, {UtcTimestamp.Format(now)}."))
             : null;
     }
 

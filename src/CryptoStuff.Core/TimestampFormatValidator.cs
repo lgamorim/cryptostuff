@@ -8,7 +8,7 @@ public static class TimestampFormatValidator
     // Optional fractional seconds (up to the 7 digits DateTimeOffset holds),
     // then a literal Z or a numeric offset. The general K specifier is avoided
     // because it also matches no offset at all.
-    private static readonly string[] Formats = ["yyyy-MM-dd'T'HH:mm:ss.FFFFFFF'Z'", "yyyy-MM-dd'T'HH:mm:ss.FFFFFFFzzz"];
+    private static readonly string[] Formats = [UtcTimestamp.Pattern, "yyyy-MM-dd'T'HH:mm:ss.FFFFFFFzzz"];
 
     /// <summary>
     /// Checks that <paramref name="value"/> parses under <see cref="TryParse"/>.

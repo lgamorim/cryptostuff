@@ -1,5 +1,6 @@
 using System.Globalization;
 using CryptoStuff.Core;
+using CryptoStuff.Core.Alerts;
 using CryptoStuff.Core.Portfolios;
 
 namespace CryptoStuff.Cli;
@@ -150,6 +151,15 @@ public static class CliArgumentReader
         errorMessage = outcome.ErrorMessage ?? string.Empty;
         kind = default;
         return outcome.IsValid && TransactionKindParser.TryParse(raw, out kind);
+    }
+
+    /// <summary>Parses <paramref name="raw"/> as the <c>above</c> or <c>below</c> token of an alert direction.</summary>
+    public static bool TryParseAlertDirection(string raw, string fieldName, out AlertDirection direction, out string errorMessage)
+    {
+        var outcome = AlertDirectionParser.Validate(raw, fieldName);
+        errorMessage = outcome.ErrorMessage ?? string.Empty;
+        direction = default;
+        return outcome.IsValid && AlertDirectionParser.TryParse(raw, out direction);
     }
 
     /// <summary>Parses <paramref name="raw"/> as an ISO 8601 timestamp with a UTC offset, returned as the same instant in UTC.</summary>

@@ -1,3 +1,4 @@
+using CryptoStuff.Cli.Alerts;
 using CryptoStuff.Cli.Portfolios;
 using CryptoStuff.Cli.Watchlists;
 using Microsoft.Data.Sqlite;
@@ -16,7 +17,7 @@ public static class CliDatabaseStartup
     /// command uses it.
     /// </summary>
     public static Task<int> MigrateIfRequiredAsync(CliArguments parsed, Func<CancellationToken, Task> migrate, TextWriter error, CancellationToken cancellationToken) =>
-        parsed.Command is WatchlistCommands.Name or PortfolioCommands.Name
+        parsed.Command is WatchlistCommands.Name or PortfolioCommands.Name or AlertCommands.Name
             ? MigrateAsync(migrate, error, cancellationToken)
             : Task.FromResult(0);
 

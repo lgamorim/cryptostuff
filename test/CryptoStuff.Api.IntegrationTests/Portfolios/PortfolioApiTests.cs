@@ -124,6 +124,24 @@ public class PortfolioApiTests
     }
 
     [Fact]
+    public async Task Should_WriteTransactionTimeAsUtcEndingInZ_When_TransactionAddedWithAnotherOffset()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        using var factory = new CryptoStuffApiFactory();
+        factory.CoinGeckoClient.PriceMatrixResponse = BitcoinPricedInUsd();
+        using var client = factory.CreateClient();
+        var created = await CreateAsync(client, "main", cancellationToken);
+
+        var response = await client.PostAsJsonAsync(
+            $"/portfolios/{created.Id}/transactions",
+            new { kind = "buy", coinId = "bitcoin", quantity = 0.5m, unitPrice = 42000m, occurredAt = "2024-01-31T16:30:00+02:00" },
+            cancellationToken);
+
+        var body = await response.Content.ReadFromJsonAsync<JsonElement>(cancellationToken);
+        body.GetProperty("transactions")[0].GetProperty("occurredAt").GetString().Should().Be("2024-01-31T14:30:00Z");
+    }
+
+    [Fact]
     public async Task Should_ReturnCreatedAtTransactionWithPortfolioAndNewETag_When_TransactionAdded()
     {
         var cancellationToken = TestContext.Current.CancellationToken;

@@ -1,6 +1,8 @@
+using CryptoStuff.Cli.Alerts;
 using CryptoStuff.Cli.Portfolios;
 using CryptoStuff.Cli.Watchlists;
 using CryptoStuff.Core;
+using CryptoStuff.Core.Alerts;
 using CryptoStuff.Core.Portfolios;
 using CryptoStuff.Core.Watchlists;
 
@@ -18,25 +20,32 @@ public sealed class CliRunner
     private readonly CliResultWriter _writer;
     private readonly Func<IWatchlistService>? _watchlists;
     private readonly Func<IPortfolioService>? _portfolios;
+    private readonly Func<IAlertService>? _alerts;
+    private readonly Func<IAlertEvaluator>? _alertEvaluator;
 
     /// <summary>
     /// Creates a runner that calls <paramref name="service"/> and writes to the given writers.
     /// <paramref name="watchlists"/> supplies the watchlist service on demand, so a
     /// command that never touches the database never resolves it; without it the
     /// <c>watchlist</c> command family is not available. <paramref name="portfolios"/>
-    /// does the same for the <c>portfolio</c> family.
+    /// does the same for the <c>portfolio</c> family, and <paramref name="alerts"/> and
+    /// <paramref name="alertEvaluator"/> for the <c>alert</c> family, which needs both.
     /// </summary>
     public CliRunner(
         ICryptocurrencyService service,
         TextWriter output,
         TextWriter error,
         Func<IWatchlistService>? watchlists = null,
-        Func<IPortfolioService>? portfolios = null)
+        Func<IPortfolioService>? portfolios = null,
+        Func<IAlertService>? alerts = null,
+        Func<IAlertEvaluator>? alertEvaluator = null)
     {
         _service = service;
         _writer = new CliResultWriter(output, error);
         _watchlists = watchlists;
         _portfolios = portfolios;
+        _alerts = alerts;
+        _alertEvaluator = alertEvaluator;
     }
 
     /// <summary>
@@ -65,6 +74,8 @@ public sealed class CliRunner
                     await new WatchlistCommands(_watchlists(), _writer).ExecuteAsync(parsed, cancellationToken),
                 PortfolioCommands.Name when _portfolios is not null =>
                     await new PortfolioCommands(_portfolios(), _writer).ExecuteAsync(parsed, cancellationToken),
+                AlertCommands.Name when _alerts is not null && _alertEvaluator is not null =>
+                    await new AlertCommands(_alerts(), _alertEvaluator(), _writer).ExecuteAsync(parsed, cancellationToken),
                 _ => _writer.WriteUsage(),
             };
         }

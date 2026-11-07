@@ -35,6 +35,14 @@ public static class CliUsage
           portfolio tx edit <id> <txid> <buy|sell> <coin> <qty> <price> <when> [--fee <fee>]
                                                       Replace a transaction
           portfolio tx delete <id> <txid>             Delete a transaction
+          alert list                                  List price alerts
+          alert create <coin> <currency> <above|below> <threshold>
+                                                      Create an armed alert (threshold: a number above zero)
+          alert show <id>                             Show an alert
+          alert update <id> <above|below> <threshold> Replace an alert's direction and threshold, which re-arms it
+          alert delete <id>                           Delete an alert
+          alert rearm <id>                            Re-arm a triggered alert
+          alert check                                 Evaluate the armed alerts once and print what triggered
 
         Options:
           --json         Output as JSON instead of human-readable text

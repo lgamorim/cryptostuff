@@ -137,6 +137,7 @@ public class CliDatabaseStartupTests
     [InlineData("bogus")]
     [InlineData("WATCHLIST")]
     [InlineData("PORTFOLIO")]
+    [InlineData("ALERT")]
     public async Task Should_NotInvokeMigration_When_CommandIsMissingOrUnrecognized(string? command)
     {
         var migrated = false;
@@ -191,6 +192,8 @@ public class CliDatabaseStartupTests
     [InlineData("watchlist", "list")]
     [InlineData("portfolio", "list")]
     [InlineData("portfolio", "tx", "delete", "1", "2")]
+    [InlineData("alert", "list")]
+    [InlineData("alert", "check")]
     public async Task Should_InvokeMigrationOnce_When_CommandIsAStoredFeature(params string[] args)
     {
         var migrations = 0;

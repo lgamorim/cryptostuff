@@ -258,7 +258,7 @@ table and leaves the watchlists and portfolios as they were.
 There is no setup step. Both hosts create the file and its folder when they
 are missing and apply any pending [migrations](#database-migrations) at start
 up — the API before it starts listening, the CLI before it runs a command that
-uses the database (the `watchlist` and `portfolio` commands) — so whichever host runs first
+uses the database (the `watchlist`, `portfolio` and `alert` commands) — so whichever host runs first
 after an upgrade brings the schema up to date. The CLI's CoinGecko-only
 commands (`price`, `token`, `history`, `coin`, `developer`) never open the
 database, so they skip migration and start as fast as they always did. If the
@@ -365,9 +365,9 @@ API behave identically:
 | `POST /alerts/check` (API) | Once per request |
 | The API's background evaluation | Periodically for as long as the API host is running, every `Alerts:EvaluationSeconds` seconds (60 by default), each tick on its own |
 
-The two on-demand triggers are added by milestone `7.4` and the API's routes
-and periodic evaluation by milestone `7.5`; this milestone adds the evaluator
-they will all call. Nothing is notified outwardly: a triggered alert is
+The CLI's `alert check` is added by milestone `7.4`, and the API's routes and
+periodic evaluation by milestone `7.5`; the evaluator they all call is already
+in place. Nothing is notified outwardly: a triggered alert is
 recorded in its own state (`triggered`, with when and at what price) and
 reported by the evaluation that triggered it.
 
@@ -407,8 +407,8 @@ does not appear in the report.
 ## Command-line interface
 
 `CryptoStuff.Cli` is a console front end over the same five operations as
-`ICryptocurrencyService`, plus the `watchlist` and `portfolio` commands that
-manage stored watchlists and portfolios. Run it with `dotnet run --project src/CryptoStuff.Cli
+`ICryptocurrencyService`, plus the `watchlist`, `portfolio` and `alert` commands
+that manage stored watchlists, portfolios and price alerts. Run it with `dotnet run --project src/CryptoStuff.Cli
 --`, followed by a command and its arguments:
 
 ```bash
@@ -439,6 +439,13 @@ dotnet run --project src/CryptoStuff.Cli -- price bitcoin usd
 | `portfolio tx add` | `<id> <kind> <coin> <qty> <price> <when> [--fee <fee>]` — records a buy or sell (`<kind>` is `buy` or `sell`); the coin must be one CoinGecko knows | `cryptostuff portfolio tx add 1 buy bitcoin 0.5 40000 2024-01-31T14:30:00Z --fee 12.5` |
 | `portfolio tx edit` | `<id> <txid> <kind> <coin> <qty> <price> <when> [--fee <fee>]` — replaces every detail of a transaction, so an omitted `--fee` becomes `0` | `cryptostuff portfolio tx edit 1 3 sell bitcoin 0.25 42000 2024-02-15T09:00:00Z` |
 | `portfolio tx delete` | `<id> <txid>` — deletes a transaction | `cryptostuff portfolio tx delete 1 3` |
+| `alert list` | — lists every alert, with its id, coin, direction, threshold, currency, and state | `cryptostuff alert list` |
+| `alert create` | `<coin> <currency> <direction> <threshold>` — a new, armed alert on a coin priced in a vs_currency, both of which CoinGecko must know and neither of which changes later; `<direction>` is `above` or `below`; the threshold is greater than zero | `cryptostuff alert create bitcoin usd above 50000` |
+| `alert show` | `<id>` — an alert's id, coin, currency, direction, threshold, state, when and at what price it triggered, and version | `cryptostuff alert show 1` |
+| `alert update` | `<id> <direction> <threshold>` — replaces the alert's direction and threshold, which re-arms it whether or not it had triggered | `cryptostuff alert update 1 below 42000` |
+| `alert delete` | `<id>` — deletes an alert | `cryptostuff alert delete 1` |
+| `alert rearm` | `<id>` — moves a triggered alert back to armed; re-arming an armed alert is refused | `cryptostuff alert rearm 1` |
+| `alert check` | — evaluates the armed alerts once and prints the ones that triggered, or `Nothing triggered.`; see [Alert evaluation](#alert-evaluation) | `cryptostuff alert check` |
 
 Each command applies the applicable [input validation](#input-validation)
 rules above to its arguments before calling CoinGecko, and reports the first
@@ -449,8 +456,8 @@ entry (e.g. `bitcoin,,ethereum`), which is reported as such.
 The `watchlist` commands take a watchlist's id as a positive whole number, which
 `create` prints and `list` shows; anything else is reported as a validation
 failure. They read and write the shared [database](#data-storage), so these
-and the `portfolio` commands are the only commands that open it (and migrate it
-first). A failure the service
+and the `portfolio` and `alert` commands are the only commands that open it (and
+migrate it first). A failure the service
 reports for them — an unknown id, a duplicate name, a coin CoinGecko doesn't
 know — is printed as `Error: …` with the service's own message, and exits `1`.
 `delete` prints `Deleted watchlist <id>.`; with `--json` it prints
@@ -466,6 +473,29 @@ naming the coin and date, and so is a transaction dated in the future. `show`,
 `create`, `update` and the three `tx` commands print the resulting portfolio;
 `delete` prints `Deleted portfolio <id>.`, or `{"Id": <id>, "Deleted": true}`
 with `--json`.
+
+The `alert` commands follow the same rules. `create`, `show`, `update` and
+`rearm` print the resulting alert, text or `--json` alike, with `above` and
+`below`, `armed` and `triggered` written as the same lowercase tokens Core
+parses; `delete` prints `Deleted alert <id>.`, or `{"Id": <id>, "Deleted": true}`
+with `--json`. A threshold is read like a portfolio quantity (a point for the
+decimal mark, no thousands separators or exponent: `0.5` is accepted, `0,5` and
+`1e3` are not) and must be greater than zero, so `0` and `-1` are rejected as
+`Threshold must be greater than zero.` Core refuses a coin or currency
+CoinGecko doesn't know, or that has no price in that currency, when the alert is
+created, and refuses to re-arm an alert that is already armed, in a message
+printed as `Error: …` with exit `1`. Like every stored write, the CLI sends no
+expected version, so an `update`, `delete` or `rearm` never fails on a stale one.
+
+`alert check` runs the one [evaluator](#alert-evaluation) once and prints each
+alert it triggered, one line apiece (id, coin, direction, threshold, the price
+that met it, and when), under a count; with `--json` it prints
+`{"Triggered": [...]}`, an empty list when nothing triggered. Nothing triggering
+is not a failure, so `check` exits `0` then; only an evaluation that failed, such
+as a CoinGecko error, exits `1` and changes no alert. **Continuous evaluation
+happens only in the API host**: the CLI exits after each command, so alerts are
+evaluated only when `alert check` is run, while a running API host evaluates them
+on its own timer.
 
 Arguments stay positional; the one option besides `--json` is `--fee`, which
 only `tx add` and `tx edit` take (anywhere on the command line, followed by its
@@ -489,6 +519,11 @@ default human-readable text:
 ```bash
 dotnet run --project src/CryptoStuff.Cli -- coin bitcoin --json
 ```
+
+Timestamps are written the same way in the text and the JSON, and in the API's
+responses and error messages: UTC, ending in `Z`, such as `2024-01-31T14:30:00Z`,
+with a fraction of a second only when there is one. A timestamp you send with
+another offset comes back converted to UTC.
 
 ### Exit codes
 
@@ -654,7 +689,8 @@ routes. Recording or replacing a transaction takes this body:
   optional and zero when omitted. A comma decimal or digit grouping (`"1,5"`)
   is a `400`.
 - `occurredAt` is an ISO 8601 timestamp with `Z` or a `±hh:mm` offset, and
-  stored as UTC; it cannot be in the future.
+  stored as UTC; it cannot be in the future. Responses always give it as UTC
+  ending in `Z`: `2024-01-31T16:30:00+02:00` is returned as `2024-01-31T14:30:00Z`.
 
 Every route that returns a portfolio returns it whole, as above, with its
 transactions in ledger order, each shaped like the body plus its `id` and

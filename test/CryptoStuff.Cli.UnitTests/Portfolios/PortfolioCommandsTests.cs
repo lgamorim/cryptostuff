@@ -198,7 +198,7 @@ public class PortfolioCommandsTests
             .Contain("\"CostBasisMethod\": \"fifo\"")
             .And.Contain("\"Kind\": \"sell\"")
             .And.Contain("\"Quantity\": 0.5")
-            .And.Contain("\"OccurredAt\": \"2024-01-31T14:30:00+00:00\"");
+            .And.Contain("\"OccurredAt\": \"2024-01-31T14:30:00Z\"");
     }
 
     [Theory]

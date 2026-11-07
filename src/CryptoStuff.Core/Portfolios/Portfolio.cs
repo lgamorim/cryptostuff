@@ -179,7 +179,7 @@ public sealed class Portfolio
     private static ValidationOutcome Oversold(PortfolioTransaction sell, decimal held) =>
         ValidationOutcome.Failure(string.Create(
             CultureInfo.InvariantCulture,
-            $"Selling {sell.Quantity} {sell.CoinId} on {sell.OccurredAt.UtcDateTime:yyyy-MM-dd'T'HH:mm:ss.FFFFFFF'Z'} would take its holding below zero: only {held} would be held then."));
+            $"Selling {sell.Quantity} {sell.CoinId} on {UtcTimestamp.Format(sell.OccurredAt)} would take its holding below zero: only {held} would be held then."));
 
     private static void EnsureValidName(string name)
     {
