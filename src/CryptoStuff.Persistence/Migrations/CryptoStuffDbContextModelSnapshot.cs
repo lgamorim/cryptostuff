@@ -45,6 +45,7 @@ namespace CryptoStuff.Persistence.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<int>("Version")
+                        .IsConcurrencyToken()
                         .HasColumnType("INTEGER");
 
                     b.Property<string>("VsCurrency")
@@ -97,6 +98,10 @@ namespace CryptoStuff.Persistence.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT")
                         .UseCollation("NOCASE");
+
+                    b.Property<int>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("INTEGER");
 
                     b.PrimitiveCollection<string>("_coinIds")
                         .IsRequired()

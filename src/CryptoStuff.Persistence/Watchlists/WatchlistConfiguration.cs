@@ -23,6 +23,12 @@ internal sealed class WatchlistConfiguration : IEntityTypeConfiguration<Watchlis
         builder.Property(w => w.Name).UseCollation("NOCASE");
         builder.HasIndex(w => w.Name).IsUnique();
 
+        // The domain bumps Version on every accepted change to the name or the
+        // coins, so as a token it turns any concurrent write into a conflict
+        // instead of letting the last save overwrite the whole coin list.
+        // SQLite has no row-version type, so EF only compares the value.
+        builder.Property(w => w.Version).IsConcurrencyToken();
+
         // The ordered coin ids as one JSON array column, read and written
         // through the backing field so EF never needs a setter on the entity.
         builder.Ignore(w => w.CoinIds);

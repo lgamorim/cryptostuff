@@ -26,6 +26,13 @@ public sealed class Watchlist
     /// <summary>The watchlist's lowercased coin ids, in the order they were added.</summary>
     public IReadOnlyList<string> CoinIds => _coinIds.AsReadOnly();
 
+    /// <summary>
+    /// The watchlist's version: 1 when created, and one higher after every
+    /// change to its name or coins, so a save can detect that the stored
+    /// watchlist changed since it was read.
+    /// </summary>
+    public int Version { get; private set; } = 1;
+
     /// <summary>Creates an empty watchlist with the given name.</summary>
     /// <exception cref="ArgumentException"><paramref name="name"/> fails <see cref="NameValidator"/>.</exception>
     public static Watchlist Create(string name)
@@ -40,6 +47,7 @@ public sealed class Watchlist
     {
         EnsureValidName(name);
         Name = name;
+        Version++;
     }
 
     /// <summary>Whether the watchlist holds <paramref name="coinId"/>, compared case-insensitively.</summary>
@@ -60,6 +68,7 @@ public sealed class Watchlist
         }
 
         _coinIds.Add(normalized);
+        Version++;
         return true;
     }
 
@@ -68,7 +77,16 @@ public sealed class Watchlist
     /// Returns false, leaving the list unchanged, when the coin is absent.
     /// </summary>
     /// <exception cref="ArgumentException"><paramref name="coinId"/> is null, empty, or whitespace-only.</exception>
-    public bool RemoveCoin(string coinId) => _coinIds.Remove(NormalizeCoinId(coinId));
+    public bool RemoveCoin(string coinId)
+    {
+        if (!_coinIds.Remove(NormalizeCoinId(coinId)))
+        {
+            return false;
+        }
+
+        Version++;
+        return true;
+    }
 
     /// <summary>The form in which a coin id is stored and compared.</summary>
     internal static string NormalizeCoinId(string coinId)

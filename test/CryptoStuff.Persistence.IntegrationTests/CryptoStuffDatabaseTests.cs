@@ -207,7 +207,88 @@ public class CryptoStuffDatabaseTests
             transaction.Quantity.Should().Be(0.00000001m);
             (await verification.Alerts.CountAsync(TestContext.Current.CancellationToken)).Should().Be(0);
             (await verification.Database.GetAppliedMigrationsAsync(TestContext.Current.CancellationToken))
-                .Should().HaveCount(3).And.Contain(name => name.EndsWith("AddPriceAlerts", StringComparison.Ordinal));
+                .Should().Contain(name => name.EndsWith("AddPriceAlerts", StringComparison.Ordinal));
+        }
+        finally
+        {
+            File.Delete(filePath);
+        }
+    }
+
+    [Fact]
+    public async Task Should_KeepWatchlistDataAtVersionZero_When_UpgradingFromAddPriceAlertsToAddWatchlistVersion()
+    {
+        var filePath = Path.Combine(TestDatabase.Root, $"{Guid.NewGuid():N}.db");
+        try
+        {
+            await StoreWatchlistAtAddPriceAlertsAsync(filePath);
+
+            await UpgradeAsync(filePath);
+
+            // A watchlist stored before the upgrade takes the column's default,
+            // 0, as its version; the token compares it like any other value.
+            await using var verification = TestDatabase.CreateContextFor(filePath);
+            var watchlist = await verification.Watchlists.SingleAsync(TestContext.Current.CancellationToken);
+            watchlist.Name.Should().Be("Majors");
+            watchlist.CoinIds.Should().Equal("bitcoin");
+            watchlist.Version.Should().Be(0);
+            (await verification.Database.GetAppliedMigrationsAsync(TestContext.Current.CancellationToken))
+                .Should().Contain(name => name.EndsWith("AddWatchlistVersion", StringComparison.Ordinal));
+        }
+        finally
+        {
+            File.Delete(filePath);
+        }
+    }
+
+    [Fact]
+    public async Task Should_SaveChangeAndMoveToVersionOne_When_ChangingWatchlistStoredBeforeAddWatchlistVersion()
+    {
+        var filePath = Path.Combine(TestDatabase.Root, $"{Guid.NewGuid():N}.db");
+        try
+        {
+            await StoreWatchlistAtAddPriceAlertsAsync(filePath);
+            await UpgradeAsync(filePath);
+            await using var context = TestDatabase.CreateContextFor(filePath);
+            (await context.Watchlists.SingleAsync(TestContext.Current.CancellationToken)).AddCoin("dogecoin");
+
+            await context.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+            await using var verification = TestDatabase.CreateContextFor(filePath);
+            var watchlist = await verification.Watchlists.SingleAsync(TestContext.Current.CancellationToken);
+            watchlist.CoinIds.Should().Equal("bitcoin", "dogecoin");
+            watchlist.Version.Should().Be(1);
+        }
+        finally
+        {
+            File.Delete(filePath);
+        }
+    }
+
+    [Fact]
+    public async Task Should_ThrowDbUpdateConcurrencyExceptionAndKeepCompetingCoin_When_StaleChangeSavedToWatchlistStoredBeforeAddWatchlistVersion()
+    {
+        var filePath = Path.Combine(TestDatabase.Root, $"{Guid.NewGuid():N}.db");
+        try
+        {
+            await StoreWatchlistAtAddPriceAlertsAsync(filePath);
+            await UpgradeAsync(filePath);
+            await using var stale = TestDatabase.CreateContextFor(filePath);
+            var staleWatchlist = await stale.Watchlists.SingleAsync(TestContext.Current.CancellationToken);
+            await using (var competing = TestDatabase.CreateContextFor(filePath))
+            {
+                (await competing.Watchlists.SingleAsync(TestContext.Current.CancellationToken)).AddCoin("dogecoin");
+                await competing.SaveChangesAsync(TestContext.Current.CancellationToken);
+            }
+
+            staleWatchlist.AddCoin("solana");
+
+            var act = () => stale.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+            await act.Should().ThrowAsync<DbUpdateConcurrencyException>();
+            await using var verification = TestDatabase.CreateContextFor(filePath);
+            (await verification.Watchlists.SingleAsync(TestContext.Current.CancellationToken))
+                .CoinIds.Should().Equal("bitcoin", "dogecoin");
         }
         finally
         {
@@ -230,6 +311,24 @@ public class CryptoStuffDatabaseTests
         {
             File.Delete(filePath);
         }
+    }
+
+    // Stops at the schema the price alert release shipped, which
+    // CryptoStuffDatabase offers no way to do, and stores one watchlist in it.
+    private static async Task StoreWatchlistAtAddPriceAlertsAsync(string filePath)
+    {
+        await using var before = TestDatabase.CreateContextFor(filePath);
+        Directory.CreateDirectory(TestDatabase.Root);
+        await before.GetService<IMigrator>().MigrateAsync("AddPriceAlerts", TestContext.Current.CancellationToken);
+        await before.Database.ExecuteSqlRawAsync(
+            """INSERT INTO "Watchlists" ("Name", "CoinIds") VALUES ('Majors', '["bitcoin"]')""",
+            TestContext.Current.CancellationToken);
+    }
+
+    private static async Task UpgradeAsync(string filePath)
+    {
+        await using var upgrading = TestDatabase.CreateContextFor(filePath);
+        await CryptoStuffDatabase.MigrateAsync(upgrading, TestContext.Current.CancellationToken);
     }
 
     private static CryptoStuffDbContext CreateContext(string connectionString) =>

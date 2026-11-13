@@ -50,9 +50,13 @@ public sealed class WatchlistService(IWatchlistRepository repository, ICryptocur
 
         watchlist.Rename(command.Name);
 
-        // A conflict here is most likely another watchlist taking the name
-        // between the check above and this save — the race this path exists for.
-        return await TrySaveChangesAsync(cancellationToken) ? Success(watchlist) : NameTaken(command.Name);
+        // Either race can lose this save: another watchlist taking the name
+        // since the check above, or another write moving the version on.
+        return await TrySaveChangesAsync(cancellationToken)
+            ? Success(watchlist)
+            : ServiceResult<WatchlistView>.Failure(
+                ServiceErrorCode.Conflict,
+                $"Watchlist {watchlist.Id} could not be saved: another watchlist may have taken the name '{command.Name}', or another operation changed it; reload it and try again.");
     }
 
     /// <inheritdoc />

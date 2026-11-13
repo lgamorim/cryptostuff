@@ -330,6 +330,69 @@ public sealed class WatchlistRepositoryTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Should_ThrowPersistenceConflictExceptionAndKeepCompetingCoin_When_CoinAddedToWatchlistChangedSinceItWasRead()
+    {
+        var saved = await SaveNewAsync("Majors", "bitcoin");
+        await using var context = _database.CreateContext();
+        var repository = new WatchlistRepository(context);
+        var stale = await FindSavedAsync(repository, saved.Id);
+        await AddCoinFreshAsync(saved.Id, "dogecoin");
+        stale.AddCoin("solana");
+
+        var act = () => repository.SaveChangesAsync(Token);
+
+        (await act.Should().ThrowAsync<PersistenceConflictException>())
+            .WithInnerException<DbUpdateConcurrencyException>();
+        (await FindFreshAsync(saved.Id)).CoinIds.Should().Equal("bitcoin", "dogecoin");
+    }
+
+    [Fact]
+    public async Task Should_ThrowPersistenceConflictException_When_WatchlistRenamedAfterCoinChangedSinceItWasRead()
+    {
+        var saved = await SaveNewAsync("Majors", "bitcoin");
+        await using var context = _database.CreateContext();
+        var repository = new WatchlistRepository(context);
+        var stale = await FindSavedAsync(repository, saved.Id);
+        await AddCoinFreshAsync(saved.Id, "dogecoin");
+        stale.Rename("Large caps");
+
+        var act = () => repository.SaveChangesAsync(Token);
+
+        (await act.Should().ThrowAsync<PersistenceConflictException>())
+            .WithInnerException<DbUpdateConcurrencyException>();
+        (await FindFreshAsync(saved.Id)).Name.Should().Be("Majors");
+    }
+
+    [Fact]
+    public async Task Should_ThrowPersistenceConflictExceptionAndKeepWatchlist_When_RemovingWatchlistChangedSinceItWasRead()
+    {
+        var saved = await SaveNewAsync("Majors", "bitcoin");
+        await using var context = _database.CreateContext();
+        var repository = new WatchlistRepository(context);
+        var stale = await FindSavedAsync(repository, saved.Id);
+        await AddCoinFreshAsync(saved.Id, "dogecoin");
+        repository.Remove(stale);
+
+        var act = () => repository.SaveChangesAsync(Token);
+
+        (await act.Should().ThrowAsync<PersistenceConflictException>())
+            .WithInnerException<DbUpdateConcurrencyException>();
+        (await FindFreshAsync(saved.Id)).CoinIds.Should().Equal("bitcoin", "dogecoin");
+    }
+
+    [Fact]
+    public async Task Should_StoreIncrementedVersion_When_ChangesSavedInSeparateUnitsOfWork()
+    {
+        var saved = await SaveNewAsync("Majors");
+        await AddCoinFreshAsync(saved.Id, "bitcoin");
+        await AddCoinFreshAsync(saved.Id, "dogecoin");
+
+        var found = await FindFreshAsync(saved.Id);
+
+        found.Version.Should().Be(3);
+    }
+
+    [Fact]
     public async Task Should_NotTranslateToPersistenceConflict_When_ForeignKeyViolated()
     {
         // No mapped table references watchlists yet, so the test database gains
@@ -427,6 +490,14 @@ public sealed class WatchlistRepositoryTests : IAsyncLifetime
     {
         await using var context = _database.CreateContext();
         return await FindSavedAsync(new WatchlistRepository(context), id);
+    }
+
+    private async Task AddCoinFreshAsync(int id, string coinId)
+    {
+        await using var context = _database.CreateContext();
+        var repository = new WatchlistRepository(context);
+        (await FindSavedAsync(repository, id)).AddCoin(coinId).Should().BeTrue();
+        await repository.SaveChangesAsync(Token);
     }
 
     private static async Task<Watchlist> FindSavedAsync(WatchlistRepository repository, int id) =>

@@ -221,6 +221,79 @@ public class WatchlistTests
         watchlist.Contains("ethereum").Should().BeFalse();
     }
 
+    // Version.
+
+    [Fact]
+    public void Should_StartAtVersionOne_When_Created()
+    {
+        var watchlist = Watchlist.Create("Majors");
+
+        watchlist.Version.Should().Be(1);
+    }
+
+    [Fact]
+    public void Should_MoveToNextVersion_When_Renamed()
+    {
+        var watchlist = Watchlist.Create("Majors");
+
+        watchlist.Rename("Large caps");
+
+        watchlist.Version.Should().Be(2);
+    }
+
+    [Fact]
+    public void Should_KeepVersion_When_RenameThrows()
+    {
+        var watchlist = Watchlist.Create("Majors");
+
+        var act = () => watchlist.Rename(" ");
+
+        act.Should().Throw<ArgumentException>();
+        watchlist.Version.Should().Be(1);
+    }
+
+    [Fact]
+    public void Should_MoveToNextVersion_When_NewCoinAdded()
+    {
+        var watchlist = Watchlist.Create("Majors");
+
+        watchlist.AddCoin("bitcoin");
+
+        watchlist.Version.Should().Be(2);
+    }
+
+    [Fact]
+    public void Should_KeepVersion_When_AddedCoinAlreadyPresent()
+    {
+        var watchlist = Watchlist.Create("Majors");
+        watchlist.AddCoin("bitcoin");
+
+        watchlist.AddCoin("Bitcoin");
+
+        watchlist.Version.Should().Be(2);
+    }
+
+    [Fact]
+    public void Should_MoveToNextVersion_When_PresentCoinRemoved()
+    {
+        var watchlist = Watchlist.Create("Majors");
+        watchlist.AddCoin("bitcoin");
+
+        watchlist.RemoveCoin("bitcoin");
+
+        watchlist.Version.Should().Be(3);
+    }
+
+    [Fact]
+    public void Should_KeepVersion_When_AbsentCoinRemoved()
+    {
+        var watchlist = Watchlist.Create("Majors");
+
+        watchlist.RemoveCoin("bitcoin");
+
+        watchlist.Version.Should().Be(1);
+    }
+
     // Encapsulation.
 
     [Fact]

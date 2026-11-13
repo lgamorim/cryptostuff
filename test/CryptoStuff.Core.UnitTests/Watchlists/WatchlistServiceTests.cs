@@ -208,7 +208,7 @@ public class WatchlistServiceTests
     }
 
     [Fact]
-    public async Task Should_ReturnConflictNamingName_When_RenameAsyncSaveLosesUniqueNameRace()
+    public async Task Should_ReturnConflictNamingBothRaces_When_RenameAsyncSaveConflicts()
     {
         var (repository, _, service) = CreateSut();
         var watchlist = SeedWatchlist(repository, "Majors");
@@ -216,8 +216,11 @@ public class WatchlistServiceTests
 
         var result = await service.RenameAsync(new RenameWatchlistCommand { WatchlistId = watchlist.Id, Name = "Large caps" }, CancellationToken.None);
 
+        // The save cannot tell another watchlist taking the name from another
+        // write changing this one, so the detail names both.
         result.ErrorCode.Should().Be(ServiceErrorCode.Conflict);
-        result.ErrorDetail.Should().Contain("Large caps");
+        result.ErrorDetail.Should().Be(
+            $"Watchlist {watchlist.Id} could not be saved: another watchlist may have taken the name 'Large caps', or another operation changed it; reload it and try again.");
     }
 
     [Fact]
