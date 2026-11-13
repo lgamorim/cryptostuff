@@ -31,7 +31,7 @@ internal sealed class SpyAlertEvaluator(TimeProvider? clock = null) : IAlertEval
     public CancellationToken CapturedCancellationToken { get; private set; }
 
     public ServiceResult<AlertEvaluationView> Result { get; set; } =
-        ServiceResult<AlertEvaluationView>.Success(new AlertEvaluationView { Triggered = [] });
+        ServiceResult<AlertEvaluationView>.Success(new AlertEvaluationView { Triggered = [], Unpriced = [] });
 
     public void EnqueueResult(ServiceResult<AlertEvaluationView> result) =>
         Enqueue(_ => Task.FromResult(result));

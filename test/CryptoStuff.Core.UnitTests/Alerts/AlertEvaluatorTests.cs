@@ -38,6 +38,18 @@ public class AlertEvaluatorTests
             ],
         });
 
+    // What GetPricesAsync returns when CoinGecko knows only the coins priced
+    // here: a query naming any other coin is NotFound for the whole query, as
+    // the adapter reports it, and one naming only known coins gets their
+    // prices in the currencies it asked for.
+    private static Func<CoinPriceQuery, ServiceResult<CoinPriceView>> KnowsOnly(params (string CoinId, string Currency, decimal Amount)[] prices) =>
+        query => query.CoinIds.All(id => prices.Any(p => p.CoinId == id))
+            ? Prices([.. prices.Where(p => query.CoinIds.Contains(p.CoinId) && query.VsCurrencies.Contains(p.Currency))])
+            : ServiceResult<CoinPriceView>.Failure(ServiceErrorCode.NotFound);
+
+    private static UnpricedAlertView Unpriced(PriceAlert alert) =>
+        new() { Id = alert.Id, CoinId = alert.CoinId, VsCurrency = alert.VsCurrency };
+
     // Asserts the result succeeded and returns what it carries.
     private static T SucceededValue<T>(ServiceResult<T> result)
     {
@@ -70,7 +82,9 @@ public class AlertEvaluatorTests
 
         var result = await evaluator.EvaluateAsync(CancellationToken.None);
 
-        var triggered = SucceededValue(result).Triggered.Should().ContainSingle().Subject;
+        var view = SucceededValue(result);
+        view.Unpriced.Should().BeEmpty();
+        var triggered = view.Triggered.Should().ContainSingle().Subject;
         triggered.Id.Should().Be(alert.Id);
         triggered.CoinId.Should().Be("bitcoin");
         triggered.VsCurrency.Should().Be("usd");
@@ -161,26 +175,101 @@ public class AlertEvaluatorTests
     }
 
     [Fact]
-    public async Task Should_ReportUpstreamUnavailableNamingTheCoins_When_UpstreamDoesNotKnowACoin()
+    public async Task Should_TriggerKnownCoinAlertAndReportUnknownCoinAlertUnpriced_When_UpstreamDoesNotKnowACoin()
     {
         var (repository, upstream, _, evaluator) = CreateSut();
-        var alert = SeedAlert(repository, "bitcoin");
-        SeedAlert(repository, "gone-coin");
+        var known = SeedAlert(repository, "bitcoin");
+        var unknown = SeedAlert(repository, "gone-coin");
+        upstream.PricesResultFor = KnowsOnly(("bitcoin", "usd", 150m));
+
+        var result = await evaluator.EvaluateAsync(CancellationToken.None);
+
+        var view = SucceededValue(result);
+        view.Triggered.Should().ContainSingle().Which.Id.Should().Be(known.Id);
+        view.Unpriced.Should().Equal(Unpriced(unknown));
+        known.State.Should().Be(AlertState.Triggered);
+        unknown.State.Should().Be(AlertState.Armed);
+        repository.SaveChangesCallCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task Should_AskForEachCoinInItsAlertsCurrencies_When_TheOneCallNamesAnUnknownCoin()
+    {
+        var (repository, upstream, _, evaluator) = CreateSut();
+        SeedAlert(repository, "bitcoin", "usd");
+        SeedAlert(repository, "gone-coin", "eur");
+        SeedAlert(repository, "bitcoin", "eur");
+        upstream.PricesResultFor = KnowsOnly(("bitcoin", "usd", 75m), ("bitcoin", "eur", 75m));
+
+        var result = await evaluator.EvaluateAsync(CancellationToken.None);
+
+        result.IsSuccess.Should().BeTrue();
+        upstream.CapturedPricesQueries
+            .Select(q => $"{string.Join(",", q.CoinIds)} in {string.Join(",", q.VsCurrencies)}")
+            .Should().Equal("bitcoin,gone-coin in usd,eur", "bitcoin in usd,eur", "gone-coin in eur");
+    }
+
+    [Fact]
+    public async Task Should_ReportEveryAlertUnpricedAndTriggerNothing_When_UpstreamKnowsNoneOfTheCoins()
+    {
+        var (repository, upstream, _, evaluator) = CreateSut();
+        var first = SeedAlert(repository, "gone-coin", "usd");
+        var second = SeedAlert(repository, "lost-coin", "eur");
         upstream.PricesResult = ServiceResult<CoinPriceView>.Failure(ServiceErrorCode.NotFound);
 
         var result = await evaluator.EvaluateAsync(CancellationToken.None);
 
+        var view = SucceededValue(result);
+        view.Triggered.Should().BeEmpty();
+        view.Unpriced.Should().Equal(Unpriced(first), Unpriced(second));
+        repository.SaveChangesCallCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Should_ReportItsAlertsUnpricedWithoutAskingAgain_When_TheOneCallNamesOnlyAnUnknownCoin()
+    {
+        var (repository, upstream, _, evaluator) = CreateSut();
+        var inUsd = SeedAlert(repository, "gone-coin", "usd");
+        var inEur = SeedAlert(repository, "gone-coin", "eur");
+        upstream.PricesResult = ServiceResult<CoinPriceView>.Failure(ServiceErrorCode.NotFound);
+
+        var result = await evaluator.EvaluateAsync(CancellationToken.None);
+
+        SucceededValue(result).Unpriced.Should().Equal(Unpriced(inUsd), Unpriced(inEur));
+        upstream.GetPricesCallCount.Should().Be(1);
+    }
+
+    [Theory]
+    [InlineData(ServiceErrorCode.RateLimited)]
+    [InlineData(ServiceErrorCode.RequestTimedOut)]
+    [InlineData(ServiceErrorCode.UpstreamUnavailable)]
+    public async Task Should_PropagateErrorAndTriggerNothing_When_AskingForOneCoinFails(ServiceErrorCode errorCode)
+    {
+        var (repository, upstream, _, evaluator) = CreateSut();
+        var priced = SeedAlert(repository, "bitcoin");
+        var failing = SeedAlert(repository, "ethereum");
+        SeedAlert(repository, "gone-coin");
+        upstream.PricesResultFor = query => query.CoinIds switch
+        {
+            ["bitcoin"] => Prices(("bitcoin", "usd", 150m)),
+            ["ethereum"] => ServiceResult<CoinPriceView>.Failure(errorCode, "upstream said no"),
+            _ => ServiceResult<CoinPriceView>.Failure(ServiceErrorCode.NotFound),
+        };
+
+        var result = await evaluator.EvaluateAsync(CancellationToken.None);
+
         result.IsSuccess.Should().BeFalse();
-        result.ErrorCode.Should().Be(ServiceErrorCode.UpstreamUnavailable);
-        result.ErrorDetail.Should().Contain("bitcoin").And.Contain("gone-coin");
-        alert.State.Should().Be(AlertState.Armed);
+        result.ErrorCode.Should().Be(errorCode);
+        result.ErrorDetail.Should().Be("upstream said no");
+        priced.State.Should().Be(AlertState.Armed);
+        failing.State.Should().Be(AlertState.Armed);
         repository.SaveChangesCallCount.Should().Be(0);
     }
 
     [Theory]
     [InlineData("coin")]
     [InlineData("currency")]
-    public async Task Should_ReportUpstreamUnavailableAndTriggerNothing_When_PriceIsMissingFromResponse(string missing)
+    public async Task Should_TriggerPricedAlertAndReportTheOtherUnpricedWithoutAskingAgain_When_PriceIsMissingFromResponse(string missing)
     {
         var (repository, upstream, _, evaluator) = CreateSut();
         var met = SeedAlert(repository, "bitcoin", "usd");
@@ -191,12 +280,11 @@ public class AlertEvaluatorTests
 
         var result = await evaluator.EvaluateAsync(CancellationToken.None);
 
-        result.IsSuccess.Should().BeFalse();
-        result.ErrorCode.Should().Be(ServiceErrorCode.UpstreamUnavailable);
-        result.ErrorDetail.Should().Contain("ethereum").And.Contain("eur");
-        met.State.Should().Be(AlertState.Armed);
+        var view = SucceededValue(result);
+        view.Triggered.Should().ContainSingle().Which.Id.Should().Be(met.Id);
+        view.Unpriced.Should().Equal(Unpriced(unpriced));
         unpriced.State.Should().Be(AlertState.Armed);
-        repository.SaveChangesCallCount.Should().Be(0);
+        upstream.GetPricesCallCount.Should().Be(1);
     }
 
     [Fact]
@@ -215,6 +303,27 @@ public class AlertEvaluatorTests
 
         // One load of the armed alerts, then one save per triggered alert.
         repository.CapturedCancellationTokens.Should().HaveCount(3).And.AllSatisfy(token => token.Should().Be(source.Token));
+    }
+
+    [Fact]
+    public async Task Should_PassCancellationTokenToEachCoinsCall_When_AskingCoinByCoin()
+    {
+        var (repository, upstream, _, evaluator) = CreateSut();
+        SeedAlert(repository, "bitcoin");
+        SeedAlert(repository, "gone-coin");
+        var tokens = new List<CancellationToken>();
+        var knowsBitcoin = KnowsOnly(("bitcoin", "usd", 50m));
+        upstream.PricesResultFor = query =>
+        {
+            tokens.Add(upstream.CapturedCancellationToken);
+            return knowsBitcoin(query);
+        };
+        using var source = new CancellationTokenSource();
+
+        var result = await evaluator.EvaluateAsync(source.Token);
+
+        result.IsSuccess.Should().BeTrue();
+        tokens.Should().HaveCount(3).And.AllSatisfy(token => token.Should().Be(source.Token));
     }
 
     [Fact]

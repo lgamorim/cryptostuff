@@ -500,6 +500,7 @@ public class AlertCommandsTests
         _evaluator.Result = ServiceResult<AlertEvaluationView>.Success(new AlertEvaluationView
         {
             Triggered = [TriggeredAlert(id: 2, "ethereum", "eur", AlertDirection.Below, 1500.5m, price: 1490.25m)],
+            Unpriced = [],
         });
 
         // Act
@@ -524,6 +525,7 @@ public class AlertCommandsTests
                 TriggeredAlert(id: 5, "bitcoin", "usd", AlertDirection.Above, 50000m, price: 50123m),
                 TriggeredAlert(id: 9, "solana", "usd", AlertDirection.Above, 100m, price: 100m),
             ],
+            Unpriced = [],
         });
 
         // Act
@@ -539,6 +541,55 @@ public class AlertCommandsTests
     }
 
     [Fact]
+    public async Task Should_ReturnZeroAndPrintTheUnpricedAlertsAfterTheTriggeredOne_When_CheckCannotPriceSome()
+    {
+        // Arrange
+        _evaluator.Result = ServiceResult<AlertEvaluationView>.Success(new AlertEvaluationView
+        {
+            Triggered = [TriggeredAlert(id: 2, "ethereum", "eur", AlertDirection.Below, 1500.5m, price: 1490.25m)],
+            Unpriced = [new UnpricedAlertView { Id = 7, CoinId = "ghostcoin", VsCurrency = "usd" }],
+        });
+
+        // Act
+        var exitCode = await _runner.RunAsync(["alert", "check"], CancellationToken.None);
+
+        // Assert
+        exitCode.Should().Be(0);
+        _output.ToString().Should().Be(
+            "Triggered 1 alert:\n"
+            + "  2: ethereum below 1500.5 eur, price 1490.25 eur, at 2024-03-01T12:00:00Z\n"
+            + "Could not price 1 alert, left armed:\n"
+            + "  7: ghostcoin in usd\n");
+        _error.ToString().Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Should_ReturnZeroAndPrintEveryUnpricedAlertAfterNothingTriggered_When_CheckPricesNoAlert()
+    {
+        // Arrange
+        _evaluator.Result = ServiceResult<AlertEvaluationView>.Success(new AlertEvaluationView
+        {
+            Triggered = [],
+            Unpriced =
+            [
+                new UnpricedAlertView { Id = 7, CoinId = "ghostcoin", VsCurrency = "usd" },
+                new UnpricedAlertView { Id = 8, CoinId = "bitcoin", VsCurrency = "xyz" },
+            ],
+        });
+
+        // Act
+        var exitCode = await _runner.RunAsync(["alert", "check"], CancellationToken.None);
+
+        // Assert
+        exitCode.Should().Be(0);
+        _output.ToString().Should().Be(
+            "Nothing triggered.\n"
+            + "Could not price 2 alerts, left armed:\n"
+            + "  7: ghostcoin in usd\n"
+            + "  8: bitcoin in xyz\n");
+    }
+
+    [Fact]
     public async Task Should_PrintJsonWithKebabCaseTokens_When_CheckTriggersSeveralWithJsonFlag()
     {
         // Arrange
@@ -549,6 +600,7 @@ public class AlertCommandsTests
                 TriggeredAlert(id: 2, "ethereum", "eur", AlertDirection.Below, 1500.5m, price: 1490.25m),
                 TriggeredAlert(id: 5, "bitcoin", "usd", AlertDirection.Above, 50000m, price: 50123m),
             ],
+            Unpriced = [new UnpricedAlertView { Id = 7, CoinId = "ghostcoin", VsCurrency = "usd" }],
         });
 
         // Act
@@ -561,7 +613,9 @@ public class AlertCommandsTests
             .And.Contain("\"Direction\": \"below\"")
             .And.Contain("\"Direction\": \"above\"")
             .And.Contain("\"Price\": 1490.25")
-            .And.Contain("\"TriggeredAt\": \"2024-03-01T12:00:00Z\"");
+            .And.Contain("\"TriggeredAt\": \"2024-03-01T12:00:00Z\"")
+            .And.Contain("\"Unpriced\": [")
+            .And.Contain("\"CoinId\": \"ghostcoin\"");
     }
 
     [Fact]
@@ -572,7 +626,7 @@ public class AlertCommandsTests
 
         // Assert
         exitCode.Should().Be(0);
-        _output.ToString().Should().Contain("\"Triggered\": []");
+        _output.ToString().Should().Contain("\"Triggered\": []").And.Contain("\"Unpriced\": []");
         _output.ToString().Should().NotContain("Nothing triggered");
     }
 

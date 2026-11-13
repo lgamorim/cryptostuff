@@ -300,7 +300,7 @@ public class AlertEndpointsTests
     }
 
     [Fact]
-    public async Task Should_ReturnOkWithTriggeredAlerts_When_CheckSucceeds()
+    public async Task Should_ReturnOkWithTriggeredAndUnpricedAlerts_When_CheckSucceeds()
     {
         var evaluation = new AlertEvaluationView
         {
@@ -317,6 +317,7 @@ public class AlertEndpointsTests
                     TriggeredAt = new DateTimeOffset(2026, 11, 7, 12, 0, 0, TimeSpan.Zero),
                 },
             ],
+            Unpriced = [new UnpricedAlertView { Id = 8, CoinId = "ghostcoin", VsCurrency = "usd" }],
         };
         _evaluator.Result = ServiceResult<AlertEvaluationView>.Success(evaluation);
 

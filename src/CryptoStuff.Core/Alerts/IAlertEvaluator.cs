@@ -7,7 +7,8 @@ namespace CryptoStuff.Core.Alerts;
 public interface IAlertEvaluator
 {
     /// <summary>
-    /// Evaluates the armed alerts once and reports the ones that triggered.
+    /// Evaluates the armed alerts once and reports the ones that triggered and
+    /// the ones it could not price, which stay armed.
     /// </summary>
     Task<ServiceResult<AlertEvaluationView>> EvaluateAsync(CancellationToken cancellationToken);
 }

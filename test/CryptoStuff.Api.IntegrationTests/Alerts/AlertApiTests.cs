@@ -156,10 +156,58 @@ public class AlertApiTests
                     TriggeredAt = Now,
                 },
             ],
+            Unpriced = [],
         });
         var reloaded = await client.GetFromJsonAsync<List<AlertView>>("/alerts", JsonOptions, cancellationToken);
         reloaded.Should().BeEquivalentTo(
             [met with { State = AlertState.Triggered, TriggeredAt = Now, TriggeredPrice = 52000.5m, Version = 2 }, unmet],
+            options => options.WithStrictOrdering());
+    }
+
+    [Fact]
+    public async Task Should_TriggerPricedAlertAndReportTheOthersUnpriced_When_CoinGeckoStopsPricingSomeAlerts()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        using var factory = new CryptoStuffApiFactory();
+        factory.CoinGeckoClient.PriceMatrixResponse = PriceMatrix(("bitcoin", "usd", 43000m), ("bitcoin", "eur", 40000m), ("ghostcoin", "usd", 1m));
+        using var client = WithClock(factory).CreateClient();
+        var met = await CreateAsync(client, cancellationToken, "above", 50000m);
+        var delisted = await CreateAsync(client, cancellationToken, "above", 2m, coinId: "ghostcoin");
+        var unquoted = await CreateAsync(client, cancellationToken, "above", 30000m, vsCurrency: "eur");
+
+        // CoinGecko drops ghostcoin from simple/price and stops quoting bitcoin in eur.
+        factory.CoinGeckoClient.PriceMatrixResponse = BitcoinPricedInUsd(52000.5m);
+
+        var response = await client.PostAsync("/alerts/check", content: null, cancellationToken);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = await response.Content.ReadFromJsonAsync<AlertEvaluationView>(JsonOptions, cancellationToken);
+        body.Should().BeEquivalentTo(
+            new AlertEvaluationView
+            {
+                Triggered =
+                [
+                    new TriggeredAlertView
+                    {
+                        Id = met.Id,
+                        CoinId = "bitcoin",
+                        VsCurrency = "usd",
+                        Direction = AlertDirection.Above,
+                        Threshold = 50000m,
+                        Price = 52000.5m,
+                        TriggeredAt = Now,
+                    },
+                ],
+                Unpriced =
+                [
+                    new UnpricedAlertView { Id = delisted.Id, CoinId = "ghostcoin", VsCurrency = "usd" },
+                    new UnpricedAlertView { Id = unquoted.Id, CoinId = "bitcoin", VsCurrency = "eur" },
+                ],
+            },
+            options => options.WithStrictOrdering());
+        var reloaded = await client.GetFromJsonAsync<List<AlertView>>("/alerts", JsonOptions, cancellationToken);
+        reloaded.Should().BeEquivalentTo(
+            [met with { State = AlertState.Triggered, TriggeredAt = Now, TriggeredPrice = 52000.5m, Version = 2 }, delisted, unquoted],
             options => options.WithStrictOrdering());
     }
 
@@ -317,10 +365,15 @@ public class AlertApiTests
             services.AddSingleton<TimeProvider>(new FixedTimeProvider(Now))));
 
     private static async Task<AlertView> CreateAsync(
-        HttpClient client, CancellationToken cancellationToken, string direction = "above", decimal threshold = 50000m)
+        HttpClient client,
+        CancellationToken cancellationToken,
+        string direction = "above",
+        decimal threshold = 50000m,
+        string coinId = "bitcoin",
+        string vsCurrency = "usd")
     {
         var response = await client.PostAsJsonAsync(
-            "/alerts", new { coinId = "bitcoin", vsCurrency = "usd", direction, threshold }, cancellationToken);
+            "/alerts", new { coinId, vsCurrency, direction, threshold }, cancellationToken);
         response.StatusCode.Should().Be(HttpStatusCode.Created);
 
         // `!` is safe: a 201 always carries the created alert.
@@ -337,6 +390,13 @@ public class AlertApiTests
     private static async Task<ProblemDetails> ReadProblemAsync(HttpResponseMessage response, CancellationToken cancellationToken) =>
         // `!` is safe: every error response carries a ProblemDetails body.
         (await response.Content.ReadFromJsonAsync<ProblemDetails>(JsonOptions, cancellationToken))!;
+
+    // What CoinGecko returns for every price request: each coin priced in the given currencies.
+    private static CoinGeckoResponse<Dictionary<string, Dictionary<string, decimal>>> PriceMatrix(
+        params (string CoinId, string Currency, decimal Price)[] prices) =>
+        CoinGeckoResponse<Dictionary<string, Dictionary<string, decimal>>>.Success(
+            prices.GroupBy(p => p.CoinId).ToDictionary(g => g.Key, g => g.ToDictionary(p => p.Currency, p => p.Price)),
+            HttpStatusCode.OK);
 
     // What CoinGecko returns for every price request: bitcoin, priced in usd.
     private static CoinGeckoResponse<Dictionary<string, Dictionary<string, decimal>>> BitcoinPricedInUsd(decimal price = 43000m) =>

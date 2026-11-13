@@ -5,6 +5,25 @@ public sealed record AlertEvaluationView
 {
     /// <summary>The alerts that triggered, ordered by id; empty when none did.</summary>
     public required IReadOnlyList<TriggeredAlertView> Triggered { get; init; }
+
+    /// <summary>
+    /// The armed alerts CoinGecko gave no price for, ordered by id; empty when
+    /// every alert was priced. They stay armed and are evaluated again next time.
+    /// </summary>
+    public required IReadOnlyList<UnpricedAlertView> Unpriced { get; init; }
+}
+
+/// <summary>An armed alert an evaluation could not price, so could not check.</summary>
+public sealed record UnpricedAlertView
+{
+    /// <summary>The alert's id.</summary>
+    public required int Id { get; init; }
+
+    /// <summary>The lowercased id of the coin the alert watches.</summary>
+    public required string CoinId { get; init; }
+
+    /// <summary>The lowercased vs_currency CoinGecko gave no price in.</summary>
+    public required string VsCurrency { get; init; }
 }
 
 /// <summary>An alert an evaluation triggered.</summary>

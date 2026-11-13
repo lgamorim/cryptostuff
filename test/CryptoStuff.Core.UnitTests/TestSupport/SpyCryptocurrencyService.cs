@@ -2,6 +2,8 @@ namespace CryptoStuff.Core.UnitTests.TestSupport;
 
 internal sealed class SpyCryptocurrencyService : ICryptocurrencyService
 {
+    private readonly List<CoinPriceQuery> _capturedPricesQueries = [];
+
     public int GetPricesCallCount { get; private set; }
 
     public int GetTokenPricesCallCount { get; private set; }
@@ -16,6 +18,9 @@ internal sealed class SpyCryptocurrencyService : ICryptocurrencyService
 
     public CoinPriceQuery? CapturedPricesQuery { get; private set; }
 
+    /// <summary>Every query <see cref="GetPricesAsync"/> received, in order.</summary>
+    public IReadOnlyList<CoinPriceQuery> CapturedPricesQueries => _capturedPricesQueries;
+
     public CoinQuery? CapturedCoinQuery { get; private set; }
 
     /// <summary>When set, <see cref="GetPricesAsync"/> and <see cref="GetCoinAsync"/> throw it.</summary>
@@ -23,6 +28,9 @@ internal sealed class SpyCryptocurrencyService : ICryptocurrencyService
 
     public ServiceResult<CoinPriceView> PricesResult { get; set; } =
         ServiceResult<CoinPriceView>.Success(new CoinPriceView { Coins = [] });
+
+    /// <summary>When set, <see cref="GetPricesAsync"/> returns what it gives for the query instead of <see cref="PricesResult"/>.</summary>
+    public Func<CoinPriceQuery, ServiceResult<CoinPriceView>>? PricesResultFor { get; set; }
 
     public ServiceResult<TokenPriceView> TokenPricesResult { get; set; } =
         ServiceResult<TokenPriceView>.Success(new TokenPriceView { Tokens = [] });
@@ -41,12 +49,13 @@ internal sealed class SpyCryptocurrencyService : ICryptocurrencyService
         GetPricesCallCount++;
         CapturedCancellationToken = cancellationToken;
         CapturedPricesQuery = query;
+        _capturedPricesQueries.Add(query);
         if (ExceptionToThrow is not null)
         {
             throw ExceptionToThrow;
         }
 
-        return Task.FromResult(PricesResult);
+        return Task.FromResult(PricesResultFor?.Invoke(query) ?? PricesResult);
     }
 
     public Task<ServiceResult<TokenPriceView>> GetTokenPricesAsync(TokenPriceQuery query, CancellationToken cancellationToken)

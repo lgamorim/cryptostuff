@@ -131,6 +131,7 @@ public sealed class AlertEvaluationBackgroundServiceTests : IAsyncDisposable
                 Triggered(3, "bitcoin", "usd", AlertDirection.Above, 50000m, 52000.5m),
                 Triggered(8, "ethereum", "eur", AlertDirection.Below, 2000m, 1999m),
             ],
+            Unpriced = [],
         }));
         await StartAsync();
         _time.Advance(Interval);
@@ -143,6 +144,115 @@ public sealed class AlertEvaluationBackgroundServiceTests : IAsyncDisposable
             [
                 new LogEntry(LogLevel.Information, "Alert 3 triggered: bitcoin is at 52000.5 usd, meeting its condition above 50000.", null),
                 new LogEntry(LogLevel.Information, "Alert 8 triggered: ethereum is at 1999 eur, meeting its condition below 2000.", null),
+            ]);
+    }
+
+    [Fact]
+    public async Task Should_WarnOnceAboutUnpricedAlerts_When_ConsecutiveEvaluationsLeaveTheSameAlertsUnpriced()
+    {
+        _evaluator.EnqueueResult(Evaluation(Unpriced(5, "ghostcoin", "usd"), Unpriced(9, "bitcoin", "eur")));
+        _evaluator.EnqueueResult(Evaluation(Unpriced(5, "ghostcoin", "usd"), Unpriced(9, "bitcoin", "eur")));
+        await StartAsync();
+
+        _time.Advance(Interval);
+        await CallStartedAsync(0);
+        _time.Advance(Interval);
+        await CallStartedAsync(1);
+        await StopServiceAsync();
+
+        _logger.Entries.Should().Equal([UnpricedWarning("5 (ghostcoin in usd), 9 (bitcoin in eur)")]);
+    }
+
+    [Fact]
+    public async Task Should_WarnAgainNamingTheNewAlerts_When_TheUnpricedAlertsChange()
+    {
+        _evaluator.EnqueueResult(Evaluation(Unpriced(5, "ghostcoin", "usd")));
+        _evaluator.EnqueueResult(Evaluation(Unpriced(5, "ghostcoin", "usd"), Unpriced(9, "bitcoin", "eur")));
+        await StartAsync();
+
+        _time.Advance(Interval);
+        await CallStartedAsync(0);
+        _time.Advance(Interval);
+        await CallStartedAsync(1);
+        await StopServiceAsync();
+
+        _logger.Entries.Should().Equal(
+            [
+                UnpricedWarning("5 (ghostcoin in usd)"),
+                UnpricedWarning("5 (ghostcoin in usd), 9 (bitcoin in eur)"),
+            ]);
+    }
+
+    [Fact]
+    public async Task Should_LogThatEveryAlertWasPriced_When_NoAlertIsUnpricedAnyMore()
+    {
+        _evaluator.EnqueueResult(Evaluation(Unpriced(5, "ghostcoin", "usd")));
+        _evaluator.EnqueueResult(Evaluation());
+        await StartAsync();
+
+        _time.Advance(Interval);
+        await CallStartedAsync(0);
+        _time.Advance(Interval);
+        await CallStartedAsync(1);
+        await StopServiceAsync();
+
+        _logger.Entries.Should().Equal(
+            [
+                UnpricedWarning("5 (ghostcoin in usd)"),
+                new LogEntry(LogLevel.Information, "Every armed alert was priced again.", null),
+            ]);
+    }
+
+    [Fact]
+    public async Task Should_NotWarnAgainAboutUnpricedAlerts_When_AFailedEvaluationComesBetweenTheSameAlertsUnpriced()
+    {
+        _evaluator.EnqueueResult(Evaluation(Unpriced(5, "ghostcoin", "usd")));
+        _evaluator.EnqueueResult(ServiceResult<AlertEvaluationView>.Failure(ServiceErrorCode.RateLimited, "Try again in a minute."));
+        _evaluator.EnqueueResult(Evaluation(Unpriced(5, "ghostcoin", "usd")));
+        await StartAsync();
+
+        for (var tick = 0; tick < 3; tick++)
+        {
+            _time.Advance(Interval);
+            await CallStartedAsync(tick);
+        }
+
+        await StopServiceAsync();
+
+        _logger.Entries.Should().Equal(
+            [
+                UnpricedWarning("5 (ghostcoin in usd)"),
+                new LogEntry(
+                    LogLevel.Warning,
+                    "Alert evaluation failed with RateLimited: Try again in a minute. Every alert stays armed until the next evaluation.",
+                    null),
+            ]);
+    }
+
+    [Fact]
+    public async Task Should_NotWarnAgainAboutUnpricedAlerts_When_AThrowingEvaluationComesBetweenTheSameAlertsUnpriced()
+    {
+        var failure = new InvalidOperationException("The database is locked.");
+        _evaluator.EnqueueResult(Evaluation(Unpriced(5, "ghostcoin", "usd")));
+        _evaluator.EnqueueException(failure);
+        _evaluator.EnqueueResult(Evaluation(Unpriced(5, "ghostcoin", "usd")));
+        await StartAsync();
+
+        for (var tick = 0; tick < 3; tick++)
+        {
+            _time.Advance(Interval);
+            await CallStartedAsync(tick);
+        }
+
+        await StopServiceAsync();
+
+        _logger.Entries.Should().Equal(
+            [
+                UnpricedWarning("5 (ghostcoin in usd)"),
+                new LogEntry(
+                    LogLevel.Error,
+                    "Alert evaluation threw an exception. Every alert it had not yet triggered stays armed until the next evaluation.",
+                    failure),
             ]);
     }
 
@@ -254,6 +364,18 @@ public sealed class AlertEvaluationBackgroundServiceTests : IAsyncDisposable
 
         return await call;
     }
+
+    private static ServiceResult<AlertEvaluationView> Evaluation(params UnpricedAlertView[] unpriced) =>
+        ServiceResult<AlertEvaluationView>.Success(new AlertEvaluationView { Triggered = [], Unpriced = unpriced });
+
+    private static UnpricedAlertView Unpriced(int id, string coinId, string vsCurrency) =>
+        new() { Id = id, CoinId = coinId, VsCurrency = vsCurrency };
+
+    private static LogEntry UnpricedWarning(string alerts) =>
+        new(
+            LogLevel.Warning,
+            $"Alerts {alerts} could not be priced, so they stay armed. CoinGecko gave no price for them; this is logged again only when the alerts it cannot price change.",
+            null);
 
     private TriggeredAlertView Triggered(int id, string coinId, string vsCurrency, AlertDirection direction, decimal threshold, decimal price) =>
         new()

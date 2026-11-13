@@ -63,12 +63,22 @@ public static class AlertOutputFormatter
             ? $"Triggered: {UtcTimestamp.Format(triggeredAt)} at {Invariant(price)} {view.VsCurrency}"
             : "Triggered: never";
 
-    private static string FormatEvaluationText(AlertEvaluationView view) =>
-        view.Triggered.Count == 0
+    private static string FormatEvaluationText(AlertEvaluationView view)
+    {
+        var triggered = view.Triggered.Count == 0
             ? "Nothing triggered."
             : string.Join('\n', view.Triggered.Select(FormatTriggeredAlert).Prepend(FormatTriggeredHeader(view.Triggered.Count)));
+        return view.Unpriced.Count == 0
+            ? triggered
+            : string.Join('\n', view.Unpriced.Select(FormatUnpricedAlert).Prepend(FormatUnpricedHeader(view.Unpriced.Count)).Prepend(triggered));
+    }
 
     private static string FormatTriggeredHeader(int count) => count == 1 ? "Triggered 1 alert:" : $"Triggered {count} alerts:";
+
+    private static string FormatUnpricedHeader(int count) =>
+        count == 1 ? "Could not price 1 alert, left armed:" : $"Could not price {count} alerts, left armed:";
+
+    private static string FormatUnpricedAlert(UnpricedAlertView alert) => $"  {alert.Id}: {alert.CoinId} in {alert.VsCurrency}";
 
     private static string FormatTriggeredAlert(TriggeredAlertView alert) =>
         $"  {alert.Id}: {alert.CoinId} {Token(alert.Direction)} {Invariant(alert.Threshold)} {alert.VsCurrency}"

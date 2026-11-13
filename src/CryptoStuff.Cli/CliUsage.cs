@@ -42,7 +42,7 @@ public static class CliUsage
           alert update <id> <above|below> <threshold> Replace an alert's direction and threshold, which re-arms it
           alert delete <id>                           Delete an alert
           alert rearm <id>                            Re-arm a triggered alert
-          alert check                                 Evaluate the armed alerts once and print what triggered
+          alert check                                 Evaluate the armed alerts once and print what triggered and what could not be priced
 
         Options:
           --json         Output as JSON instead of human-readable text

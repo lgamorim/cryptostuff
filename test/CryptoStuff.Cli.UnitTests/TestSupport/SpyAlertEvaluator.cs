@@ -12,7 +12,7 @@ internal sealed class SpyAlertEvaluator : IAlertEvaluator
     public Exception? ExceptionToThrow { get; set; }
 
     public ServiceResult<AlertEvaluationView> Result { get; set; } =
-        ServiceResult<AlertEvaluationView>.Success(new AlertEvaluationView { Triggered = [] });
+        ServiceResult<AlertEvaluationView>.Success(new AlertEvaluationView { Triggered = [], Unpriced = [] });
 
     public Task<ServiceResult<AlertEvaluationView>> EvaluateAsync(CancellationToken cancellationToken)
     {

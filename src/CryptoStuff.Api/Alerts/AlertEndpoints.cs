@@ -167,7 +167,7 @@ public static class AlertEndpoints
         return ServiceResultHttp.Ok(result);
     }
 
-    /// <summary><c>POST /alerts/check</c> — evaluates the armed alerts once and reports the ones that triggered.</summary>
+    /// <summary><c>POST /alerts/check</c> — evaluates the armed alerts once and reports the ones that triggered and the ones it could not price.</summary>
     public static async Task<IResult> CheckAsync(IAlertEvaluator evaluator, CancellationToken cancellationToken)
     {
         var result = await evaluator.EvaluateAsync(cancellationToken);

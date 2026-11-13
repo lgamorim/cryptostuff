@@ -39,7 +39,7 @@ The AI workflow is the experiment.
 | Project | Purpose |
 |---|---|
 | `CryptoStuff.CoinGecko` | API client and adapter — sole owner of the wire format; covers `simple/price`, `simple/token_price/{platform}`, `coins/{id}/market_chart`, `coins/{id}`, and `coins/{id}/history` (the latter's `date` query parameter must be `dd-MM-yyyy`); `CryptocurrencyService` implements Core's `ICryptocurrencyService` over the client, mapping its responses to Core's views (`CoinPriceMapper`, `TokenPriceMapper`, `CoinMarketChartMapper`, `CoinMapper`, `CoinDeveloperDataMapper`) and its failures to a `ServiceErrorCode` (`ServiceErrorCodeMapper`) |
-| `CryptoStuff.Core` | Queries (`CoinPriceQuery`, `TokenPriceQuery`, `CoinMarketChartQuery`, `CoinQuery`, `CoinDeveloperDataQuery`) and view records (`CoinPriceView`, `TokenPriceView`, `CoinMarketChartView`, `CoinView`, `CoinDeveloperDataView`), the `ICryptocurrencyService` market-data contract, results, caching, validation; watchlists (`Watchlists/`): the `Watchlist` entity, `IWatchlistRepository`, `IWatchlistService` and `WatchlistService`, the `CreateWatchlistCommand`, `RenameWatchlistCommand` and `WatchlistCoinCommand` commands, the `WatchlistPriceQuery` query, the `WatchlistView` view, and `WatchlistMapper`; portfolios (`Portfolios/`): the `Portfolio` entity, whose ledger of `PortfolioTransaction` buys and sells never takes a holding below zero, `TransactionDetails`, the `CostBasisMethod` and `TransactionKind` enumerations with their token parsers (`CostBasisMethodParser`, `TransactionKindParser`), `IPortfolioRepository`, `IPortfolioService` and `PortfolioService`, the `CreatePortfolioCommand`, `UpdatePortfolioCommand`, `AddTransactionCommand`, `ReplaceTransactionCommand` and `RemoveTransactionCommand` commands, the `PortfolioView` and `PortfolioTransactionView` views, `PortfolioMapper`, and the [cost-basis](#cost-basis) strategy (`ICostBasisMethod`, implemented by `AverageCostMethod` and `FifoMethod`, chosen through `CostBasisMethods`, each reducing a coin's transactions to a `CoinPosition`), and [valuation](#valuation) (`IPortfolioService.GetValuationAsync`, returning a `PortfolioValuationView` of `CoinValuationView` rows and `PortfolioValuationTotals`); price alerts (`Alerts/`): the `PriceAlert` entity, an armed or triggered alert met inclusively by a price at or past its threshold, whose coin and vs_currency are fixed at creation, the `AlertDirection` and `AlertState` enumerations with their token parsers (`AlertDirectionParser`, `AlertStateParser`), `IAlertRepository`, `IAlertService` and `AlertService`, the `CreateAlertCommand` and `UpdateAlertCommand` commands, the `AlertView` view, `AlertMapper`, and [evaluation](#alert-evaluation) (`IAlertEvaluator` and `AlertEvaluator`, returning an `AlertEvaluationView` of `TriggeredAlertView` rows); and, shared by the stored features, `PersistenceConflictException` and the `NameValidator`, `PositiveIdValidator`, `PositiveDecimalValidator`, `NonNegativeDecimalValidator` and `TimestampFormatValidator` rules |
+| `CryptoStuff.Core` | Queries (`CoinPriceQuery`, `TokenPriceQuery`, `CoinMarketChartQuery`, `CoinQuery`, `CoinDeveloperDataQuery`) and view records (`CoinPriceView`, `TokenPriceView`, `CoinMarketChartView`, `CoinView`, `CoinDeveloperDataView`), the `ICryptocurrencyService` market-data contract, results, caching, validation; watchlists (`Watchlists/`): the `Watchlist` entity, `IWatchlistRepository`, `IWatchlistService` and `WatchlistService`, the `CreateWatchlistCommand`, `RenameWatchlistCommand` and `WatchlistCoinCommand` commands, the `WatchlistPriceQuery` query, the `WatchlistView` view, and `WatchlistMapper`; portfolios (`Portfolios/`): the `Portfolio` entity, whose ledger of `PortfolioTransaction` buys and sells never takes a holding below zero, `TransactionDetails`, the `CostBasisMethod` and `TransactionKind` enumerations with their token parsers (`CostBasisMethodParser`, `TransactionKindParser`), `IPortfolioRepository`, `IPortfolioService` and `PortfolioService`, the `CreatePortfolioCommand`, `UpdatePortfolioCommand`, `AddTransactionCommand`, `ReplaceTransactionCommand` and `RemoveTransactionCommand` commands, the `PortfolioView` and `PortfolioTransactionView` views, `PortfolioMapper`, and the [cost-basis](#cost-basis) strategy (`ICostBasisMethod`, implemented by `AverageCostMethod` and `FifoMethod`, chosen through `CostBasisMethods`, each reducing a coin's transactions to a `CoinPosition`), and [valuation](#valuation) (`IPortfolioService.GetValuationAsync`, returning a `PortfolioValuationView` of `CoinValuationView` rows and `PortfolioValuationTotals`); price alerts (`Alerts/`): the `PriceAlert` entity, an armed or triggered alert met inclusively by a price at or past its threshold, whose coin and vs_currency are fixed at creation, the `AlertDirection` and `AlertState` enumerations with their token parsers (`AlertDirectionParser`, `AlertStateParser`), `IAlertRepository`, `IAlertService` and `AlertService`, the `CreateAlertCommand` and `UpdateAlertCommand` commands, the `AlertView` view, `AlertMapper`, and [evaluation](#alert-evaluation) (`IAlertEvaluator` and `AlertEvaluator`, returning an `AlertEvaluationView` of `TriggeredAlertView` and `UnpricedAlertView` rows); and, shared by the stored features, `PersistenceConflictException` and the `NameValidator`, `PositiveIdValidator`, `PositiveDecimalValidator`, `NonNegativeDecimalValidator` and `TimestampFormatValidator` rules |
 | `CryptoStuff.Persistence` | EF Core over SQLite: `CryptoStuffDbContext`, the watchlist mapping (`WatchlistConfiguration`) and `WatchlistRepository`, the portfolio mapping (`PortfolioConfiguration`, which owns the portfolio's transactions) and `PortfolioRepository`, the alert mapping (`AlertConfiguration`) and `AlertRepository`, which also lists the armed alerts and can discard an alert whose save conflicted, translation of unique-constraint and concurrency failures (and, for portfolios, a portfolio deleted under a pending save) into `PersistenceConflictException`, `CryptoStuffDatabase.MigrateAsync` (creates a file database's directory, then migrates), the design-time context factory, and the checked-in migrations (`Migrations/`) |
 | `CryptoStuff.Composition` | Registration and HTTP pipeline wiring: `AddCryptoStuff`, `AddAlertEvaluationSchedule` (the API's [background evaluation](#background-evaluation) interval, as an `AlertEvaluationSchedule`), `DatabaseConnectionString` (locates the shared database), and `MigrateCryptoStuffDatabaseAsync` (the start-up migration both hosts run) |
 | `CryptoStuff.Cli` | Console host |
@@ -377,25 +377,33 @@ One evaluation:
 1. Loads the armed alerts. With none, it makes no upstream call and reports
    nothing triggered.
 2. Makes one price lookup (`GetPricesAsync`) for every coin and currency the
-   armed alerts need, however many alerts there are.
+   armed alerts need, however many alerts there are. Only if CoinGecko reports
+   one of those coins as unknown does it then look up each coin on its own, in
+   the currencies its alerts use, to tell the coins CoinGecko still knows from
+   the ones it does not.
 3. Triggers each alert whose price meets it, inclusively: at or above the
    threshold for `above`, at or below it for `below`. An alert whose price has
    not reached it stays armed and is checked again by the next evaluation.
    Every alert triggered by one evaluation carries the same time, read from
    the clock once the prices arrived.
 4. Reports each alert it triggered: its id, coin, currency, direction,
-   threshold, the price that met it, and when.
+   threshold, the price that met it, and when. It also reports each alert it
+   could not price, by id, coin and currency.
 
 A triggered alert is not evaluated again until it is
 re-armed or edited.
 
 **When something goes wrong.** An upstream failure, such as `RateLimited` or
 `RequestTimedOut`, fails the evaluation with that code and leaves every alert
-armed, so the next evaluation simply tries again. If CoinGecko reports one of
-the coins as unknown, or its response lacks a price for a coin in an alert's
-currency, the evaluation fails with `UpstreamUnavailable` and a detail naming
-the coin, as a [valuation](#valuation) does, and triggers nothing: one alert
-that cannot be priced holds up the others until it is edited or deleted.
+armed, so the next evaluation simply tries again; that includes a failure while
+looking coins up one at a time. An alert CoinGecko gives no price for, because
+it no longer knows the coin or no longer quotes it in the alert's currency,
+does not hold up the others: the evaluation checks every alert it could price
+and reports the rest as unpriced. An unpriced alert stays armed and is tried
+again by every evaluation until CoinGecko prices it or the alert is edited or
+deleted. A `404` from CoinGecko's price endpoint itself, such as from a wrong
+base address, cannot be told apart from an unknown coin, so it reports every
+alert unpriced rather than failing the evaluation.
 
 **Two writers.** Evaluations can overlap another write to the same alert,
 such as another evaluation (the CLI beside the API, or a doubled tick), an
@@ -444,6 +452,18 @@ again: an evaluation that returns an [error code](#error-codes) is logged at
 `Warning` with its code and detail
 (`Alert evaluation failed with RateLimited: …`), and one that throws, such as on a database error, is logged at `Error`
 with the exception. Either way every alert it had not triggered stays armed.
+
+Alerts an evaluation could not price are logged at `Warning`, but only when
+they differ from the ones the last successful evaluation could not price, so a
+delisted coin is logged once rather than every tick:
+
+```
+Alerts 5 (ghostcoin in usd), 9 (bitcoin in eur) could not be priced, so they stay armed. CoinGecko gave no price for them; this is logged again only when the alerts it cannot price change.
+```
+
+When none is left unpriced, that is logged once at `Information` as
+`Every armed alert was priced again.` A failed tick does not count as a
+change.
 Stopping the host cancels an evaluation in progress, and that is not logged as
 a failure.
 
@@ -488,7 +508,7 @@ dotnet run --project src/CryptoStuff.Cli -- price bitcoin usd
 | `alert update` | `<id> <direction> <threshold>` — replaces the alert's direction and threshold, which re-arms it whether or not it had triggered | `cryptostuff alert update 1 below 42000` |
 | `alert delete` | `<id>` — deletes an alert | `cryptostuff alert delete 1` |
 | `alert rearm` | `<id>` — moves a triggered alert back to armed; re-arming an armed alert is refused | `cryptostuff alert rearm 1` |
-| `alert check` | — evaluates the armed alerts once and prints the ones that triggered, or `Nothing triggered.`; see [Alert evaluation](#alert-evaluation) | `cryptostuff alert check` |
+| `alert check` | — evaluates the armed alerts once and prints the ones that triggered, or `Nothing triggered.`, then any it could not price; see [Alert evaluation](#alert-evaluation) | `cryptostuff alert check` |
 
 Each command applies the applicable [input validation](#input-validation)
 rules above to its arguments before calling CoinGecko, and reports the first
@@ -532,10 +552,13 @@ expected version, so an `update`, `delete` or `rearm` never fails on a stale one
 
 `alert check` runs the one [evaluator](#alert-evaluation) once and prints each
 alert it triggered, one line apiece (id, coin, direction, threshold, the price
-that met it, and when), under a count; with `--json` it prints
-`{"Triggered": [...]}`, an empty list when nothing triggered. Nothing triggering
-is not a failure, so `check` exits `0` then; only an evaluation that failed, such
-as a CoinGecko error, exits `1` and changes no alert. **Continuous evaluation
+that met it, and when), under a count. Any alert it could not price follows,
+one line apiece (id, coin and currency) under `Could not price N alerts, left
+armed:`. With `--json` it prints `{"Triggered": [...], "Unpriced": [...]}`,
+each an empty list when there is nothing to report. Nothing triggering, and an
+alert that could not be priced, are not failures, so `check` exits `0` then;
+only an evaluation that failed, such as a CoinGecko error, exits `1` and changes
+no alert. **Continuous evaluation
 happens only in the API host**: the CLI exits after each command, so alerts are
 evaluated only when `alert check` is run, while a running API host evaluates them
 on its own timer.
@@ -825,7 +848,8 @@ above.
 
 `POST /alerts/check` runs one [evaluation](#alert-evaluation), as the
 [background evaluation](#background-evaluation) does, and returns the alerts it
-triggered, an empty `triggered` list when none did. A triggered alert looks
+triggered, an empty `triggered` list when none did, and the alerts it could not
+price, an empty `unpriced` list when it priced them all. A triggered alert looks
 like this, both in that report and when read back:
 
 ```bash
@@ -833,7 +857,7 @@ curl -s -X POST http://localhost:5200/alerts/check
 ```
 
 ```json
-{ "triggered": [ { "id": 1, "coinId": "bitcoin", "vsCurrency": "usd", "direction": "above", "threshold": 50000, "price": 52000.5, "triggeredAt": "2026-11-07T12:30:00Z" } ] }
+{ "triggered": [ { "id": 1, "coinId": "bitcoin", "vsCurrency": "usd", "direction": "above", "threshold": 50000, "price": 52000.5, "triggeredAt": "2026-11-07T12:30:00Z" } ], "unpriced": [ { "id": 2, "coinId": "ghostcoin", "vsCurrency": "usd" } ] }
 ```
 
 ```bash
@@ -855,7 +879,7 @@ moves it back to `armed` or a `PUT` replaces its condition.
 | `PUT /alerts/{id}` | `200` | The updated, armed alert |
 | `DELETE /alerts/{id}` | `204` | No body |
 | `POST /alerts/{id}/rearm` | `200` | The armed alert |
-| `POST /alerts/check` | `200` | The alerts this evaluation triggered |
+| `POST /alerts/check` | `200` | The alerts this evaluation triggered, and the ones it could not price |
 
 Alerts carry a `version`, but no `ETag`: as with the CLI, every alert write is
 unconditional, and the entity-tag contract above belongs to the portfolio
