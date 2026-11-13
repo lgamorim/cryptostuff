@@ -1,7 +1,7 @@
 using System.Net;
-using CryptoStuff.CoinGecko;
+using CryptoStuff.Core;
 
-namespace CryptoStuff.Core;
+namespace CryptoStuff.CoinGecko;
 
 /// <summary>Maps a failed <see cref="CoinGeckoResponse{TValue}"/> to a <see cref="ServiceErrorCode"/>.</summary>
 public static class ServiceErrorCodeMapper

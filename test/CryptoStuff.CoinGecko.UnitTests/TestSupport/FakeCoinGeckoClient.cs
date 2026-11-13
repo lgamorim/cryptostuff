@@ -1,6 +1,4 @@
-using CryptoStuff.CoinGecko;
-
-namespace CryptoStuff.Core.UnitTests.TestSupport;
+namespace CryptoStuff.CoinGecko.UnitTests.TestSupport;
 
 internal sealed class FakeCoinGeckoClient(object response) : ICoinGeckoClient
 {

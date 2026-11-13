@@ -1,4 +1,4 @@
-namespace CryptoStuff.Core.UnitTests;
+namespace CryptoStuff.CoinGecko.UnitTests;
 
 public class TokenPriceMapperTests
 {

@@ -1,6 +1,6 @@
-using CryptoStuff.CoinGecko;
+using CryptoStuff.Core;
 
-namespace CryptoStuff.Core;
+namespace CryptoStuff.CoinGecko;
 
 /// <summary>The default <see cref="ICryptocurrencyService"/>, backed by an <see cref="ICoinGeckoClient"/>.</summary>
 public sealed class CryptocurrencyService(ICoinGeckoClient client) : ICryptocurrencyService

@@ -1,7 +1,6 @@
 using System.Globalization;
-using CryptoStuff.CoinGecko;
 
-namespace CryptoStuff.Core.UnitTests;
+namespace CryptoStuff.CoinGecko.UnitTests;
 
 public class CoinMarketChartMapperTests
 {

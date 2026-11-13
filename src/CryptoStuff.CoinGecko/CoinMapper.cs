@@ -1,6 +1,6 @@
-using CryptoStuff.CoinGecko;
+using CryptoStuff.Core;
 
-namespace CryptoStuff.Core;
+namespace CryptoStuff.CoinGecko;
 
 /// <summary>Maps a <c>coins/{id}</c> coin to a <see cref="CoinView"/>.</summary>
 public static class CoinMapper

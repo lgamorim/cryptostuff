@@ -91,6 +91,12 @@ Both hosts reference `CryptoStuff.Composition`, which references
 references `CryptoStuff.Core`. Dependencies point inward; no lower layer
 references a layer above it, and `CryptoStuff.Core` never references EF Core.
 
+Since then the CoinGecko reference has been inverted to match Persistence:
+`CryptoStuff.CoinGecko` references `CryptoStuff.Core` and implements its
+`ICryptocurrencyService`, `CryptoStuff.Composition` references it directly, and
+`CryptoStuff.Core` references no other project. The README's Projects section
+describes the structure as it stands.
+
 ## Definition of done
 
 Every milestone is one `feature/`-prefixed branch, developed test-first, and

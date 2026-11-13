@@ -1,6 +1,6 @@
-using CryptoStuff.CoinGecko;
+using CryptoStuff.Core;
 
-namespace CryptoStuff.Core;
+namespace CryptoStuff.CoinGecko;
 
 /// <summary>Maps a <c>coins/{id}/history</c> result to a <see cref="CoinDeveloperDataView"/>.</summary>
 public static class CoinDeveloperDataMapper

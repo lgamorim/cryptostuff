@@ -1,8 +1,8 @@
 using System.Net;
-using CryptoStuff.CoinGecko;
-using CryptoStuff.Core.UnitTests.TestSupport;
+using CryptoStuff.CoinGecko.UnitTests.TestSupport;
+using CryptoStuff.Core;
 
-namespace CryptoStuff.Core.UnitTests;
+namespace CryptoStuff.CoinGecko.UnitTests;
 
 public class CryptocurrencyServiceTests
 {

@@ -1,4 +1,6 @@
-namespace CryptoStuff.Core;
+using CryptoStuff.Core;
+
+namespace CryptoStuff.CoinGecko;
 
 /// <summary>Maps a <c>simple/token_price/{platform}</c> price matrix to a <see cref="TokenPriceView"/>.</summary>
 public static class TokenPriceMapper

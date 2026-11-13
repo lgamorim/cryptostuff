@@ -1,7 +1,7 @@
 using System.Globalization;
-using CryptoStuff.CoinGecko;
+using CryptoStuff.Core;
 
-namespace CryptoStuff.Core;
+namespace CryptoStuff.CoinGecko;
 
 /// <summary>Maps a <c>coins/{id}/market_chart</c> chart to a <see cref="CoinMarketChartView"/>.</summary>
 public static class CoinMarketChartMapper

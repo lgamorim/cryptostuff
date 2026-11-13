@@ -1,7 +1,7 @@
 using System.Net;
-using CryptoStuff.CoinGecko;
+using CryptoStuff.Core;
 
-namespace CryptoStuff.Core.UnitTests;
+namespace CryptoStuff.CoinGecko.UnitTests;
 
 public class ServiceErrorCodeMapperTests
 {

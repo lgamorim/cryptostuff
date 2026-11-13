@@ -2,8 +2,10 @@ namespace CryptoStuff.Core;
 
 /// <summary>
 /// The domain-level cryptocurrency market data workflow, decoupled from
-/// CoinGecko's wire format. Implemented by <see cref="CryptocurrencyService"/>;
-/// milestone `3.4`'s caching decorator depends on this abstraction instead of
+/// CoinGecko's wire format. Implemented by <c>CryptocurrencyService</c> in
+/// <c>CryptoStuff.CoinGecko</c>, which adapts CoinGecko to this contract the
+/// way <c>CryptoStuff.Persistence</c> adapts EF Core to the repository
+/// contracts; milestone `3.4`'s caching decorator depends on this abstraction instead of
 /// the concrete type, so further decoration stays possible.
 /// </summary>
 public interface ICryptocurrencyService
