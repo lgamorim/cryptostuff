@@ -61,7 +61,7 @@ CoinGecko's wire format or EF Core.
 
 ## Prerequisites
 
-- .NET SDK `10.0.301`, pinned in [`global.json`](global.json).
+- .NET SDK `10.0.404`, pinned in [`global.json`](global.json).
 - A CoinGecko demo API key. Locally, set it as a user secret under
   `CoinGecko:ApiKey`; in deployment, set the `CoinGecko__ApiKey` environment
   variable.
