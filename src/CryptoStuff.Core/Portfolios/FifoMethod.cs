@@ -11,16 +11,19 @@ public sealed class FifoMethod : ICostBasisMethod
     public CoinPosition CalculatePosition(IEnumerable<PortfolioTransaction> transactions)
     {
         var lots = new Queue<Lot>();
+        var held = default(ExactHolding);
         var realized = 0m;
         foreach (var transaction in CostBasisReplay.InLedgerOrder(transactions))
         {
             if (transaction.Kind == TransactionKind.Buy)
             {
+                held = held.Add(transaction.Quantity);
                 lots.Enqueue(new Lot { Quantity = transaction.Quantity, Cost = (transaction.Quantity * transaction.UnitPrice) + transaction.Fee });
             }
             else
             {
-                CostBasisReplay.EnsureHeld(transaction, lots.Sum(l => l.Quantity));
+                CostBasisReplay.EnsureHeld(transaction, held.Quantity);
+                held = held.Add(-transaction.Quantity);
                 var costSold = Release(lots, transaction.Quantity);
                 realized += (transaction.Quantity * transaction.UnitPrice) - transaction.Fee - costSold;
             }
@@ -38,6 +41,8 @@ public sealed class FifoMethod : ICostBasisMethod
         var cost = 0m;
         while (unsold > 0m)
         {
+            // Never empty: the holding is kept exact, so the lots hold every
+            // unit the sell takes.
             var oldest = lots.Peek();
             if (oldest.Quantity <= unsold)
             {
@@ -47,7 +52,7 @@ public sealed class FifoMethod : ICostBasisMethod
             }
             else
             {
-                var share = oldest.Cost * unsold / oldest.Quantity;
+                var share = CostBasisReplay.ShareOf(oldest.Cost, unsold, oldest.Quantity);
                 cost += share;
                 oldest.Cost -= share;
                 oldest.Quantity -= unsold;

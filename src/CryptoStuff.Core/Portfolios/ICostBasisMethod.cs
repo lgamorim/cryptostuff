@@ -17,5 +17,11 @@ public interface ICostBasisMethod
     /// The transactions are for more than one coin, or a sell would take the
     /// holding below zero, which a portfolio's ledger never records.
     /// </exception>
+    /// <exception cref="OverflowException">
+    /// A holding, cost, proceeds or profit would go beyond a decimal's range,
+    /// or a holding would need more significant digits than a decimal holds,
+    /// which a portfolio's ledger records only when it was stored before it
+    /// refused them.
+    /// </exception>
     CoinPosition CalculatePosition(IEnumerable<PortfolioTransaction> transactions);
 }

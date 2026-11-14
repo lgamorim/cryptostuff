@@ -930,4 +930,19 @@ public class PortfolioServiceTests
 
         repository.CapturedCancellationTokens.Should().ContainSingle().Which.Should().Be(cts.Token);
     }
+
+    [Fact]
+    public async Task Should_ReturnRuleViolatedNamingCoinWithoutSaving_When_AddTransactionAsyncCostIsTooLargeToCompute()
+    {
+        var (repository, upstream, service) = CreateSut();
+        var portfolio = SeedPortfolio(repository, "Long term");
+        upstream.PricesResult = PricedIn("bitcoin", "usd");
+
+        var result = await service.AddTransactionAsync(AddCommand(portfolio, Buy("bitcoin", 1e15m, Day(1)) with { UnitPrice = 1e14m }), CancellationToken.None);
+
+        result.ErrorCode.Should().Be(ServiceErrorCode.RuleViolated);
+        result.ErrorDetail.Should().Contain("bitcoin").And.Contain("too large");
+        portfolio.Transactions.Should().BeEmpty();
+        repository.SaveChangesCallCount.Should().Be(0);
+    }
 }

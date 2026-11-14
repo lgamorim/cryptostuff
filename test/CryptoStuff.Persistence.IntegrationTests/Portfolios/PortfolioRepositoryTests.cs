@@ -116,19 +116,24 @@ public sealed class PortfolioRepositoryTests : IAsyncLifetime
     [InlineData("79228162514264337593543950335")]
     public async Task Should_RoundTripDecimalsExactly_When_PortfolioSaved(string literal)
     {
+        // Each column gets the amount on a coin of its own: one buy carrying the
+        // largest decimal as both quantity and price would cost more than a
+        // decimal holds, which the portfolio refuses.
         var amount = decimal.Parse(literal, CultureInfo.InvariantCulture);
+        var occurredAt = new DateTimeOffset(2026, 1, 5, 0, 0, 0, TimeSpan.Zero);
         var saved = await SaveNewAsync(
             "Long term",
             "usd",
             CostBasisMethod.AverageCost,
-            new TransactionDetails { Kind = TransactionKind.Buy, CoinId = "bitcoin", Quantity = amount, UnitPrice = amount, Fee = amount, OccurredAt = new DateTimeOffset(2026, 1, 5, 0, 0, 0, TimeSpan.Zero) });
+            new TransactionDetails { Kind = TransactionKind.Buy, CoinId = "quantity", Quantity = amount, UnitPrice = 0m, OccurredAt = occurredAt },
+            new TransactionDetails { Kind = TransactionKind.Buy, CoinId = "unit-price", Quantity = 1m, UnitPrice = amount, OccurredAt = occurredAt },
+            new TransactionDetails { Kind = TransactionKind.Buy, CoinId = "fee", Quantity = 1m, UnitPrice = 0m, Fee = amount, OccurredAt = occurredAt });
 
         var found = await FindFreshAsync(saved.Id);
 
-        var transaction = found.Transactions.Should().ContainSingle().Subject;
-        transaction.Quantity.Should().Be(amount);
-        transaction.UnitPrice.Should().Be(amount);
-        transaction.Fee.Should().Be(amount);
+        found.Transactions.Single(t => t.CoinId == "quantity").Quantity.Should().Be(amount);
+        found.Transactions.Single(t => t.CoinId == "unit-price").UnitPrice.Should().Be(amount);
+        found.Transactions.Single(t => t.CoinId == "fee").Fee.Should().Be(amount);
     }
 
     [Fact]

@@ -167,11 +167,21 @@ public sealed class PortfolioService(
         }
 
         var method = CostBasisMethods.For(portfolio.CostBasisMethod);
-        var positions = portfolio.Transactions
-            .GroupBy(t => t.CoinId)
-            .OrderBy(g => g.Key, StringComparer.Ordinal)
-            .Select(g => (CoinId: g.Key, Position: method.CalculatePosition(g)))
-            .ToList();
+        List<(string CoinId, CoinPosition Position)> positions;
+        try
+        {
+            positions = portfolio.Transactions
+                .GroupBy(t => t.CoinId)
+                .OrderBy(g => g.Key, StringComparer.Ordinal)
+                .Select(g => (CoinId: g.Key, Position: method.CalculatePosition(g)))
+                .ToList();
+        }
+        catch (OverflowException)
+        {
+            // Only a ledger stored before the portfolio refused amounts too
+            // large to compute can get here.
+            return TooLargeToValue(portfolio.Id);
+        }
 
         // Only the units still held need a price: a closed position is worth
         // nothing, and with none open there is nothing to ask CoinGecko.
@@ -190,8 +200,24 @@ public sealed class PortfolioService(
             livePrices = prices.Value!.Coins;
         }
 
-        return ServiceResult<PortfolioValuationView>.Success(Value(portfolio, positions, livePrices));
+        try
+        {
+            return ServiceResult<PortfolioValuationView>.Success(Value(portfolio, positions, livePrices));
+        }
+        catch (OverflowException)
+        {
+            // Every coin's own figures fit, but a live price times the
+            // quantity held, or a total across coins, may not.
+            return TooLargeToValue(portfolio.Id);
+        }
     }
+
+    private static ServiceResult<PortfolioValuationView> TooLargeToValue(int id) =>
+        ServiceResult<PortfolioValuationView>.Failure(
+            ServiceErrorCode.RuleViolated,
+            string.Create(
+                CultureInfo.InvariantCulture,
+                $"Portfolio {id} cannot be valued: an amount in its valuation would be too large to compute, beyond {decimal.MaxValue} or needing more significant digits than a decimal holds."));
 
     /// <summary>
     /// Joins each coin's position with its live price. A coin still held that
@@ -282,8 +308,9 @@ public sealed class PortfolioService(
     }
 
     /// <summary>
-    /// Saves a ledger change the portfolio accepted, or reports the oversell
-    /// that made it refuse one as a <see cref="ServiceErrorCode.RuleViolated"/>.
+    /// Saves a ledger change the portfolio accepted, or reports why it refused
+    /// one — an oversell, or amounts too large to compute — as a
+    /// <see cref="ServiceErrorCode.RuleViolated"/>.
     /// </summary>
     private async Task<ServiceResult<PortfolioView>> SaveLedgerChangeAsync(Portfolio portfolio, ValidationOutcome outcome, CancellationToken cancellationToken)
     {

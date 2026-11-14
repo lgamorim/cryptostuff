@@ -47,9 +47,10 @@ public interface IPortfolioService
     /// <see cref="ServiceErrorCode.RuleViolated"/> when the transaction is
     /// dated after the current time, when its coin is new to the ledger and
     /// CoinGecko doesn't know it or has no price for it in the portfolio's
-    /// vs_currency, or when replaying the ledger with it would take a holding
-    /// below zero; any other upstream failure propagates. CoinGecko is not
-    /// asked about a coin any of the ledger's transactions already holds.
+    /// vs_currency, when replaying the ledger with it would take a holding
+    /// below zero, or when it would make a coin's amounts too large to
+    /// compute; any other upstream failure propagates. CoinGecko is not asked
+    /// about a coin any of the ledger's transactions already holds.
     /// </summary>
     Task<ServiceResult<PortfolioView>> AddTransactionAsync(AddTransactionCommand command, CancellationToken cancellationToken);
 
@@ -66,7 +67,8 @@ public interface IPortfolioService
     /// Deletes one of a portfolio's transactions. It is a
     /// <see cref="ServiceErrorCode.RuleViolated"/> when a later sell depends
     /// on the transaction, so that replaying the ledger without it would take
-    /// a holding below zero.
+    /// a holding below zero, or when removing it would make a coin's amounts
+    /// too large to compute.
     /// </summary>
     Task<ServiceResult<PortfolioView>> RemoveTransactionAsync(RemoveTransactionCommand command, CancellationToken cancellationToken);
 
@@ -78,7 +80,9 @@ public interface IPortfolioService
     /// for, in that currency, or does not know at all, is left unpriced and
     /// listed in <see cref="PortfolioValuationView.UnpricedCoins"/> rather than
     /// failing the valuation; any other upstream failure propagates with its
-    /// code. Nothing is rounded.
+    /// code. A valuation with an amount too large to compute, such as a live
+    /// price times a very large holding, or a total across coins, is a
+    /// <see cref="ServiceErrorCode.RuleViolated"/>. Nothing is rounded.
     /// </summary>
     Task<ServiceResult<PortfolioValuationView>> GetValuationAsync(int id, CancellationToken cancellationToken);
 }

@@ -9,8 +9,12 @@ namespace CryptoStuff.Core.Portfolios;
 /// <see cref="PortfolioTransaction.Sequence"/> — never takes a coin's holding
 /// below zero. Every add, replace, and removal is checked against the whole
 /// replayed ledger, because removing an earlier buy or moving a sell earlier
-/// can break a later sell. The id is zero until the repository first saves
-/// the portfolio and assigns one.
+/// can break a later sell. A change is also refused when it would make a
+/// coin's holding, cost, proceeds or profit, under either cost-basis method,
+/// too large for a decimal, or its holding need more significant digits than
+/// a decimal holds, when neither was so before, so a ledger whose coins all
+/// compute can always be valued from its own transactions. The id is zero
+/// until the repository first saves the portfolio and assigns one.
 /// </summary>
 public sealed class Portfolio
 {
@@ -85,7 +89,8 @@ public sealed class Portfolio
     /// <summary>
     /// Records a new transaction, numbered after every transaction the
     /// portfolio holds. A failed outcome names the coin and date of the sell
-    /// that would oversell, and leaves the portfolio unchanged.
+    /// that would oversell, or the coin whose amounts would be too large to
+    /// compute, and leaves the portfolio unchanged.
     /// </summary>
     /// <exception cref="ArgumentException"><paramref name="details"/> breaks a rule <see cref="TransactionDetails"/> documents.</exception>
     public ValidationOutcome AddTransaction(TransactionDetails details)
@@ -98,7 +103,8 @@ public sealed class Portfolio
     /// <summary>
     /// Replaces every detail of one of the portfolio's transactions, keeping
     /// its id and sequence. A failed outcome names the coin and date of the
-    /// sell that would oversell, and leaves the portfolio unchanged.
+    /// sell that would oversell, or the coin whose amounts would be too large
+    /// to compute, and leaves the portfolio unchanged.
     /// </summary>
     /// <exception cref="ArgumentException">
     /// <paramref name="transaction"/> is not one of this portfolio's, or
@@ -115,8 +121,9 @@ public sealed class Portfolio
 
     /// <summary>
     /// Deletes one of the portfolio's transactions. A failed outcome names
-    /// the coin and date of the sell that would oversell, and leaves the
-    /// portfolio unchanged.
+    /// the coin and date of the sell that would oversell, or the coin whose
+    /// amounts would be too large to compute, and leaves the portfolio
+    /// unchanged.
     /// </summary>
     /// <exception cref="ArgumentException"><paramref name="transaction"/> is not one of this portfolio's.</exception>
     public ValidationOutcome RemoveTransaction(PortfolioTransaction transaction)
@@ -128,11 +135,17 @@ public sealed class Portfolio
     /// <summary>
     /// Replays <paramref name="ledgerAfterChange"/>, the whole ledger as it
     /// would be after a change, and makes the change only when no holding
-    /// goes below zero.
+    /// goes below zero and no coin's figures become too large to compute.
     /// </summary>
     private ValidationOutcome ApplyIfLedgerHolds(IEnumerable<PortfolioTransaction> ledgerAfterChange, Action change)
     {
-        var outcome = Replay(ledgerAfterChange);
+        var ledger = ledgerAfterChange.ToList();
+        var outcome = Replay(ledger);
+        if (outcome.IsValid)
+        {
+            outcome = EnsureNoCoinBecomesTooLarge(_transactions, ledger);
+        }
+
         if (outcome.IsValid)
         {
             change();
@@ -140,6 +153,51 @@ public sealed class Portfolio
         }
 
         return outcome;
+    }
+
+    /// <summary>
+    /// Refuses a change that would leave a coin too large to compute when it
+    /// was not before, so a ledger whose every coin computes keeps doing so.
+    /// A coin already too large, which only a ledger stored before this check
+    /// can hold, does not block the change: that is how its transactions get
+    /// edited down or deleted one at a time, and how the other coins stay
+    /// writable meanwhile.
+    /// </summary>
+    private static ValidationOutcome EnsureNoCoinBecomesTooLarge(
+        IReadOnlyList<PortfolioTransaction> ledgerBefore,
+        IReadOnlyList<PortfolioTransaction> ledgerAfter)
+    {
+        foreach (var coin in ledgerAfter.GroupBy(t => t.CoinId))
+        {
+            if (!IsComputable(coin) && IsComputable(ledgerBefore.Where(t => t.CoinId == coin.Key)))
+            {
+                return TooLarge(coin.Key);
+            }
+        }
+
+        return ValidationOutcome.Success();
+    }
+
+    /// <summary>
+    /// Whether one coin's position fits a decimal under every cost-basis
+    /// method, not just the portfolio's current one, since the method can
+    /// change without the ledger changing.
+    /// </summary>
+    private static bool IsComputable(IEnumerable<PortfolioTransaction> coinTransactions)
+    {
+        try
+        {
+            foreach (var method in Enum.GetValues<CostBasisMethod>())
+            {
+                CostBasisMethods.For(method).CalculatePosition(coinTransactions);
+            }
+
+            return true;
+        }
+        catch (OverflowException)
+        {
+            return false;
+        }
     }
 
     private void EnsureOwned(PortfolioTransaction transaction)
@@ -161,6 +219,13 @@ public sealed class Portfolio
                 return Oversold(transaction, held);
             }
 
+            // No stored ledger can hold a coin past this: before the check,
+            // such a buy overflowed and was never saved.
+            if (transaction.Kind == TransactionKind.Buy && held > decimal.MaxValue - transaction.Quantity)
+            {
+                return TooLarge(transaction.CoinId);
+            }
+
             holdings[transaction.CoinId] = transaction.Kind == TransactionKind.Buy
                 ? held + transaction.Quantity
                 : held - transaction.Quantity;
@@ -180,6 +245,11 @@ public sealed class Portfolio
         ValidationOutcome.Failure(string.Create(
             CultureInfo.InvariantCulture,
             $"Selling {sell.Quantity} {sell.CoinId} on {UtcTimestamp.Format(sell.OccurredAt)} would take its holding below zero: only {held} would be held then."));
+
+    private static ValidationOutcome TooLarge(string coinId) =>
+        ValidationOutcome.Failure(string.Create(
+            CultureInfo.InvariantCulture,
+            $"The amounts in {coinId}'s transactions would be too large to compute: no holding, cost, proceeds or profit can go beyond {decimal.MaxValue} or need more significant digits than a decimal holds."));
 
     private static void EnsureValidName(string name)
     {

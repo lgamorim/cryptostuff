@@ -68,6 +68,7 @@ public static class PortfolioEndpoints
                 StatusCodes.Status200OK,
                 StatusCodes.Status400BadRequest,
                 StatusCodes.Status404NotFound,
+                StatusCodes.Status422UnprocessableEntity,
                 StatusCodes.Status429TooManyRequests,
                 StatusCodes.Status502BadGateway,
                 StatusCodes.Status504GatewayTimeout);

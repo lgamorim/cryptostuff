@@ -376,4 +376,34 @@ public class PortfolioValuationTests
         valuation.UnpricedCoins.Should().Equal("ethereum");
         valuation.Totals.Should().Be(new PortfolioValuationTotals { MarketValue = 200m, CostBasis = 100m, UnrealizedProfitAndLoss = 100m, RealizedProfitAndLoss = 51m });
     }
+
+    [Fact]
+    public async Task Should_ReturnRuleViolatedNamingPortfolio_When_MarketValueIsTooLargeToCompute()
+    {
+        var (repository, upstream, service) = CreateSut();
+        var portfolio = SeedPortfolio(repository, CostBasisMethod.Fifo, Buy(1e14m, 1m, day: 1));
+        upstream.PricesResult = PricedInUsd(("bitcoin", 1e15m));
+
+        var result = await service.GetValuationAsync(portfolio.Id, CancellationToken.None);
+
+        result.ErrorCode.Should().Be(ServiceErrorCode.RuleViolated);
+        result.ErrorDetail.Should().Contain($"Portfolio {portfolio.Id}").And.Contain("too large");
+    }
+
+    [Fact]
+    public async Task Should_ReturnRuleViolatedNamingPortfolio_When_TheTotalsAreTooLargeToCompute()
+    {
+        var (repository, upstream, service) = CreateSut();
+        var portfolio = SeedPortfolio(
+            repository,
+            CostBasisMethod.Fifo,
+            Buy(1m, 5e28m, day: 1, coinId: "bitcoin"),
+            Buy(1m, 5e28m, day: 1, coinId: "ethereum"));
+        upstream.PricesResult = PricedInUsd(("bitcoin", 1m), ("ethereum", 1m));
+
+        var result = await service.GetValuationAsync(portfolio.Id, CancellationToken.None);
+
+        result.ErrorCode.Should().Be(ServiceErrorCode.RuleViolated);
+        result.ErrorDetail.Should().Contain($"Portfolio {portfolio.Id}").And.Contain("too large");
+    }
 }

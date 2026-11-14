@@ -78,7 +78,7 @@ header.
 
 `CryptoStuff.Core` reports a failed operation as a `ServiceErrorCode`. A failed
 CoinGecko response maps to one of the first four codes; the last three are for
-writes to the application's own stored data:
+requests on the application's own stored data, mostly writes:
 
 | Code | Meaning | Condition |
 |---|---|---|
@@ -87,7 +87,7 @@ writes to the application's own stored data:
 | `RequestTimedOut` | The request to CoinGecko did not complete in time | The request timed out |
 | `UpstreamUnavailable` | CoinGecko failed for any other reason | Any other non-success response |
 | `Conflict` | The write conflicts with stored state | A duplicate name, or a lost concurrency race |
-| `RuleViolated` | The write breaks a domain rule | For example an oversell or an unknown coin |
+| `RuleViolated` | The request breaks a domain rule | For example a write that would oversell or name an unknown coin, or a valuation with an amount too large to compute |
 | `PreconditionFailed` | The stored version no longer matches what the caller expected | A stale `If-Match` |
 
 A failure may also carry a detail message. When it does, the API returns it as
@@ -325,8 +325,27 @@ less profit is left to come.
 
 Every figure is an exact `decimal`, and Core rounds nothing to currency
 places. The one inexact step is a share that does not divide evenly, such as
-a third of an average cost, which is kept to the 28 significant digits a
-`decimal` holds.
+a third of an average cost. A share (cost × units sold ÷ units held) is
+worked out exactly and rounded once, half to even, to the 28 or 29
+significant digits a `decimal` holds, even when cost × units sold alone would
+be too large for one; so a share never exceeds the cost it comes from, and
+the cost basis left on the units still held never goes below zero.
+
+No figure can go beyond the largest `decimal`, about `7.9e28`. Recording,
+replacing or deleting a transaction is refused when it would take any coin's
+holding, cost basis, proceeds or profit past it, under either method, since a
+portfolio can switch methods at any time; the `detail` names the coin. A
+transaction is refused the same way when it would leave a coin's holding
+needing more significant digits than a `decimal` holds, written to as many
+decimal places as the finest of its quantities needs (trailing zeros do not
+count, so `1.0` needs none): `7e28` plus `0.6`, or `10` plus
+`0.0000000000000000000000000006`. Such a holding would round, and a sell of
+the rounded figure could take more than FIFO's lots hold. So
+a ledger whose coins all compute keeps doing so. A ledger stored before this
+check may already hold a coin past the limit: it cannot be valued, but that
+coin's transactions can be edited down or deleted one at a time, even while
+others still keep it past the limit, and the other coins can still be traded,
+as long as no change takes a coin past the limit that was within it.
 
 ## Valuation
 
@@ -359,7 +378,9 @@ keeping it means the priced rows always add up to the totals. Coins are
 listed in order of coin id.
 
 Every figure is an exact `decimal`: Core rounds nothing, so a host that shows
-currency places rounds when it formats.
+currency places rounds when it formats. A live price times the quantity held,
+or a total across coins, can still go past the largest `decimal`; the
+valuation then fails with `RuleViolated` rather than giving a wrong figure.
 
 ### Unpriced coins
 
@@ -835,7 +856,7 @@ Failures use the [ProblemDetails](#rest-api) contract above:
 | `404` | No portfolio has that `id`, the portfolio has no transaction with that `txId`, or either is not a whole number (no route matches it) |
 | `409` | The name is taken by another portfolio (ignoring case), or a concurrent write won the race |
 | `412` | `If-Match` does not match the portfolio's current `ETag` |
-| `422` | The ledger would oversell (the `detail` names the coin and date of the sell), the transaction is dated in the future, or CoinGecko does not know a coin new to the portfolio or has no price for it in the portfolio's vs_currency |
+| `422` | The ledger would oversell (the `detail` names the coin and date of the sell), a coin's amounts would be [too large to compute](#cost-basis) (the `detail` names the coin), the transaction is dated in the future, or CoinGecko does not know a coin new to the portfolio or has no price for it in the portfolio's vs_currency; valuing a portfolio whose valuation has an amount too large to compute |
 | `429`, `502`, `504` | CoinGecko failed while checking a coin new to the portfolio or while valuing |
 
 ### Alert routes

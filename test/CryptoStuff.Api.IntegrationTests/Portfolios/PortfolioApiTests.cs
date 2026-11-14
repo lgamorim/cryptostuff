@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
@@ -12,6 +13,7 @@ using CryptoStuff.Persistence.Portfolios;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace CryptoStuff.Api.IntegrationTests.Portfolios;
@@ -402,6 +404,294 @@ public class PortfolioApiTests
     }
 
     [Fact]
+    public async Task Should_ReturnUnprocessableEntityNamingCoinAndRecordNothing_When_BuyCostIsTooLargeToCompute()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        using var factory = new CryptoStuffApiFactory();
+        factory.CoinGeckoClient.PriceMatrixResponse = BitcoinPricedInUsd();
+        using var client = factory.CreateClient();
+        var created = await CreateAsync(client, "main", cancellationToken);
+
+        // 1e15 units at 1e14 cost 1e29, past the largest decimal.
+        var response = await client.PostAsJsonAsync(
+            $"/portfolios/{created.Id}/transactions",
+            new { kind = "buy", coinId = "bitcoin", quantity = 1e15m, unitPrice = 1e14m, occurredAt = "2024-01-31T14:30:00Z" },
+            cancellationToken);
+
+        response.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
+        var problem = await ReadProblemAsync(response, cancellationToken);
+        problem.Detail.Should().Contain("bitcoin").And.Contain("too large");
+        var reloaded = await client.GetFromJsonAsync<PortfolioView>($"/portfolios/{created.Id}", JsonOptions, cancellationToken);
+
+        // `!` is safe: the GET above succeeds, or GetFromJsonAsync throws.
+        reloaded!.Transactions.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Should_ReturnUnprocessableEntityNamingCoinAndRecordNothing_When_ABuyWouldLeaveAHoldingNeedingMoreDigitsThanADecimalHolds()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        using var factory = new CryptoStuffApiFactory();
+        factory.CoinGeckoClient.PriceMatrixResponse = BitcoinPricedInUsd();
+        using var client = factory.CreateClient();
+        var created = await CreateAsync(client, "main", cancellationToken);
+        await AddAsync(
+            client,
+            created.Id,
+            new { kind = "buy", coinId = "bitcoin", quantity = 7e28m, unitPrice = 0m, occurredAt = "2024-01-31T14:30:00Z" },
+            cancellationToken);
+
+        // 7e28 + 0.6 needs 30 significant digits, so the holding would round.
+        var response = await client.PostAsJsonAsync(
+            $"/portfolios/{created.Id}/transactions",
+            new { kind = "buy", coinId = "bitcoin", quantity = 0.6m, unitPrice = 0m, occurredAt = "2024-02-01T14:30:00Z" },
+            cancellationToken);
+
+        response.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
+        var problem = await ReadProblemAsync(response, cancellationToken);
+        problem.Detail.Should().Contain("bitcoin").And.Contain("digits");
+        var reloaded = await client.GetFromJsonAsync<PortfolioView>($"/portfolios/{created.Id}", JsonOptions, cancellationToken);
+
+        // `!` is safe: the GET above succeeds, or GetFromJsonAsync throws.
+        reloaded!.Transactions.Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task Should_ValueTheRemainingHalf_When_CostTimesTheSoldQuantityWouldOverflow()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        using var factory = new CryptoStuffApiFactory();
+        factory.CoinGeckoClient.PriceMatrixResponse = BitcoinPricedInUsd(1m);
+        using var client = factory.CreateClient();
+        var created = await CreateAsync(client, "main", cancellationToken);
+        await AddAsync(
+            client,
+            created.Id,
+            new { kind = "buy", coinId = "bitcoin", quantity = 1e14m, unitPrice = 1e14m, occurredAt = "2024-01-31T14:30:00Z" },
+            cancellationToken);
+        await AddAsync(
+            client,
+            created.Id,
+            new { kind = "sell", coinId = "bitcoin", quantity = 5e13m, unitPrice = 1e14m, occurredAt = "2024-02-15T09:00:00Z" },
+            cancellationToken);
+
+        var response = await client.GetAsync($"/portfolios/{created.Id}/valuation", cancellationToken);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = await response.Content.ReadFromJsonAsync<PortfolioValuationView>(JsonOptions, cancellationToken);
+
+        // `!` is safe: a 200 always carries the valuation.
+        var coin = body!.Coins.Should().ContainSingle().Subject;
+        coin.Quantity.Should().Be(5e13m);
+        coin.CostBasis.Should().Be(5e27m);
+        coin.RealizedProfitAndLoss.Should().Be(0m);
+    }
+
+    [Fact]
+    public async Task Should_ReturnUnprocessableEntityNamingPortfolio_When_ALedgerStoredEarlierIsTooLargeToCompute()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        using var factory = new CryptoStuffApiFactory();
+        factory.CoinGeckoClient.PriceMatrixResponse = BitcoinPricedInUsd();
+        using var client = factory.CreateClient();
+        var created = await CreateAsync(client, "main", cancellationToken);
+        await AddAsync(client, created.Id, Buy(0.5m), cancellationToken);
+
+        // Before the portfolio refused such amounts, a buy costing 1e29 could be stored.
+        await using (var context = factory.CreateContext())
+        {
+            await context.Database.ExecuteSqlRawAsync(
+                "UPDATE PortfolioTransactions SET Quantity = '1000000000000000', UnitPrice = '100000000000000'",
+                cancellationToken);
+        }
+
+        var response = await client.GetAsync($"/portfolios/{created.Id}/valuation", cancellationToken);
+
+        response.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
+        var problem = await ReadProblemAsync(response, cancellationToken);
+        problem.Detail.Should().Contain($"Portfolio {created.Id}").And.Contain("too large");
+    }
+
+    [Theory]
+    [InlineData("average-cost", "70000000000000000000000000000", "buy", "1")]
+    [InlineData("fifo", "70000000000000000000000000000", "buy", "1")]
+    [InlineData("average-cost", "8000000000000000000000000000", "buy", "1")]
+    [InlineData("fifo", "8000000000000000000000000000", "buy", "1")]
+    [InlineData("average-cost", "70000000000000000000000000000", "sell", "1")]
+    [InlineData("fifo", "70000000000000000000000000000", "sell", "1")]
+    public async Task Should_ValueTheLedgerAfterItIsStored_When_EveryWriteNearTheDigitLimitWasRecorded(
+        string costBasisMethod, string bought, string kind, string quantity)
+    {
+        // SQLite reads a whole number back as 1.0, which must not make a
+        // ledger whose every write was accepted impossible to value.
+        var cancellationToken = TestContext.Current.CancellationToken;
+        using var factory = new CryptoStuffApiFactory();
+        factory.CoinGeckoClient.PriceMatrixResponse = BitcoinPricedInUsd(1m);
+        using var client = factory.CreateClient();
+        var created = await CreateAsync(client, "main", cancellationToken);
+        await client.PutAsJsonAsync($"/portfolios/{created.Id}", new { name = "main", costBasisMethod }, cancellationToken);
+        await AddAsync(
+            client,
+            created.Id,
+            new { kind = "buy", coinId = "bitcoin", quantity = Amount(bought), unitPrice = 0m, occurredAt = "2024-01-31T14:30:00Z" },
+            cancellationToken);
+        await AddAsync(
+            client,
+            created.Id,
+            new { kind, coinId = "bitcoin", quantity = Amount(quantity), unitPrice = 0m, occurredAt = "2024-02-01T14:30:00Z" },
+            cancellationToken);
+
+        var response = await client.GetAsync($"/portfolios/{created.Id}/valuation", cancellationToken);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task Should_RefuseABuyThatWouldRound_When_TheHoldingWasStoredWithWholeNumbers()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        using var factory = new CryptoStuffApiFactory();
+        factory.CoinGeckoClient.PriceMatrixResponse = BitcoinPricedInUsd(1m);
+        using var client = factory.CreateClient();
+        var created = await CreateAsync(client, "main", cancellationToken);
+        await AddAsync(
+            client,
+            created.Id,
+            new { kind = "buy", coinId = "bitcoin", quantity = 7e28m, unitPrice = 0m, occurredAt = "2024-01-31T14:30:00Z" },
+            cancellationToken);
+        await AddAsync(
+            client,
+            created.Id,
+            new { kind = "buy", coinId = "bitcoin", quantity = 1m, unitPrice = 0m, occurredAt = "2024-02-01T14:30:00Z" },
+            cancellationToken);
+
+        // 7e28 + 1 + 0.6 needs 30 significant digits, so the holding would round.
+        var response = await client.PostAsJsonAsync(
+            $"/portfolios/{created.Id}/transactions",
+            new { kind = "buy", coinId = "bitcoin", quantity = 0.6m, unitPrice = 0m, occurredAt = "2024-02-02T14:30:00Z" },
+            cancellationToken);
+
+        response.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
+        var problem = await ReadProblemAsync(response, cancellationToken);
+        problem.Detail.Should().Contain("bitcoin").And.Contain("digits");
+        var valuation = await client.GetAsync($"/portfolios/{created.Id}/valuation", cancellationToken);
+        valuation.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Theory]
+    [InlineData("average-cost")]
+    [InlineData("fifo")]
+    public async Task Should_ReturnUnprocessableEntityNamingPortfolio_When_ALedgerStoredEarlierHasAHoldingNeedingMoreDigitsThanADecimalHolds(string costBasisMethod)
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        using var factory = new CryptoStuffApiFactory();
+        factory.CoinGeckoClient.PriceMatrixResponse = BitcoinPricedInUsd();
+        using var client = factory.CreateClient();
+        var created = await CreateAsync(client, "main", cancellationToken);
+        await client.PutAsJsonAsync($"/portfolios/{created.Id}", new { name = "main", costBasisMethod }, cancellationToken);
+        await AddAsync(
+            client,
+            created.Id,
+            new { kind = "buy", coinId = "bitcoin", quantity = 10m, unitPrice = 0m, occurredAt = "2024-01-31T14:30:00Z" },
+            cancellationToken);
+        await AddAsync(
+            client,
+            created.Id,
+            new { kind = "buy", coinId = "bitcoin", quantity = 1m, unitPrice = 0m, occurredAt = "2024-02-01T14:30:00Z" },
+            cancellationToken);
+        await AddAsync(
+            client,
+            created.Id,
+            new { kind = "sell", coinId = "bitcoin", quantity = 9m, unitPrice = 0m, occurredAt = "2024-02-15T09:00:00Z" },
+            cancellationToken);
+        await AddAsync(
+            client,
+            created.Id,
+            new { kind = "sell", coinId = "bitcoin", quantity = 1m, unitPrice = 0m, occurredAt = "2024-02-16T09:00:00Z" },
+            cancellationToken);
+
+        // Before the portfolio refused holdings that round, the review's
+        // ledger could be stored: 10 + 6e-28 rounds, and the last sell takes
+        // more than FIFO's lots then hold.
+        await using (var context = factory.CreateContext())
+        {
+            await context.Database.ExecuteSqlRawAsync(
+                "UPDATE PortfolioTransactions SET Quantity = '0.0000000000000000000000000006' WHERE Id = (SELECT MAX(Id) FROM PortfolioTransactions) - 2",
+                cancellationToken);
+            await context.Database.ExecuteSqlRawAsync(
+                "UPDATE PortfolioTransactions SET Quantity = '1.000000000000000000000000001' WHERE Id = (SELECT MAX(Id) FROM PortfolioTransactions)",
+                cancellationToken);
+        }
+
+        var response = await client.GetAsync($"/portfolios/{created.Id}/valuation", cancellationToken);
+
+        response.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
+        var problem = await ReadProblemAsync(response, cancellationToken);
+        problem.Detail.Should().Contain($"Portfolio {created.Id}").And.Contain("digits");
+    }
+
+    [Fact]
+    public async Task Should_RecordWritesToHealthyCoinsButNotMakeThemTooLarge_When_ALedgerStoredEarlierIsTooLargeOnAnotherCoin()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        using var factory = new CryptoStuffApiFactory();
+        factory.CoinGeckoClient.PriceMatrixResponse = CoinGeckoResponse<Dictionary<string, Dictionary<string, decimal>>>.Success(
+            new() { ["bitcoin"] = new() { ["usd"] = 43000m }, ["ethereum"] = new() { ["usd"] = 2000m } },
+            HttpStatusCode.OK);
+        using var client = factory.CreateClient();
+        var created = await CreateAsync(client, "main", cancellationToken);
+        await AddAsync(client, created.Id, Buy(0.5m), cancellationToken);
+        var ethereumBuy = new { kind = "buy", coinId = "ethereum", quantity = 1m, unitPrice = 2000m, occurredAt = "2024-01-31T14:30:00Z" };
+        await AddAsync(client, created.Id, ethereumBuy, cancellationToken);
+        await MakeStoredBitcoinBuysCost1e29Async(factory, cancellationToken);
+
+        var recorded = await client.PostAsJsonAsync($"/portfolios/{created.Id}/transactions", ethereumBuy, cancellationToken);
+        var refused = await client.PostAsJsonAsync(
+            $"/portfolios/{created.Id}/transactions",
+            new { kind = "buy", coinId = "ethereum", quantity = 1e15m, unitPrice = 1e14m, occurredAt = "2024-01-31T14:30:00Z" },
+            cancellationToken);
+        var valuation = await client.GetAsync($"/portfolios/{created.Id}/valuation", cancellationToken);
+
+        recorded.StatusCode.Should().Be(HttpStatusCode.Created);
+        refused.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
+        (await ReadProblemAsync(refused, cancellationToken)).Detail.Should().Contain("ethereum").And.NotContain("bitcoin");
+        valuation.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
+    }
+
+    [Fact]
+    public async Task Should_LetEachOversizedTransactionBeFixedInTurn_When_ALedgerStoredEarlierHasSeveral()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        using var factory = new CryptoStuffApiFactory();
+        factory.CoinGeckoClient.PriceMatrixResponse = BitcoinPricedInUsd();
+        using var client = factory.CreateClient();
+        var created = await CreateAsync(client, "main", cancellationToken);
+        await AddAsync(client, created.Id, Buy(0.5m), cancellationToken);
+        var added = await AddAsync(client, created.Id, Buy(0.5m, "2024-02-01T00:00:00Z"), cancellationToken);
+        var (firstId, secondId) = (added.Transactions[0].Id, added.Transactions[1].Id);
+        await MakeStoredBitcoinBuysCost1e29Async(factory, cancellationToken);
+
+        // Each fix alone leaves the other oversized buy behind, so bitcoin
+        // stays too large until both are done.
+        var edited = await client.PutAsJsonAsync($"/portfolios/{created.Id}/transactions/{firstId}", Buy(1m), cancellationToken);
+        var removed = await client.DeleteAsync($"/portfolios/{created.Id}/transactions/{secondId}", cancellationToken);
+        var valuation = await client.GetAsync($"/portfolios/{created.Id}/valuation", cancellationToken);
+
+        edited.StatusCode.Should().Be(HttpStatusCode.OK);
+        removed.StatusCode.Should().Be(HttpStatusCode.OK);
+        valuation.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    // Before the portfolio refused such amounts, a bitcoin buy costing 1e29 could be stored.
+    private static async Task MakeStoredBitcoinBuysCost1e29Async(CryptoStuffApiFactory factory, CancellationToken cancellationToken)
+    {
+        await using var context = factory.CreateContext();
+        await context.Database.ExecuteSqlRawAsync(
+            "UPDATE PortfolioTransactions SET Quantity = '1000000000000000', UnitPrice = '100000000000000' WHERE CoinId = 'bitcoin'",
+            cancellationToken);
+    }
+
+    [Fact]
     public async Task Should_ReturnPreconditionFailedAndChangeNothing_When_IfMatchIsStale()
     {
         var cancellationToken = TestContext.Current.CancellationToken;
@@ -618,7 +908,7 @@ public class PortfolioApiTests
     [InlineData("/portfolios/{id}/transactions", "post", new[] { "201", "400", "404", "409", "412", "422", "429", "502", "504", "500" })]
     [InlineData("/portfolios/{id}/transactions/{txId}", "put", new[] { "200", "400", "404", "409", "412", "422", "429", "502", "504", "500" })]
     [InlineData("/portfolios/{id}/transactions/{txId}", "delete", new[] { "200", "400", "404", "409", "412", "422", "500" })]
-    [InlineData("/portfolios/{id}/valuation", "get", new[] { "200", "400", "404", "429", "502", "504", "500" })]
+    [InlineData("/portfolios/{id}/valuation", "get", new[] { "200", "400", "404", "422", "429", "502", "504", "500" })]
     public async Task Should_DocumentResponses_When_OpenApiDocumentRequested(string path, string method, string[] expectedStatuses)
     {
         var cancellationToken = TestContext.Current.CancellationToken;
@@ -735,4 +1025,6 @@ public class PortfolioApiTests
         CoinGeckoResponse<Dictionary<string, Dictionary<string, decimal>>>.Success(
             new() { ["bitcoin"] = new() { ["usd"] = price } },
             HttpStatusCode.OK);
+
+    private static decimal Amount(string value) => decimal.Parse(value, NumberStyles.Float, CultureInfo.InvariantCulture);
 }

@@ -21,7 +21,10 @@ public enum ServiceErrorCode
     /// <summary>The write conflicts with stored state, such as a duplicate name or a lost concurrency race.</summary>
     Conflict,
 
-    /// <summary>The write breaks a domain rule, such as an oversell or an unknown coin.</summary>
+    /// <summary>
+    /// The request breaks a domain rule, such as a write that would oversell
+    /// or name an unknown coin, or a valuation with an amount too large to compute.
+    /// </summary>
     RuleViolated,
 
     /// <summary>The caller's precondition on the stored version no longer holds, such as a stale `If-Match`.</summary>

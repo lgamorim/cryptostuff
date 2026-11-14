@@ -659,4 +659,187 @@ public class PortfolioLedgerTests
         buy.OccurredAt.Should().Be(new DateTimeOffset(2024, 1, 1, 6, 0, 0, TimeSpan.Zero));
         buy.OccurredAt.Offset.Should().Be(TimeSpan.Zero);
     }
+
+    // Amounts too large to compute.
+
+    [Fact]
+    public void Should_RecordBuy_When_ItsCostIsTheLargestAmountThatCanBeComputed()
+    {
+        var portfolio = NewPortfolio();
+
+        var outcome = portfolio.AddTransaction(Buy("bitcoin", 1m, Day(1)) with { UnitPrice = decimal.MaxValue });
+
+        outcome.IsValid.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Should_RejectNamingCoinWithoutRecordingOrNewVersion_When_BuyCostIsTooLargeToCompute()
+    {
+        var portfolio = NewPortfolio();
+
+        var outcome = portfolio.AddTransaction(Buy("bitcoin", 1e15m, Day(1)) with { UnitPrice = 1e14m });
+
+        outcome.IsValid.Should().BeFalse();
+        outcome.ErrorMessage.Should().Contain("bitcoin").And.Contain("too large");
+        portfolio.Transactions.Should().BeEmpty();
+        portfolio.Version.Should().Be(1);
+    }
+
+    [Fact]
+    public void Should_RejectNamingCoin_When_TheCostsOfItsBuysTotalMoreThanCanBeComputed()
+    {
+        var portfolio = NewPortfolio();
+        portfolio.AddTransaction(Buy("bitcoin", 1e14m, Day(1)) with { UnitPrice = 5e14m });
+
+        var outcome = portfolio.AddTransaction(Buy("bitcoin", 1e14m, Day(2)) with { UnitPrice = 5e14m });
+
+        outcome.IsValid.Should().BeFalse();
+        outcome.ErrorMessage.Should().Contain("bitcoin").And.Contain("too large");
+        portfolio.Transactions.Should().ContainSingle();
+    }
+
+    [Fact]
+    public void Should_RejectNamingCoin_When_TheHoldingIsTooLargeToCompute()
+    {
+        var portfolio = NewPortfolio();
+        portfolio.AddTransaction(Buy("bitcoin", 5e28m, Day(1)) with { UnitPrice = 0m });
+
+        var outcome = portfolio.AddTransaction(Buy("bitcoin", 5e28m, Day(2)) with { UnitPrice = 0m });
+
+        outcome.IsValid.Should().BeFalse();
+        outcome.ErrorMessage.Should().Contain("bitcoin").And.Contain("too large");
+        portfolio.Transactions.Should().ContainSingle();
+    }
+
+    [Fact]
+    public void Should_RejectNamingCoin_When_SellProceedsAreTooLargeToCompute()
+    {
+        var portfolio = NewPortfolio();
+        portfolio.AddTransaction(Buy("bitcoin", 10m, Day(1)) with { UnitPrice = 0m });
+
+        var outcome = portfolio.AddTransaction(Sell("bitcoin", 10m, Day(2)) with { UnitPrice = 1e28m });
+
+        outcome.IsValid.Should().BeFalse();
+        outcome.ErrorMessage.Should().Contain("bitcoin").And.Contain("too large");
+        portfolio.Transactions.Should().ContainSingle();
+    }
+
+    [Fact]
+    public void Should_RejectNamingCoin_When_RealizedProfitWouldOverflowOnlyUnderTheOtherCostBasisMethod()
+    {
+        // Under FIFO both sells release the free units first, so their
+        // proceeds add up past decimal's range; under average cost each
+        // releases a share of the 7e28 paid, and every figure fits. The
+        // portfolio could switch to FIFO, so the ledger is refused.
+        var portfolio = Portfolio.Create("Long term", "usd", CostBasisMethod.AverageCost);
+        portfolio.AddTransaction(Buy("bitcoin", 2m, Day(1)) with { UnitPrice = 0m });
+        portfolio.AddTransaction(Buy("bitcoin", 1m, Day(2)) with { UnitPrice = 7e28m });
+        portfolio.AddTransaction(Sell("bitcoin", 1m, Day(3)) with { UnitPrice = 7e28m });
+
+        var outcome = portfolio.AddTransaction(Sell("bitcoin", 1m, Day(4)) with { UnitPrice = 2e28m });
+
+        outcome.IsValid.Should().BeFalse();
+        outcome.ErrorMessage.Should().Contain("bitcoin").And.Contain("too large");
+        portfolio.Transactions.Should().HaveCount(3);
+    }
+
+    [Theory]
+    [InlineData(CostBasisMethod.AverageCost, "7e28", "0.6")]
+    [InlineData(CostBasisMethod.Fifo, "7e28", "0.6")]
+    [InlineData(CostBasisMethod.AverageCost, "10", "0.0000000000000000000000000006")]
+    [InlineData(CostBasisMethod.Fifo, "10", "0.0000000000000000000000000006")]
+    public void Should_RejectNamingCoin_When_ABuyWouldLeaveAHoldingNeedingMoreDigitsThanADecimalHolds(
+        CostBasisMethod method, string held, string bought)
+    {
+        // The holding would round, and a sell of the rounded figure could
+        // then take more than FIFO's lots hold.
+        var portfolio = Portfolio.Create("Long term", "usd", method);
+        portfolio.AddTransaction(Buy("bitcoin", Amount(held), Day(1)) with { UnitPrice = 0m });
+
+        var outcome = portfolio.AddTransaction(Buy("bitcoin", Amount(bought), Day(2)) with { UnitPrice = 0m });
+
+        outcome.IsValid.Should().BeFalse();
+        outcome.ErrorMessage.Should().Contain("bitcoin").And.Contain("digits");
+        portfolio.Transactions.Should().ContainSingle();
+    }
+
+    [Fact]
+    public void Should_RejectNamingCoin_When_ASellWouldLeaveAHoldingNeedingMoreDigitsThanADecimalHolds()
+    {
+        var portfolio = NewPortfolio();
+        portfolio.AddTransaction(Buy("bitcoin", 7e28m, Day(1)) with { UnitPrice = 0m });
+
+        var outcome = portfolio.AddTransaction(Sell("bitcoin", 0.6m, Day(2)) with { UnitPrice = 0m });
+
+        outcome.IsValid.Should().BeFalse();
+        outcome.ErrorMessage.Should().Contain("bitcoin").And.Contain("digits");
+        portfolio.Transactions.Should().ContainSingle();
+    }
+
+    [Fact]
+    public void Should_RejectNamingCoinAndKeepTheTransaction_When_ReplacementCostIsTooLargeToCompute()
+    {
+        var portfolio = NewPortfolio();
+        portfolio.AddTransaction(Buy("bitcoin", 1m, Day(1)));
+        var transaction = portfolio.Transactions.Single();
+
+        var outcome = portfolio.ReplaceTransaction(transaction, Buy("bitcoin", 1e15m, Day(1)) with { UnitPrice = 1e14m });
+
+        outcome.IsValid.Should().BeFalse();
+        outcome.ErrorMessage.Should().Contain("bitcoin").And.Contain("too large");
+        portfolio.Transactions.Single().Quantity.Should().Be(1m);
+        portfolio.Version.Should().Be(2);
+    }
+
+    [Fact]
+    public void Should_RejectNamingCoinAndKeepTheSell_When_RemovingItMakesTheHoldingTooLargeToCompute()
+    {
+        var portfolio = NewPortfolio();
+        portfolio.AddTransaction(Buy("bitcoin", 5e28m, Day(1)) with { UnitPrice = 0m });
+        portfolio.AddTransaction(Sell("bitcoin", 5e28m, Day(2)) with { UnitPrice = 0m });
+        portfolio.AddTransaction(Buy("bitcoin", 5e28m, Day(3)) with { UnitPrice = 0m });
+        var sell = portfolio.Transactions[1];
+
+        var outcome = portfolio.RemoveTransaction(sell);
+
+        outcome.IsValid.Should().BeFalse();
+        outcome.ErrorMessage.Should().Contain("bitcoin").And.Contain("too large");
+        portfolio.Transactions.Should().HaveCount(3);
+    }
+
+    [Fact]
+    public void Should_NameOnlyTheCoinWhoseAmountsAreTooLarge_When_TheLedgerHoldsSeveralCoins()
+    {
+        var portfolio = NewPortfolio();
+        portfolio.AddTransaction(Buy("bitcoin", 1m, Day(1)));
+        portfolio.AddTransaction(Buy("ethereum", 1m, Day(1)));
+
+        var outcome = portfolio.AddTransaction(Buy("ethereum", 1e15m, Day(2)) with { UnitPrice = 1e14m });
+
+        outcome.IsValid.Should().BeFalse();
+        outcome.ErrorMessage.Should().Contain("ethereum").And.NotContain("bitcoin");
+        portfolio.Transactions.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public void Should_RejectAsTooLargeNotAsOversold_When_MovingASellLetsTheHoldingPassTheRange()
+    {
+        // Moving the first sell after the second buy would hold 1.4e29 in
+        // between; the refusal must say that, not report a sell that would
+        // take the holding below zero, which none would.
+        var portfolio = NewPortfolio();
+        portfolio.AddTransaction(Buy("bitcoin", 7e28m, Day(1)) with { UnitPrice = 0m });
+        portfolio.AddTransaction(Sell("bitcoin", 7e28m, Day(2)) with { UnitPrice = 0m });
+        portfolio.AddTransaction(Buy("bitcoin", 7e28m, Day(3)) with { UnitPrice = 0m });
+        portfolio.AddTransaction(Sell("bitcoin", 7e28m, Day(4)) with { UnitPrice = 0m });
+        var firstSell = portfolio.Transactions[1];
+
+        var outcome = portfolio.ReplaceTransaction(firstSell, Sell("bitcoin", 7e28m, Day(5)) with { UnitPrice = 0m });
+
+        outcome.IsValid.Should().BeFalse();
+        outcome.ErrorMessage.Should().Contain("bitcoin").And.Contain("too large").And.NotContain("below zero");
+        portfolio.Transactions[1].OccurredAt.Should().Be(Day(2));
+    }
+
+    private static decimal Amount(string value) => decimal.Parse(value, NumberStyles.Float, CultureInfo.InvariantCulture);
 }
