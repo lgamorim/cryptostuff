@@ -429,6 +429,7 @@ public class PortfolioCommandsTests
                     RealizedProfitAndLoss = -25.25m,
                 },
             ],
+            UnpricedCoins = [],
             Totals = new PortfolioValuationTotals
             {
                 MarketValue = 21000.5m,
@@ -468,6 +469,42 @@ public class PortfolioCommandsTests
     }
 
     [Fact]
+    public async Task Should_PrintUnpricedFiguresAndNameTheCoinsLeftOutOfTheTotal_When_AHeldCoinIsUnpriced()
+    {
+        // Arrange
+        _portfolios.ValuationResult = ServiceResult<PortfolioValuationView>.Success(UnpricedEthereumValuation());
+
+        // Act
+        var exitCode = await _runner.RunAsync(["portfolio", "value", "3"], CancellationToken.None);
+
+        // Assert
+        exitCode.Should().Be(0);
+        _output.ToString().Should().Be(
+            "Portfolio: 3 (usd, fifo)\n"
+            + "bitcoin: quantity 1, market value 120, cost basis 100, unrealized 20, realized 0\n"
+            + "ethereum: quantity 1, market value unpriced, cost basis 10, unrealized unpriced, realized 5\n"
+            + "Total: market value 120, cost basis 100, unrealized 20, realized 0\n"
+            + "Left out of the total, with no price from CoinGecko: ethereum\n");
+    }
+
+    [Fact]
+    public async Task Should_PrintNullFiguresAndTheUnpricedCoinsAsJson_When_AHeldCoinIsUnpricedWithJsonFlag()
+    {
+        // Arrange
+        _portfolios.ValuationResult = ServiceResult<PortfolioValuationView>.Success(UnpricedEthereumValuation());
+
+        // Act
+        var exitCode = await _runner.RunAsync(["portfolio", "value", "3", "--json"], CancellationToken.None);
+
+        // Assert
+        exitCode.Should().Be(0);
+        _output.ToString().Should()
+            .Contain("\"MarketValue\": null")
+            .And.Contain("\"UnrealizedProfitAndLoss\": null")
+            .And.Contain("\"UnpricedCoins\": [");
+    }
+
+    [Fact]
     public async Task Should_PrintValuationJson_When_ValueSucceedsWithJsonFlag()
     {
         // Arrange
@@ -488,6 +525,7 @@ public class PortfolioCommandsTests
                     RealizedProfitAndLoss = 0m,
                 },
             ],
+            UnpricedCoins = [],
             Totals = new PortfolioValuationTotals
             {
                 MarketValue = 21000.5m,
@@ -548,6 +586,7 @@ public class PortfolioCommandsTests
             VsCurrency = "usd",
             CostBasisMethod = CostBasisMethod.Fifo,
             Coins = [],
+            UnpricedCoins = [],
             Totals = new PortfolioValuationTotals
             {
                 MarketValue = 1234.5m,
@@ -572,6 +611,21 @@ public class PortfolioCommandsTests
             CultureInfo.CurrentCulture = original;
         }
     }
+
+    // Bitcoin is priced; ethereum is still held but CoinGecko gave no price for it.
+    private static PortfolioValuationView UnpricedEthereumValuation() => new()
+    {
+        PortfolioId = 3,
+        VsCurrency = "usd",
+        CostBasisMethod = CostBasisMethod.Fifo,
+        Coins =
+        [
+            new CoinValuationView { CoinId = "bitcoin", Quantity = 1m, MarketValue = 120m, CostBasis = 100m, UnrealizedProfitAndLoss = 20m, RealizedProfitAndLoss = 0m },
+            new CoinValuationView { CoinId = "ethereum", Quantity = 1m, MarketValue = null, CostBasis = 10m, UnrealizedProfitAndLoss = null, RealizedProfitAndLoss = 5m },
+        ],
+        UnpricedCoins = ["ethereum"],
+        Totals = new PortfolioValuationTotals { MarketValue = 120m, CostBasis = 100m, UnrealizedProfitAndLoss = 20m, RealizedProfitAndLoss = 0m },
+    };
 
     [Theory]
     [InlineData("show", "abc", "Id must be a whole number.")]

@@ -77,12 +77,19 @@ public static class PortfolioOutputFormatter
             + FormatFigures(coin.MarketValue, coin.CostBasis, coin.UnrealizedProfitAndLoss, coin.RealizedProfitAndLoss)));
         lines.Add("Total: " + FormatFigures(
             view.Totals.MarketValue, view.Totals.CostBasis, view.Totals.UnrealizedProfitAndLoss, view.Totals.RealizedProfitAndLoss));
+        if (view.UnpricedCoins.Count > 0)
+        {
+            lines.Add($"Left out of the total, with no price from CoinGecko: {string.Join(", ", view.UnpricedCoins)}");
+        }
 
         return string.Join('\n', lines);
     }
 
-    private static string FormatFigures(decimal marketValue, decimal costBasis, decimal unrealized, decimal realized) =>
-        $"market value {Invariant(marketValue)}, cost basis {Invariant(costBasis)}, unrealized {Invariant(unrealized)}, realized {Invariant(realized)}";
+    private static string FormatFigures(decimal? marketValue, decimal costBasis, decimal? unrealized, decimal realized) =>
+        $"market value {FormatPriced(marketValue)}, cost basis {Invariant(costBasis)}, unrealized {FormatPriced(unrealized)}, realized {Invariant(realized)}";
+
+    // A figure that needs the coin's live price, which CoinGecko may not have given.
+    private static string FormatPriced(decimal? value) => value is { } figure ? Invariant(figure) : "unpriced";
 
     private static string FormatTransaction(PortfolioTransactionView transaction, string vsCurrency) =>
         $"  {transaction.Id}: {UtcTimestamp.Format(transaction.OccurredAt)} {Token(transaction.Kind)} {Invariant(transaction.Quantity)} {transaction.CoinId}"

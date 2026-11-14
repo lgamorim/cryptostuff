@@ -39,7 +39,7 @@ The AI workflow is the experiment.
 | Project | Purpose |
 |---|---|
 | `CryptoStuff.CoinGecko` | API client and adapter — sole owner of the wire format; covers `simple/price`, `simple/token_price/{platform}`, `coins/{id}/market_chart`, `coins/{id}`, and `coins/{id}/history` (the latter's `date` query parameter must be `dd-MM-yyyy`); `CryptocurrencyService` implements Core's `ICryptocurrencyService` over the client, mapping its responses to Core's views (`CoinPriceMapper`, `TokenPriceMapper`, `CoinMarketChartMapper`, `CoinMapper`, `CoinDeveloperDataMapper`) and its failures to a `ServiceErrorCode` (`ServiceErrorCodeMapper`) |
-| `CryptoStuff.Core` | Queries (`CoinPriceQuery`, `TokenPriceQuery`, `CoinMarketChartQuery`, `CoinQuery`, `CoinDeveloperDataQuery`) and view records (`CoinPriceView`, `TokenPriceView`, `CoinMarketChartView`, `CoinView`, `CoinDeveloperDataView`), the `ICryptocurrencyService` market-data contract, results, caching, validation; watchlists (`Watchlists/`): the `Watchlist` entity, `IWatchlistRepository`, `IWatchlistService` and `WatchlistService`, the `CreateWatchlistCommand`, `RenameWatchlistCommand` and `WatchlistCoinCommand` commands, the `WatchlistPriceQuery` query, the `WatchlistView` view, and `WatchlistMapper`; portfolios (`Portfolios/`): the `Portfolio` entity, whose ledger of `PortfolioTransaction` buys and sells never takes a holding below zero, `TransactionDetails`, the `CostBasisMethod` and `TransactionKind` enumerations with their token parsers (`CostBasisMethodParser`, `TransactionKindParser`), `IPortfolioRepository`, `IPortfolioService` and `PortfolioService`, the `CreatePortfolioCommand`, `UpdatePortfolioCommand`, `AddTransactionCommand`, `ReplaceTransactionCommand` and `RemoveTransactionCommand` commands, the `PortfolioView` and `PortfolioTransactionView` views, `PortfolioMapper`, and the [cost-basis](#cost-basis) strategy (`ICostBasisMethod`, implemented by `AverageCostMethod` and `FifoMethod`, chosen through `CostBasisMethods`, each reducing a coin's transactions to a `CoinPosition`), and [valuation](#valuation) (`IPortfolioService.GetValuationAsync`, returning a `PortfolioValuationView` of `CoinValuationView` rows and `PortfolioValuationTotals`); price alerts (`Alerts/`): the `PriceAlert` entity, an armed or triggered alert met inclusively by a price at or past its threshold, whose coin and vs_currency are fixed at creation, the `AlertDirection` and `AlertState` enumerations with their token parsers (`AlertDirectionParser`, `AlertStateParser`), `IAlertRepository`, `IAlertService` and `AlertService`, the `CreateAlertCommand` and `UpdateAlertCommand` commands, the `AlertView` view, `AlertMapper`, and [evaluation](#alert-evaluation) (`IAlertEvaluator` and `AlertEvaluator`, returning an `AlertEvaluationView` of `TriggeredAlertView` and `UnpricedAlertView` rows); and, shared by the stored features, `PersistenceConflictException` and the `NameValidator`, `PositiveIdValidator`, `PositiveDecimalValidator`, `NonNegativeDecimalValidator` and `TimestampFormatValidator` rules |
+| `CryptoStuff.Core` | Queries (`CoinPriceQuery`, `TokenPriceQuery`, `CoinMarketChartQuery`, `CoinQuery`, `CoinDeveloperDataQuery`) and view records (`CoinPriceView`, `TokenPriceView`, `CoinMarketChartView`, `CoinView`, `CoinDeveloperDataView`), the `ICryptocurrencyService` market-data contract, results, caching, validation, the `KnownCoinPrices` lookup (prices for coins the app already tracks, where one CoinGecko no longer knows leaves the rest priced); watchlists (`Watchlists/`): the `Watchlist` entity, `IWatchlistRepository`, `IWatchlistService` and `WatchlistService`, the `CreateWatchlistCommand`, `RenameWatchlistCommand` and `WatchlistCoinCommand` commands, the `WatchlistPriceQuery` query, the `WatchlistView` view, and `WatchlistMapper`; portfolios (`Portfolios/`): the `Portfolio` entity, whose ledger of `PortfolioTransaction` buys and sells never takes a holding below zero, `TransactionDetails`, the `CostBasisMethod` and `TransactionKind` enumerations with their token parsers (`CostBasisMethodParser`, `TransactionKindParser`), `IPortfolioRepository`, `IPortfolioService` and `PortfolioService`, the `CreatePortfolioCommand`, `UpdatePortfolioCommand`, `AddTransactionCommand`, `ReplaceTransactionCommand` and `RemoveTransactionCommand` commands, the `PortfolioView` and `PortfolioTransactionView` views, `PortfolioMapper`, and the [cost-basis](#cost-basis) strategy (`ICostBasisMethod`, implemented by `AverageCostMethod` and `FifoMethod`, chosen through `CostBasisMethods`, each reducing a coin's transactions to a `CoinPosition`), and [valuation](#valuation) (`IPortfolioService.GetValuationAsync`, returning a `PortfolioValuationView` of `CoinValuationView` rows and `PortfolioValuationTotals`); price alerts (`Alerts/`): the `PriceAlert` entity, an armed or triggered alert met inclusively by a price at or past its threshold, whose coin and vs_currency are fixed at creation, the `AlertDirection` and `AlertState` enumerations with their token parsers (`AlertDirectionParser`, `AlertStateParser`), `IAlertRepository`, `IAlertService` and `AlertService`, the `CreateAlertCommand` and `UpdateAlertCommand` commands, the `AlertView` view, `AlertMapper`, and [evaluation](#alert-evaluation) (`IAlertEvaluator` and `AlertEvaluator`, returning an `AlertEvaluationView` of `TriggeredAlertView` and `UnpricedAlertView` rows); and, shared by the stored features, `PersistenceConflictException` and the `NameValidator`, `PositiveIdValidator`, `PositiveDecimalValidator`, `NonNegativeDecimalValidator` and `TimestampFormatValidator` rules |
 | `CryptoStuff.Persistence` | EF Core over SQLite: `CryptoStuffDbContext`, the watchlist mapping (`WatchlistConfiguration`) and `WatchlistRepository`, the portfolio mapping (`PortfolioConfiguration`, which owns the portfolio's transactions) and `PortfolioRepository`, the alert mapping (`AlertConfiguration`) and `AlertRepository`, which also lists the armed alerts and can discard an alert whose save conflicted, translation of unique-constraint and concurrency failures (and, for portfolios, a portfolio deleted under a pending save) into `PersistenceConflictException`, `CryptoStuffDatabase.MigrateAsync` (creates a file database's directory, then migrates), the design-time context factory, and the checked-in migrations (`Migrations/`) |
 | `CryptoStuff.Composition` | Registration and HTTP pipeline wiring: `AddCryptoStuff`, `AddAlertEvaluationSchedule` (the API's [background evaluation](#background-evaluation) interval, as an `AlertEvaluationSchedule`), `DatabaseConnectionString` (locates the shared database), and `MigrateCryptoStuffDatabaseAsync` (the start-up migration both hosts run) |
 | `CryptoStuff.Cli` | Console host |
@@ -102,6 +102,17 @@ for the code.
 identifiers instead of returning an error, so `CryptoStuff.CoinGecko` treats any
 requested identifier absent from the response as a `NotFound` failure for the
 whole request, rather than returning a partial result with a silent gap.
+
+Where the coins are ones the app already tracks (a portfolio's holdings, a
+watchlist's coins, the coins armed alerts watch), losing one of them upstream
+should not hide the others, so Core reads their prices through
+`KnownCoinPrices.GetKnownCoinPricesAsync`. It makes the same single call, and
+only when that call is `NotFound` asks for each coin on its own to find the
+ones CoinGecko still knows. A coin it does not know comes back with no
+amounts, exactly as a coin not quoted in a requested currency already does.
+An HTTP `404` from the price endpoint itself also reads as `NotFound`, so it
+too leaves every coin without amounts. `GET /prices` and `cryptostuff price`
+still fail on an unknown coin, since the caller named it.
 
 The single-resource endpoints (`coins/{id}`, `coins/{id}/market_chart`,
 `coins/{id}/history`) don't need this check: CoinGecko itself returns `404`
@@ -320,40 +331,47 @@ a third of an average cost, which is kept to the 28 significant digits a
 ## Valuation
 
 Valuing a portfolio joins the [cost-basis](#cost-basis) positions with live
-prices. Core makes one `GetPricesAsync` call, for the coins the portfolio still
-holds, priced in the portfolio's own currency. A portfolio that holds nothing,
+prices. Core makes one price lookup, for the coins the portfolio still holds,
+priced in the portfolio's own currency (through
+[`KnownCoinPrices`](#missing-identifiers), so it asks coin by coin only when
+CoinGecko reports one of them unknown). A portfolio that holds nothing,
 whether it is empty or every position is closed, makes no upstream call. Each
 coin in the valuation reports:
 
 | Figure | Meaning |
 |---|---|
 | Quantity | The units still held |
-| Market value | Quantity × the live price of one unit |
+| Market value | Quantity × the live price of one unit; null for a coin left [unpriced](#unpriced-coins) |
 | Cost basis | What the units still held cost, fees on their buys included, under the portfolio's method |
-| Unrealized profit and loss | Market value − cost basis: the gain or loss that selling every unit held at the live price would realize. Negative while the price is below cost. It is a paper figure and moves with the price |
+| Unrealized profit and loss | Market value − cost basis: the gain or loss that selling every unit held at the live price would realize. Negative while the price is below cost. It is a paper figure and moves with the price; null for a coin left unpriced |
 | Realized profit and loss | What the coin's sells have already made: proceeds less sell fees, less the cost the method attributes to the units sold. Fixed once made, and negative for a loss |
 
-The totals add each figure across the coins. Market value − cost basis equals
-the total unrealized profit and loss, and total realized profit and loss is
-every coin's realized profit and loss, closed coins included. Adding the two
-profit-and-loss totals gives the portfolio's overall result so far.
+The totals add each figure across the priced coins, closed coins included.
+Market value − cost basis equals the total unrealized profit and loss, and
+total realized profit and loss is every priced coin's realized profit and loss.
+Adding the two profit-and-loss totals gives the portfolio's overall result so
+far.
 
 A coin whose position is fully closed stays in the list, with a quantity,
 market value, cost basis and unrealized profit and loss of zero and only its
 realized profit and loss. It needs no price, so it is not requested, and
-keeping it means the rows always add up to the totals. Coins are listed in
-order of coin id.
-
-If CoinGecko's response lacks a price for a coin still held, or any price in the
-portfolio's currency, or CoinGecko reports one of those coins as unknown
-(`NotFound` for the price lookup), the valuation fails with
-`UpstreamUnavailable` and a detail naming the coin or coins, rather than
-showing a partial total: the portfolio exists, so `NotFound` is kept for an
-unknown portfolio id alone. Any other upstream failure, such as `RateLimited`,
-passes through with its code.
+keeping it means the priced rows always add up to the totals. Coins are
+listed in order of coin id.
 
 Every figure is an exact `decimal`: Core rounds nothing, so a host that shows
 currency places rounds when it formats.
+
+### Unpriced coins
+
+A coin still held that CoinGecko gives no price for, because it no longer
+knows the coin or no longer quotes it in the portfolio's currency, does not
+fail the valuation. Its row keeps its quantity, cost basis and realized profit
+and loss, but its market value and unrealized profit and loss are null, and
+its id is listed in `unpricedCoins`. The totals leave the whole coin out, its
+cost basis and realized profit and loss too, so they still add up across the
+rows they cover; `portfolio value` prints `unpriced` for the missing figures
+and names the coins left out of the total. Any upstream failure, such as
+`RateLimited`, still fails the valuation with its code.
 
 ## Alert evaluation
 
@@ -376,11 +394,11 @@ One evaluation:
 
 1. Loads the armed alerts. With none, it makes no upstream call and reports
    nothing triggered.
-2. Makes one price lookup (`GetPricesAsync`) for every coin and currency the
-   armed alerts need, however many alerts there are. Only if CoinGecko reports
-   one of those coins as unknown does it then look up each coin on its own, in
-   the currencies its alerts use, to tell the coins CoinGecko still knows from
-   the ones it does not.
+2. Makes one price lookup for every coin and currency the armed alerts need,
+   however many alerts there are. Only if CoinGecko reports one of those coins
+   as unknown does it then look up each coin on its own, in those same
+   currencies, to tell the coins CoinGecko still knows from the ones it does
+   not (through [`KnownCoinPrices`](#missing-identifiers)).
 3. Triggers each alert whose price meets it, inclusively: at or above the
    threshold for `above`, at or below it for `below`. An alert whose price has
    not reached it stays armed and is checked again by the next evaluation.
@@ -492,7 +510,7 @@ dotnet run --project src/CryptoStuff.Cli -- price bitcoin usd
 | `watchlist delete` | `<id>` — deletes a watchlist | `cryptostuff watchlist delete 1` |
 | `watchlist add` | `<id> <coin>` — appends a coin id that CoinGecko knows; adding a coin already present changes nothing | `cryptostuff watchlist add 1 bitcoin` |
 | `watchlist remove` | `<id> <coin>` — removes a coin id; removing one that is absent changes nothing | `cryptostuff watchlist remove 1 bitcoin` |
-| `watchlist prices` | `<id> <currency>` — live prices of the watchlist's coins in a vs_currency | `cryptostuff watchlist prices 1 usd` |
+| `watchlist prices` | `<id> <currency>` — live prices of the watchlist's coins in a vs_currency; a coin CoinGecko gives no price for prints `no price` | `cryptostuff watchlist prices 1 usd` |
 | `portfolio list` | — lists every portfolio, with its id, name, currency, method, and transaction count | `cryptostuff portfolio list` |
 | `portfolio create` | `<name> <currency> <method>` — a new, empty portfolio priced in a vs_currency that never changes; `<method>` is `average-cost` or `fifo`; the name is at most 100 characters and unique, ignoring case | `cryptostuff portfolio create main usd fifo` |
 | `portfolio show` | `<id>` — a portfolio's id, name, currency, method, version, and transactions | `cryptostuff portfolio show 1` |
@@ -711,7 +729,7 @@ route that returns a watchlist returns it in that shape: `id`, `name`, and
 | `DELETE /watchlists/{id}` | `204` | No body |
 | `PUT /watchlists/{id}/coins/{coin}` | `200` | Idempotent: adding a coin already present changes nothing |
 | `DELETE /watchlists/{id}/coins/{coin}` | `200` | Idempotent: removing a coin that is absent changes nothing |
-| `GET /watchlists/{id}/prices` | `200` | A `CoinPriceView`, as `GET /prices` returns, in the watchlist's coin order; an empty watchlist returns no coins without calling CoinGecko |
+| `GET /watchlists/{id}/prices` | `200` | A `CoinPriceView`, as `GET /prices` returns, in the watchlist's coin order; a coin CoinGecko no longer knows comes back with no amounts, and an empty watchlist returns no coins without calling CoinGecko |
 
 Failures use the [ProblemDetails](#rest-api) contract above:
 
@@ -721,7 +739,7 @@ Failures use the [ProblemDetails](#rest-api) contract above:
 | `404` | No watchlist has that `id`, or the `id` is not a whole number (no route matches it) |
 | `409` | The name is taken by another watchlist (ignoring case), or a concurrent change won the race |
 | `422` | Adding a coin that CoinGecko does not know; the `detail` names it |
-| `429`, `502`, `504` | CoinGecko failed while checking a coin to add or while pricing; pricing a watchlist that holds a coin CoinGecko no longer knows is a `502`, because the watchlist itself exists |
+| `429`, `502`, `504` | CoinGecko failed while checking a coin to add or while pricing |
 
 ### Portfolio routes
 
@@ -780,7 +798,7 @@ transactions in ledger order, each shaped like the body plus its `id` and
 | `POST /portfolios/{id}/transactions` | `201` with `Location` and `ETag` | The portfolio; `Location` names the new transaction, `/portfolios/{id}/transactions/{txId}` |
 | `PUT /portfolios/{id}/transactions/{txId}` | `200` with `ETag` | The portfolio; the transaction keeps its id and sequence |
 | `DELETE /portfolios/{id}/transactions/{txId}` | `200` with `ETag` | The portfolio, without the transaction |
-| `GET /portfolios/{id}/valuation` | `200` | A [valuation](#valuation): one CoinGecko call for the coins still held |
+| `GET /portfolios/{id}/valuation` | `200` | A [valuation](#valuation): one CoinGecko call for the coins still held, more only when one of them is unknown; a coin CoinGecko gives no price for is [left unpriced](#unpriced-coins) |
 
 #### `ETag` and `If-Match`
 
@@ -814,7 +832,7 @@ Failures use the [ProblemDetails](#rest-api) contract above:
 | `409` | The name is taken by another portfolio (ignoring case), or a concurrent write won the race |
 | `412` | `If-Match` does not match the portfolio's current `ETag` |
 | `422` | The ledger would oversell (the `detail` names the coin and date of the sell), the transaction is dated in the future, or CoinGecko does not know the coin or has no price for it in the portfolio's vs_currency |
-| `429`, `502`, `504` | CoinGecko failed while checking a transaction's coin or while valuing; valuing a portfolio that holds a coin CoinGecko no longer knows is a `502`, because the portfolio itself exists |
+| `429`, `502`, `504` | CoinGecko failed while checking a transaction's coin or while valuing |
 
 ### Alert routes
 
@@ -894,7 +912,7 @@ Failures use the [ProblemDetails](#rest-api) contract above:
 | `404` | No alert has that `id`, or the `id` is not a whole number (no route matches it) |
 | `409` | Re-arming an alert that is already armed (`Alert 1 is already armed.`), or a concurrent write won the race |
 | `422` | Creating an alert on a coin CoinGecko does not know, or that has no price in that vs_currency; the `detail` names it |
-| `429`, `502`, `504` | CoinGecko failed while checking a new alert's coin or while evaluating; evaluating an alert whose coin CoinGecko no longer knows is a `502`, as described under [Alert evaluation](#alert-evaluation) |
+| `429`, `502`, `504` | CoinGecko failed while checking a new alert's coin or while evaluating |
 
 ### Health, OpenAPI, and Scalar
 

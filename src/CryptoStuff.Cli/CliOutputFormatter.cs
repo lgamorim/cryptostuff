@@ -32,8 +32,12 @@ public static class CliOutputFormatter
     private static string FormatText(TokenPriceView view) =>
         string.Join('\n', view.Tokens.Select(token => $"{token.ContractAddress}: {FormatAmounts(token.Amounts)}"));
 
+    // An entry with no amounts is a coin or token CoinGecko gave no price for
+    // in any requested currency, or no longer knows.
     private static string FormatAmounts(IReadOnlyList<CurrencyAmount> amounts) =>
-        string.Join(", ", amounts.Select(amount => $"{Invariant(amount.Amount)} {amount.Currency}"));
+        amounts.Count == 0
+            ? "no price"
+            : string.Join(", ", amounts.Select(amount => $"{Invariant(amount.Amount)} {amount.Currency}"));
 
     private static string FormatText(CoinMarketChartView view)
     {

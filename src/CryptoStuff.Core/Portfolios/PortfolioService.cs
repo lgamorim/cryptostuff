@@ -180,50 +180,49 @@ public sealed class PortfolioService(
         if (openCoinIds.Count > 0)
         {
             var priceQuery = new CoinPriceQuery { CoinIds = openCoinIds, VsCurrencies = [portfolio.VsCurrency] };
-            var prices = await cryptocurrencyService.GetPricesAsync(priceQuery, cancellationToken);
+            var prices = await cryptocurrencyService.GetKnownCoinPricesAsync(priceQuery, cancellationToken);
             if (prices.ErrorCode is { } errorCode)
             {
-                // The portfolio exists, so a coin CoinGecko no longer knows is
-                // an upstream problem, not a missing portfolio.
-                return errorCode == ServiceErrorCode.NotFound
-                    ? ServiceResult<PortfolioValuationView>.Failure(
-                        ServiceErrorCode.UpstreamUnavailable,
-                        $"CoinGecko does not know one of the coins held: {string.Join(", ", openCoinIds)}.")
-                    : ServiceResult<PortfolioValuationView>.Failure(errorCode, prices.ErrorDetail);
+                return ServiceResult<PortfolioValuationView>.Failure(errorCode, prices.ErrorDetail);
             }
 
             // `!` is safe: a successful result always carries its value.
             livePrices = prices.Value!.Coins;
         }
 
-        return Value(portfolio, positions, livePrices);
+        return ServiceResult<PortfolioValuationView>.Success(Value(portfolio, positions, livePrices));
     }
 
     /// <summary>
-    /// Joins each coin's position with its live price, or reports the open
-    /// coin CoinGecko returned no price for, in the portfolio's vs_currency,
-    /// as <see cref="ServiceErrorCode.UpstreamUnavailable"/>.
+    /// Joins each coin's position with its live price. A coin still held that
+    /// CoinGecko gave no price for, in the portfolio's vs_currency, because it
+    /// no longer knows the coin or does not quote it in that currency, is left
+    /// unpriced rather than failing the valuation: its row has no market value
+    /// or unrealized profit and loss, and the totals leave it out, so they
+    /// still add up across the rows they cover.
     /// </summary>
-    private static ServiceResult<PortfolioValuationView> Value(
+    private static PortfolioValuationView Value(
         Portfolio portfolio,
         IReadOnlyList<(string CoinId, CoinPosition Position)> positions,
         IReadOnlyList<CoinPrice> livePrices)
     {
         var coins = new List<CoinValuationView>();
+        var unpricedCoins = new List<string>();
         foreach (var (coinId, position) in positions)
         {
-            var marketValue = 0m;
+            decimal? marketValue = 0m;
             if (position.Quantity > 0m)
             {
                 var livePrice = livePrices.FirstOrDefault(c => c.CoinId == coinId)?.Amounts.FirstOrDefault(a => a.Currency == portfolio.VsCurrency);
                 if (livePrice is null)
                 {
-                    return ServiceResult<PortfolioValuationView>.Failure(
-                        ServiceErrorCode.UpstreamUnavailable,
-                        $"CoinGecko returned no price for '{coinId}' in '{portfolio.VsCurrency}'.");
+                    marketValue = null;
+                    unpricedCoins.Add(coinId);
                 }
-
-                marketValue = position.Quantity * livePrice.Amount;
+                else
+                {
+                    marketValue = position.Quantity * livePrice.Amount;
+                }
             }
 
             coins.Add(new CoinValuationView
@@ -237,20 +236,22 @@ public sealed class PortfolioService(
             });
         }
 
-        return ServiceResult<PortfolioValuationView>.Success(new PortfolioValuationView
+        var priced = coins.Where(c => c.MarketValue is not null).ToList();
+        return new PortfolioValuationView
         {
             PortfolioId = portfolio.Id,
             VsCurrency = portfolio.VsCurrency,
             CostBasisMethod = portfolio.CostBasisMethod,
             Coins = coins,
+            UnpricedCoins = unpricedCoins,
             Totals = new PortfolioValuationTotals
             {
-                MarketValue = coins.Sum(c => c.MarketValue),
-                CostBasis = coins.Sum(c => c.CostBasis),
-                UnrealizedProfitAndLoss = coins.Sum(c => c.UnrealizedProfitAndLoss),
-                RealizedProfitAndLoss = coins.Sum(c => c.RealizedProfitAndLoss),
+                MarketValue = priced.Sum(c => c.MarketValue ?? 0m),
+                CostBasis = priced.Sum(c => c.CostBasis),
+                UnrealizedProfitAndLoss = priced.Sum(c => c.UnrealizedProfitAndLoss ?? 0m),
+                RealizedProfitAndLoss = priced.Sum(c => c.RealizedProfitAndLoss),
             },
-        });
+        };
     }
 
     /// <summary>

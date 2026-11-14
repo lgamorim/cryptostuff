@@ -157,6 +157,36 @@ public class WatchlistApiTests
     }
 
     [Fact]
+    public async Task Should_PriceKnownCoinAndListDelistedCoinWithoutAmounts_When_CoinGeckoNoLongerKnowsAWatchlistCoin()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        using var factory = new CryptoStuffApiFactory();
+        factory.CoinGeckoClient.CoinResponse = KnownCoin("bitcoin");
+        factory.CoinGeckoClient.PriceMatrixResponse = CoinGeckoResponse<Dictionary<string, Dictionary<string, decimal>>>.Success(
+            new Dictionary<string, Dictionary<string, decimal>> { ["bitcoin"] = new() { ["usd"] = 43000m } },
+            HttpStatusCode.OK);
+        using var client = factory.CreateClient();
+        var created = await CreateAsync(client, "majors", cancellationToken);
+        (await client.PutAsync($"/watchlists/{created.Id}/coins/bitcoin", content: null, cancellationToken)).StatusCode.Should().Be(HttpStatusCode.OK);
+        (await client.PutAsync($"/watchlists/{created.Id}/coins/ghostcoin", content: null, cancellationToken)).StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var response = await client.GetAsync($"/watchlists/{created.Id}/prices?currency=usd", cancellationToken);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = await response.Content.ReadFromJsonAsync<CoinPriceView>(JsonOptions, cancellationToken);
+        body.Should().BeEquivalentTo(
+            new CoinPriceView
+            {
+                Coins =
+                [
+                    new CoinPrice { CoinId = "bitcoin", Amounts = [new CurrencyAmount { Currency = "usd", Amount = 43000m }] },
+                    new CoinPrice { CoinId = "ghostcoin", Amounts = [] },
+                ],
+            },
+            options => options.WithStrictOrdering());
+    }
+
+    [Fact]
     public async Task Should_ReturnValidationProblem_When_CreateBodyIsMalformedJson()
     {
         var cancellationToken = TestContext.Current.CancellationToken;

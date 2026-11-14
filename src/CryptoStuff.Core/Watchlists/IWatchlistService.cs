@@ -43,10 +43,10 @@ public interface IWatchlistService
 
     /// <summary>
     /// Gets live prices for the watchlist's coins, in its order, through
-    /// <see cref="ICryptocurrencyService.GetPricesAsync"/>, whose failures
-    /// propagate, except that a coin CoinGecko does not know is a
-    /// <see cref="ServiceErrorCode.UpstreamUnavailable"/> rather than a
-    /// <see cref="ServiceErrorCode.NotFound"/>, which stays for an unknown
+    /// <see cref="KnownCoinPrices.GetKnownCoinPricesAsync"/>: a coin CoinGecko
+    /// does not know comes back with no amounts, as one it does not quote in
+    /// the currency does, while every other upstream failure propagates.
+    /// <see cref="ServiceErrorCode.NotFound"/> is kept for an unknown
     /// watchlist. An empty watchlist gets an empty view without calling CoinGecko.
     /// </summary>
     Task<ServiceResult<CoinPriceView>> GetPricesAsync(WatchlistPriceQuery query, CancellationToken cancellationToken);

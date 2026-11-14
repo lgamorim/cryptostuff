@@ -1,4 +1,5 @@
 using CryptoStuff.Core.UnitTests.TestSupport;
+using static CryptoStuff.Core.UnitTests.TestSupport.PriceResults;
 using CryptoStuff.Core.Watchlists;
 
 namespace CryptoStuff.Core.UnitTests.Watchlists;
@@ -527,16 +528,24 @@ public class WatchlistServiceTests
     }
 
     [Fact]
-    public async Task Should_ReturnUpstreamUnavailableNamingTheCoins_When_GetPricesAsyncUpstreamDoesNotKnowACoin()
+    public async Task Should_PriceKnownCoinsAndListUnknownCoinWithoutAmounts_When_GetPricesAsyncUpstreamDoesNotKnowACoin()
     {
         var (repository, upstream, service) = CreateSut();
-        var watchlist = SeedWatchlist(repository, "Majors", "bitcoin", "ethereum");
-        upstream.PricesResult = ServiceResult<CoinPriceView>.Failure(ServiceErrorCode.NotFound);
+        var watchlist = SeedWatchlist(repository, "Majors", "bitcoin", "gone-coin", "ethereum");
+        upstream.PricesResultFor = KnowsOnly(("bitcoin", "usd", 1m), ("ethereum", "usd", 2m));
 
         var result = await service.GetPricesAsync(new WatchlistPriceQuery { WatchlistId = watchlist.Id, VsCurrency = "usd" }, CancellationToken.None);
 
-        result.ErrorCode.Should().Be(ServiceErrorCode.UpstreamUnavailable);
-        result.ErrorDetail.Should().Contain("bitcoin").And.Contain("ethereum");
+        result.IsSuccess.Should().BeTrue();
+        // `!` is safe: the assertion above fails the test unless the result
+        // succeeded, and a successful result always carries its value.
+        result.Value!.Coins.Should().BeEquivalentTo(
+            [
+                .. Prices(("bitcoin", "usd", 1m)).Value!.Coins,
+                new CoinPrice { CoinId = "gone-coin", Amounts = [] },
+                .. Prices(("ethereum", "usd", 2m)).Value!.Coins,
+            ],
+            options => options.WithStrictOrdering());
     }
 
     // Cancellation.

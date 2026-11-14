@@ -70,11 +70,12 @@ public interface IPortfolioService
 
     /// <summary>
     /// Values a portfolio's holdings at live prices, in the portfolio's
-    /// vs_currency, under its cost-basis method. CoinGecko is asked once, for
-    /// the coins still held, and not at all when none is. An open coin
-    /// CoinGecko returns no price for, in that currency, or does not know at
-    /// all, is a <see cref="ServiceErrorCode.UpstreamUnavailable"/>, since the
-    /// portfolio itself exists; any other upstream failure propagates with its
+    /// vs_currency, under its cost-basis method. CoinGecko is asked for the
+    /// coins still held, through <see cref="KnownCoinPrices.GetKnownCoinPricesAsync"/>,
+    /// and not at all when none is. An open coin CoinGecko returns no price
+    /// for, in that currency, or does not know at all, is left unpriced and
+    /// listed in <see cref="PortfolioValuationView.UnpricedCoins"/> rather than
+    /// failing the valuation; any other upstream failure propagates with its
     /// code. Nothing is rounded.
     /// </summary>
     Task<ServiceResult<PortfolioValuationView>> GetValuationAsync(int id, CancellationToken cancellationToken);

@@ -1,5 +1,6 @@
 using CryptoStuff.Core.Portfolios;
 using CryptoStuff.Core.UnitTests.TestSupport;
+using static CryptoStuff.Core.UnitTests.TestSupport.PriceResults;
 
 namespace CryptoStuff.Core.UnitTests.Portfolios;
 
@@ -103,6 +104,7 @@ public class PortfolioValuationTests
             RealizedProfitAndLoss = 0m,
         });
         valuation.Totals.Should().Be(new PortfolioValuationTotals { MarketValue = 300m, CostBasis = 204m, UnrealizedProfitAndLoss = 96m, RealizedProfitAndLoss = 0m });
+        valuation.UnpricedCoins.Should().BeEmpty();
     }
 
     // Bitcoin: buys 1 at 10,000 (fee 10) and 1 at 20,000 (fee 20), then sells 1 at 30,000 (fee 30).
@@ -191,32 +193,6 @@ public class PortfolioValuationTests
         // `!` is safe: the assertion above fails the test unless the query was captured.
         upstream.CapturedPricesQuery!.CoinIds.Should().Equal("bitcoin", "dogecoin");
         upstream.CapturedPricesQuery.VsCurrencies.Should().Equal("eur");
-    }
-
-    [Fact]
-    public async Task Should_ReturnUpstreamUnavailableNamingTheCoin_When_ResponseLacksAnOpenCoin()
-    {
-        var (repository, upstream, service) = CreateSut();
-        var portfolio = SeedPortfolio(repository, CostBasisMethod.Fifo, Buy(1m, 100m, 1), Buy(1m, 10m, 2, coinId: "ethereum"));
-        upstream.PricesResult = PricedInUsd(("bitcoin", 120m));
-
-        var result = await service.GetValuationAsync(portfolio.Id, CancellationToken.None);
-
-        result.ErrorCode.Should().Be(ServiceErrorCode.UpstreamUnavailable);
-        result.ErrorDetail.Should().Contain("ethereum").And.Contain("usd");
-    }
-
-    [Fact]
-    public async Task Should_ReturnUpstreamUnavailableNamingTheCurrency_When_ResponseLacksThePortfolioCurrency()
-    {
-        var (repository, upstream, service) = CreateSut();
-        var portfolio = SeedPortfolioIn(repository, "eur", CostBasisMethod.Fifo, Buy(1m, 100m, 1));
-        upstream.PricesResult = PricedInUsd(("bitcoin", 120m));
-
-        var result = await service.GetValuationAsync(portfolio.Id, CancellationToken.None);
-
-        result.ErrorCode.Should().Be(ServiceErrorCode.UpstreamUnavailable);
-        result.ErrorDetail.Should().Contain("bitcoin").And.Contain("eur");
     }
 
     [Theory]
@@ -317,23 +293,87 @@ public class PortfolioValuationTests
         valuation.Coins.Should().Equal(expected);
         valuation.Totals.Should().Be(new PortfolioValuationTotals
         {
-            MarketValue = expected.MarketValue,
+            MarketValue = 25_617.283945m,
             CostBasis = expected.CostBasis,
-            UnrealizedProfitAndLoss = expected.UnrealizedProfitAndLoss,
+            UnrealizedProfitAndLoss = 10_617.006195m,
             RealizedProfitAndLoss = expected.RealizedProfitAndLoss,
         });
     }
 
     [Fact]
-    public async Task Should_ReturnUpstreamUnavailableNamingTheHeldCoins_When_UpstreamDoesNotKnowAHeldCoin()
+    public async Task Should_ValuePricedCoinAndLeaveUnknownCoinUnpriced_When_UpstreamDoesNotKnowAHeldCoin()
     {
         var (repository, upstream, service) = CreateSut();
         var portfolio = SeedPortfolio(repository, CostBasisMethod.Fifo, Buy(1m, 100m, 1), Buy(1m, 10m, 2, coinId: "ethereum"));
-        upstream.PricesResult = ServiceResult<CoinPriceView>.Failure(ServiceErrorCode.NotFound);
+        upstream.PricesResultFor = KnowsOnly(("bitcoin", "usd", 120m));
 
         var result = await service.GetValuationAsync(portfolio.Id, CancellationToken.None);
 
-        result.ErrorCode.Should().Be(ServiceErrorCode.UpstreamUnavailable);
-        result.ErrorDetail.Should().Contain("bitcoin").And.Contain("ethereum");
+        var valuation = SucceededValue(result);
+        valuation.Coins.Should().Equal(
+            new CoinValuationView { CoinId = "bitcoin", Quantity = 1m, MarketValue = 120m, CostBasis = 100m, UnrealizedProfitAndLoss = 20m, RealizedProfitAndLoss = 0m },
+            new CoinValuationView { CoinId = "ethereum", Quantity = 1m, MarketValue = null, CostBasis = 10m, UnrealizedProfitAndLoss = null, RealizedProfitAndLoss = 0m });
+        valuation.UnpricedCoins.Should().Equal("ethereum");
+        valuation.Totals.Should().Be(new PortfolioValuationTotals { MarketValue = 120m, CostBasis = 100m, UnrealizedProfitAndLoss = 20m, RealizedProfitAndLoss = 0m });
+    }
+
+    [Fact]
+    public async Task Should_LeaveTheCoinUnpriced_When_ResponseLacksAnOpenCoin()
+    {
+        var (repository, upstream, service) = CreateSut();
+        var portfolio = SeedPortfolio(repository, CostBasisMethod.Fifo, Buy(1m, 100m, 1), Buy(1m, 10m, 2, coinId: "ethereum"));
+        upstream.PricesResult = PricedInUsd(("bitcoin", 120m));
+
+        var result = await service.GetValuationAsync(portfolio.Id, CancellationToken.None);
+
+        var valuation = SucceededValue(result);
+        valuation.UnpricedCoins.Should().Equal("ethereum");
+        valuation.Coins.Single(c => c.CoinId == "ethereum").MarketValue.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Should_LeaveTheCoinUnpriced_When_ResponseLacksThePortfolioCurrency()
+    {
+        var (repository, upstream, service) = CreateSut();
+        var portfolio = SeedPortfolioIn(repository, "eur", CostBasisMethod.Fifo, Buy(1m, 100m, 1));
+        upstream.PricesResult = PricedInUsd(("bitcoin", 120m));
+
+        var result = await service.GetValuationAsync(portfolio.Id, CancellationToken.None);
+
+        var valuation = SucceededValue(result);
+        valuation.Coins.Should().Equal(
+            new CoinValuationView { CoinId = "bitcoin", Quantity = 1m, MarketValue = null, CostBasis = 100m, UnrealizedProfitAndLoss = null, RealizedProfitAndLoss = 0m });
+        valuation.UnpricedCoins.Should().Equal("bitcoin");
+        valuation.Totals.Should().Be(new PortfolioValuationTotals { MarketValue = 0m, CostBasis = 0m, UnrealizedProfitAndLoss = 0m, RealizedProfitAndLoss = 0m });
+    }
+
+    // Bitcoin: buys 2 at 100, sells 1 at 150, priced at 200. Dogecoin: bought
+    // and sold, so closed. Ethereum: buys 2 at 10, sells 1 at 30, and is then
+    // delisted, so its row keeps its cost basis and realized gain but the
+    // totals leave it out entirely.
+    [Fact]
+    public async Task Should_TotalOnlyThePricedCoinsClosedOnesIncluded_When_AHeldCoinIsUnpriced()
+    {
+        var (repository, upstream, service) = CreateSut();
+        var portfolio = SeedPortfolio(
+            repository,
+            CostBasisMethod.Fifo,
+            Buy(2m, 100m, 1),
+            Sell(1m, 150m, 2),
+            Buy(1m, 1m, 3, coinId: "dogecoin"),
+            Sell(1m, 2m, 4, coinId: "dogecoin"),
+            Buy(2m, 10m, 5, coinId: "ethereum"),
+            Sell(1m, 30m, 6, coinId: "ethereum"));
+        upstream.PricesResultFor = KnowsOnly(("bitcoin", "usd", 200m));
+
+        var result = await service.GetValuationAsync(portfolio.Id, CancellationToken.None);
+
+        var valuation = SucceededValue(result);
+        valuation.Coins.Should().Equal(
+            new CoinValuationView { CoinId = "bitcoin", Quantity = 1m, MarketValue = 200m, CostBasis = 100m, UnrealizedProfitAndLoss = 100m, RealizedProfitAndLoss = 50m },
+            new CoinValuationView { CoinId = "dogecoin", Quantity = 0m, MarketValue = 0m, CostBasis = 0m, UnrealizedProfitAndLoss = 0m, RealizedProfitAndLoss = 1m },
+            new CoinValuationView { CoinId = "ethereum", Quantity = 1m, MarketValue = null, CostBasis = 10m, UnrealizedProfitAndLoss = null, RealizedProfitAndLoss = 20m });
+        valuation.UnpricedCoins.Should().Equal("ethereum");
+        valuation.Totals.Should().Be(new PortfolioValuationTotals { MarketValue = 200m, CostBasis = 100m, UnrealizedProfitAndLoss = 100m, RealizedProfitAndLoss = 51m });
     }
 }

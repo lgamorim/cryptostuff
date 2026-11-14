@@ -19,7 +19,15 @@ public sealed record PortfolioValuationView
     /// </summary>
     public required IReadOnlyList<CoinValuationView> Coins { get; init; }
 
-    /// <summary>The sum of every coin's figures.</summary>
+    /// <summary>
+    /// The ids of the coins still held that CoinGecko gave no price for in the
+    /// portfolio's vs_currency, ordered by coin id; empty when every one was
+    /// priced. Their rows have no market value or unrealized profit and loss,
+    /// and the totals leave them out.
+    /// </summary>
+    public required IReadOnlyList<string> UnpricedCoins { get; init; }
+
+    /// <summary>The sum of every priced coin's figures, closed coins included; see <see cref="UnpricedCoins"/>.</summary>
     public required PortfolioValuationTotals Totals { get; init; }
 }
 
@@ -32,20 +40,20 @@ public sealed record CoinValuationView
     /// <summary>How many units are still held.</summary>
     public required decimal Quantity { get; init; }
 
-    /// <summary>The units held times the live price of one.</summary>
-    public required decimal MarketValue { get; init; }
+    /// <summary>The units held times the live price of one; null when the coin is held but CoinGecko gave no price for it.</summary>
+    public required decimal? MarketValue { get; init; }
 
     /// <summary>What the units still held cost, fees on their buys included.</summary>
     public required decimal CostBasis { get; init; }
 
-    /// <summary>The market value less the cost basis.</summary>
-    public required decimal UnrealizedProfitAndLoss { get; init; }
+    /// <summary>The market value less the cost basis; null when the market value is.</summary>
+    public required decimal? UnrealizedProfitAndLoss { get; init; }
 
     /// <summary>What the coin's sells have made over the cost of the units they sold.</summary>
     public required decimal RealizedProfitAndLoss { get; init; }
 }
 
-/// <summary>The figures a valuation sums across its coins.</summary>
+/// <summary>The figures a valuation sums across its priced coins.</summary>
 public sealed record PortfolioValuationTotals
 {
     /// <summary>What the units still held are worth at the live prices.</summary>

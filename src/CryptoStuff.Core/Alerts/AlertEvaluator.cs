@@ -32,22 +32,28 @@ public sealed class AlertEvaluator(
     }
 
     /// <summary>
-    /// Prices every alert in its currency, all before any alert is triggered,
-    /// so a failure leaves every alert armed. An alert left without a price,
-    /// its coin unknown to CoinGecko or not quoted in its currency, is reported
+    /// Prices every alert in its currency with one lookup for the union of
+    /// their coins and currencies, all before any alert is triggered, so a
+    /// failure leaves every alert armed. An alert left without a price, its
+    /// coin unknown to CoinGecko or not quoted in its currency, is reported
     /// unpriced instead of failing the others: it stays armed, and the next
     /// evaluation tries it again.
     /// </summary>
     private async Task<ServiceResult<PricedAlerts>> PriceAsync(IReadOnlyList<PriceAlert> alerts, CancellationToken cancellationToken)
     {
-        var fetched = await FetchPricesAsync(alerts, cancellationToken);
-        if (fetched.ErrorCode is { } errorCode)
+        var priceQuery = new CoinPriceQuery
         {
-            return ServiceResult<PricedAlerts>.Failure(errorCode, fetched.ErrorDetail);
+            CoinIds = [.. alerts.Select(a => a.CoinId).Distinct()],
+            VsCurrencies = [.. alerts.Select(a => a.VsCurrency).Distinct()],
+        };
+        var prices = await cryptocurrencyService.GetKnownCoinPricesAsync(priceQuery, cancellationToken);
+        if (prices.ErrorCode is { } errorCode)
+        {
+            return ServiceResult<PricedAlerts>.Failure(errorCode, prices.ErrorDetail);
         }
 
         // `!` is safe: a successful result always carries its value.
-        var coins = fetched.Value!;
+        var coins = prices.Value!.Coins;
         var priced = new List<PricedAlert>();
         var unpriced = new List<UnpricedAlertView>();
         foreach (var alert in alerts)
@@ -64,67 +70,6 @@ public sealed class AlertEvaluator(
         }
 
         return ServiceResult<PricedAlerts>.Success(new PricedAlerts(priced, unpriced));
-    }
-
-    /// <summary>
-    /// Fetches the prices the alerts need with one upstream call for the union
-    /// of their coins and currencies. CoinGecko omits a coin it no longer
-    /// knows, which the adapter reports as <see cref="ServiceErrorCode.NotFound"/>
-    /// for the whole call without naming the coin; only then is each coin asked
-    /// for on its own, in its alerts' currencies, so the coins CoinGecko still
-    /// knows are priced and the unknown ones are simply absent. With a single
-    /// coin the one call already was that coin's own, so it is not repeated.
-    /// The adapter also reports an HTTP <c>404</c> from the price endpoint
-    /// itself as <see cref="ServiceErrorCode.NotFound"/>, which cannot be told
-    /// apart, so that leaves every coin absent too. Any other failure, from
-    /// either kind of call, fails the fetch.
-    /// </summary>
-    private async Task<ServiceResult<IReadOnlyList<CoinPrice>>> FetchPricesAsync(IReadOnlyList<PriceAlert> alerts, CancellationToken cancellationToken)
-    {
-        var coins = alerts.GroupBy(a => a.CoinId).ToList();
-        var all = await GetPricesAsync(
-            [.. coins.Select(c => c.Key)], [.. alerts.Select(a => a.VsCurrency).Distinct()], cancellationToken);
-        if (all.ErrorCode != ServiceErrorCode.NotFound)
-        {
-            return all;
-        }
-
-        var found = new List<CoinPrice>();
-        if (coins.Count == 1)
-        {
-            return ServiceResult<IReadOnlyList<CoinPrice>>.Success(found);
-        }
-
-        foreach (var coinAlerts in coins)
-        {
-            var one = await GetPricesAsync([coinAlerts.Key], [.. coinAlerts.Select(a => a.VsCurrency).Distinct()], cancellationToken);
-            if (one.ErrorCode == ServiceErrorCode.NotFound)
-            {
-                continue;
-            }
-
-            if (one.ErrorCode is { } errorCode)
-            {
-                return ServiceResult<IReadOnlyList<CoinPrice>>.Failure(errorCode, one.ErrorDetail);
-            }
-
-            // `!` is safe: a successful result always carries its value.
-            found.AddRange(one.Value!);
-        }
-
-        return ServiceResult<IReadOnlyList<CoinPrice>>.Success(found);
-    }
-
-    private async Task<ServiceResult<IReadOnlyList<CoinPrice>>> GetPricesAsync(
-        IReadOnlyList<string> coinIds, IReadOnlyList<string> vsCurrencies, CancellationToken cancellationToken)
-    {
-        var prices = await cryptocurrencyService.GetPricesAsync(
-            new CoinPriceQuery { CoinIds = coinIds, VsCurrencies = vsCurrencies }, cancellationToken);
-
-        // `!` is safe: a successful result always carries its value.
-        return prices.ErrorCode is { } errorCode
-            ? ServiceResult<IReadOnlyList<CoinPrice>>.Failure(errorCode, prices.ErrorDetail)
-            : ServiceResult<IReadOnlyList<CoinPrice>>.Success(prices.Value!.Coins);
     }
 
     /// <summary>

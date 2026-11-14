@@ -21,6 +21,7 @@ internal sealed class SpyPortfolioService : IPortfolioService
         VsCurrency = "usd",
         CostBasisMethod = CostBasisMethod.AverageCost,
         Coins = [],
+        UnpricedCoins = [],
         Totals = new PortfolioValuationTotals
         {
             MarketValue = 0m,

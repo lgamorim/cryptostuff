@@ -363,6 +363,27 @@ public class WatchlistCommandsTests
         _watchlists.CapturedPriceQuery.Should().BeEquivalentTo(new WatchlistPriceQuery { WatchlistId = 2, VsCurrency = "usd" });
     }
 
+    [Fact]
+    public async Task Should_PrintNoPriceForTheCoin_When_PricesHasACoinWithoutAmounts()
+    {
+        // Arrange
+        _watchlists.PricesResult = ServiceResult<CoinPriceView>.Success(new CoinPriceView
+        {
+            Coins =
+            [
+                new CoinPrice { CoinId = "bitcoin", Amounts = [new CurrencyAmount { Currency = "usd", Amount = 43000m }] },
+                new CoinPrice { CoinId = "gone-coin", Amounts = [] },
+            ],
+        });
+
+        // Act
+        var exitCode = await _runner.RunAsync(["watchlist", "prices", "2", "usd"], CancellationToken.None);
+
+        // Assert
+        exitCode.Should().Be(0);
+        _output.ToString().Should().Be("bitcoin: 43000 usd\ngone-coin: no price\n");
+    }
+
     [Theory]
     [InlineData("")]
     [InlineData("  ")]

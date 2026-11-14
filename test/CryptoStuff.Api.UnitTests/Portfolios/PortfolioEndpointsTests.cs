@@ -680,6 +680,7 @@ public class PortfolioEndpointsTests
             VsCurrency = "usd",
             CostBasisMethod = CostBasisMethod.Fifo,
             Coins = [],
+            UnpricedCoins = [],
             Totals = new PortfolioValuationTotals { MarketValue = 0m, CostBasis = 0m, UnrealizedProfitAndLoss = 0m, RealizedProfitAndLoss = 0m },
         };
         _service.ValuationResult = ServiceResult<PortfolioValuationView>.Success(valuation);

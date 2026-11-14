@@ -258,6 +258,68 @@ public class PortfolioApiTests
                     RealizedProfitAndLoss = 0m,
                 },
             ],
+            UnpricedCoins = [],
+            Totals = new PortfolioValuationTotals
+            {
+                MarketValue = 25000m,
+                CostBasis = 21000m,
+                UnrealizedProfitAndLoss = 4000m,
+                RealizedProfitAndLoss = 0m,
+            },
+        });
+    }
+
+    [Fact]
+    public async Task Should_ValuePricedCoinAndLeaveDelistedCoinUnpriced_When_CoinGeckoNoLongerKnowsAHeldCoin()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        using var factory = new CryptoStuffApiFactory();
+        factory.CoinGeckoClient.PriceMatrixResponse = CoinGeckoResponse<Dictionary<string, Dictionary<string, decimal>>>.Success(
+            new() { ["bitcoin"] = new() { ["usd"] = 43000m }, ["ghostcoin"] = new() { ["usd"] = 0.5m } },
+            HttpStatusCode.OK);
+        using var client = factory.CreateClient();
+        var created = await CreateAsync(client, "main", cancellationToken);
+        await AddAsync(client, created.Id, Buy(0.5m), cancellationToken);
+        await AddAsync(
+            client,
+            created.Id,
+            new { kind = "buy", coinId = "ghostcoin", quantity = 10m, unitPrice = 0.5m, occurredAt = "2024-02-01T10:00:00Z" },
+            cancellationToken);
+
+        // CoinGecko delists ghostcoin, so simple/price omits it.
+        factory.CoinGeckoClient.PriceMatrixResponse = BitcoinPricedInUsd(50000m);
+
+        var response = await client.GetAsync($"/portfolios/{created.Id}/valuation", cancellationToken);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = await response.Content.ReadFromJsonAsync<PortfolioValuationView>(JsonOptions, cancellationToken);
+        body.Should().BeEquivalentTo(new PortfolioValuationView
+        {
+            PortfolioId = created.Id,
+            VsCurrency = "usd",
+            CostBasisMethod = CostBasisMethod.Fifo,
+            Coins =
+            [
+                new CoinValuationView
+                {
+                    CoinId = "bitcoin",
+                    Quantity = 0.5m,
+                    MarketValue = 25000m,
+                    CostBasis = 21000m,
+                    UnrealizedProfitAndLoss = 4000m,
+                    RealizedProfitAndLoss = 0m,
+                },
+                new CoinValuationView
+                {
+                    CoinId = "ghostcoin",
+                    Quantity = 10m,
+                    MarketValue = null,
+                    CostBasis = 5m,
+                    UnrealizedProfitAndLoss = null,
+                    RealizedProfitAndLoss = 0m,
+                },
+            ],
+            UnpricedCoins = ["ghostcoin"],
             Totals = new PortfolioValuationTotals
             {
                 MarketValue = 25000m,

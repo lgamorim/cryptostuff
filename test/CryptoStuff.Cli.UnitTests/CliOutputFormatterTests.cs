@@ -57,6 +57,40 @@ public class CliOutputFormatterTests
     }
 
     [Fact]
+    public void Should_PrintNoPriceForTheCoin_When_ACoinHasNoAmounts()
+    {
+        var view = new CoinPriceView
+        {
+            Coins =
+            [
+                new CoinPrice { CoinId = "bitcoin", Amounts = [new CurrencyAmount { Currency = "usd", Amount = 43000.5m }] },
+                new CoinPrice { CoinId = "gone-coin", Amounts = [] },
+            ],
+        };
+
+        var result = CliOutputFormatter.Format(view, json: false);
+
+        result.Should().Be("bitcoin: 43000.5 usd\ngone-coin: no price");
+    }
+
+    [Fact]
+    public void Should_PrintNoPriceForTheToken_When_ATokenHasNoAmounts()
+    {
+        var view = new TokenPriceView
+        {
+            Tokens =
+            [
+                new TokenPrice { ContractAddress = "0xabc", Amounts = [new CurrencyAmount { Currency = "usd", Amount = 1.23m }] },
+                new TokenPrice { ContractAddress = "0xdef", Amounts = [] },
+            ],
+        };
+
+        var result = CliOutputFormatter.Format(view, json: false);
+
+        result.Should().Be("0xabc: 1.23 usd\n0xdef: no price");
+    }
+
+    [Fact]
     public void Should_FormatTokenPricesAsJson_When_JsonTrue()
     {
         var view = new TokenPriceView
