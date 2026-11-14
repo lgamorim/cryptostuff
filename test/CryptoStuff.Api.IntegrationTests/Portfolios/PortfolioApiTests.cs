@@ -331,6 +331,54 @@ public class PortfolioApiTests
     }
 
     [Fact]
+    public async Task Should_RecordTheSale_When_SellingAllOfACoinCoinGeckoNoLongerKnows()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        using var factory = new CryptoStuffApiFactory();
+        factory.CoinGeckoClient.PriceMatrixResponse = CoinGeckoResponse<Dictionary<string, Dictionary<string, decimal>>>.Success(
+            new() { ["ghostcoin"] = new() { ["usd"] = 0.5m } },
+            HttpStatusCode.OK);
+        using var client = factory.CreateClient();
+        var created = await CreateAsync(client, "main", cancellationToken);
+        await AddAsync(
+            client,
+            created.Id,
+            new { kind = "buy", coinId = "ghostcoin", quantity = 10m, unitPrice = 0.5m, occurredAt = "2024-02-01T10:00:00Z" },
+            cancellationToken);
+
+        // CoinGecko delists ghostcoin, so simple/price omits it.
+        factory.CoinGeckoClient.PriceMatrixResponse = BitcoinPricedInUsd();
+
+        var response = await client.PostAsJsonAsync(
+            $"/portfolios/{created.Id}/transactions",
+            new { kind = "sell", coinId = "ghostcoin", quantity = 10m, unitPrice = 0.01m, occurredAt = "2024-03-01T10:00:00Z" },
+            cancellationToken);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
+        var body = await response.Content.ReadFromJsonAsync<PortfolioView>(JsonOptions, cancellationToken);
+
+        // `!` is safe: a 201 always carries the portfolio.
+        body!.Transactions.Select(t => t.Kind).Should().Equal(TransactionKind.Buy, TransactionKind.Sell);
+    }
+
+    [Fact]
+    public async Task Should_RecordTheSale_When_SellingAHeldCoinWhileCoinGeckoIsUnavailable()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        using var factory = new CryptoStuffApiFactory();
+        factory.CoinGeckoClient.PriceMatrixResponse = BitcoinPricedInUsd();
+        using var client = factory.CreateClient();
+        var created = await CreateAsync(client, "main", cancellationToken);
+        await AddAsync(client, created.Id, Buy(0.5m), cancellationToken);
+        factory.CoinGeckoClient.PriceMatrixResponse =
+            CoinGeckoResponse<Dictionary<string, Dictionary<string, decimal>>>.Failure(HttpStatusCode.ServiceUnavailable);
+
+        var response = await client.PostAsJsonAsync($"/portfolios/{created.Id}/transactions", Sell(0.5m, "2024-02-15T10:00:00Z"), cancellationToken);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
+    }
+
+    [Fact]
     public async Task Should_ReturnUnprocessableEntityNamingCoinAndDateAndRecordNothing_When_SellOversells()
     {
         var cancellationToken = TestContext.Current.CancellationToken;

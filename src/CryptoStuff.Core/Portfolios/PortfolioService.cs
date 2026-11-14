@@ -104,7 +104,7 @@ public sealed class PortfolioService(
             return ServiceResult<PortfolioView>.Failure(ServiceErrorCode.PreconditionFailed, staleVersion);
         }
 
-        return await CheckTransactionAsync(command.Transaction, portfolio.VsCurrency, recordedCoinId: null, cancellationToken) is { } rejected
+        return await CheckTransactionAsync(command.Transaction, portfolio, cancellationToken) is { } rejected
             ? rejected
             : await SaveLedgerChangeAsync(portfolio, portfolio.AddTransaction(command.Transaction), cancellationToken);
     }
@@ -129,7 +129,7 @@ public sealed class PortfolioService(
             return TransactionNotFound(command.PortfolioId, command.TransactionId);
         }
 
-        return await CheckTransactionAsync(command.Transaction, portfolio.VsCurrency, transaction.CoinId, cancellationToken) is { } rejected
+        return await CheckTransactionAsync(command.Transaction, portfolio, cancellationToken) is { } rejected
             ? rejected
             : await SaveLedgerChangeAsync(portfolio, portfolio.ReplaceTransaction(transaction, command.Transaction), cancellationToken);
     }
@@ -258,14 +258,15 @@ public sealed class PortfolioService(
     /// Checks the rules on a transaction's details that need more than the
     /// ledger — the clock and CoinGecko — returning the failure to report, or
     /// null when they hold. Details that break the entity's own rules throw
-    /// first, before CoinGecko is asked about the coin. The coin is checked
-    /// upstream unless it is <paramref name="recordedCoinId"/>, the coin the
-    /// transaction already holds, which passed the check when it was recorded.
+    /// first, before CoinGecko is asked about the coin. Only a coin new to the
+    /// ledger is checked upstream: one any of its transactions already holds
+    /// passed the check when that transaction was recorded, and asking again
+    /// would stop a coin CoinGecko has since delisted from being sold, and
+    /// every write to a held coin while CoinGecko is failing.
     /// </summary>
     private async Task<ServiceResult<PortfolioView>?> CheckTransactionAsync(
         TransactionDetails details,
-        string vsCurrency,
-        string? recordedCoinId,
+        Portfolio portfolio,
         CancellationToken cancellationToken)
     {
         PortfolioTransaction.EnsureValid(details);
@@ -275,7 +276,9 @@ public sealed class PortfolioService(
         }
 
         var coinId = PortfolioTransaction.NormalizeCoinId(details.CoinId);
-        return coinId == recordedCoinId ? null : await CheckCoinUpstreamAsync(coinId, vsCurrency, cancellationToken);
+        return portfolio.Transactions.Any(t => t.CoinId == coinId)
+            ? null
+            : await CheckCoinUpstreamAsync(coinId, portfolio.VsCurrency, cancellationToken);
     }
 
     /// <summary>

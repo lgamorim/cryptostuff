@@ -45,18 +45,20 @@ public interface IPortfolioService
     /// <summary>
     /// Records a transaction in a portfolio. It is a
     /// <see cref="ServiceErrorCode.RuleViolated"/> when the transaction is
-    /// dated after the current time, when CoinGecko doesn't know its coin or
-    /// has no price for it in the portfolio's vs_currency, or when replaying
-    /// the ledger with it would take a holding below zero; any other upstream
-    /// failure propagates.
+    /// dated after the current time, when its coin is new to the ledger and
+    /// CoinGecko doesn't know it or has no price for it in the portfolio's
+    /// vs_currency, or when replaying the ledger with it would take a holding
+    /// below zero; any other upstream failure propagates. CoinGecko is not
+    /// asked about a coin any of the ledger's transactions already holds.
     /// </summary>
     Task<ServiceResult<PortfolioView>> AddTransactionAsync(AddTransactionCommand command, CancellationToken cancellationToken);
 
     /// <summary>
     /// Replaces every detail of one of a portfolio's transactions, keeping its
     /// id and sequence, under the same rules as
-    /// <see cref="AddTransactionAsync"/>. CoinGecko is asked about the coin
-    /// only when the replacement changes it.
+    /// <see cref="AddTransactionAsync"/>, so CoinGecko is asked about the
+    /// coin only when the ledger holds it nowhere, the replaced transaction
+    /// included.
     /// </summary>
     Task<ServiceResult<PortfolioView>> ReplaceTransactionAsync(ReplaceTransactionCommand command, CancellationToken cancellationToken);
 

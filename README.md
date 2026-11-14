@@ -517,7 +517,7 @@ dotnet run --project src/CryptoStuff.Cli -- price bitcoin usd
 | `portfolio update` | `<id> <name> <method>` — replaces the portfolio's name and cost-basis method | `cryptostuff portfolio update 1 retirement average-cost` |
 | `portfolio delete` | `<id>` — deletes a portfolio with all its transactions | `cryptostuff portfolio delete 1` |
 | `portfolio value` | `<id>` — the portfolio's holdings at live prices; see [Valuation](#valuation) | `cryptostuff portfolio value 1` |
-| `portfolio tx add` | `<id> <kind> <coin> <qty> <price> <when> [--fee <fee>]` — records a buy or sell (`<kind>` is `buy` or `sell`); the coin must be one CoinGecko knows | `cryptostuff portfolio tx add 1 buy bitcoin 0.5 40000 2024-01-31T14:30:00Z --fee 12.5` |
+| `portfolio tx add` | `<id> <kind> <coin> <qty> <price> <when> [--fee <fee>]` — records a buy or sell (`<kind>` is `buy` or `sell`); a coin new to the portfolio must be one CoinGecko knows | `cryptostuff portfolio tx add 1 buy bitcoin 0.5 40000 2024-01-31T14:30:00Z --fee 12.5` |
 | `portfolio tx edit` | `<id> <txid> <kind> <coin> <qty> <price> <when> [--fee <fee>]` — replaces every detail of a transaction, so an omitted `--fee` becomes `0` | `cryptostuff portfolio tx edit 1 3 sell bitcoin 0.25 42000 2024-02-15T09:00:00Z` |
 | `portfolio tx delete` | `<id> <txid>` — deletes a transaction | `cryptostuff portfolio tx delete 1 3` |
 | `alert list` | — lists every alert, with its id, coin, direction, threshold, currency, and state | `cryptostuff alert list` |
@@ -774,8 +774,12 @@ routes. Recording or replacing a transaction takes this body:
 { "kind": "buy", "coinId": "bitcoin", "quantity": 0.5, "unitPrice": 42000, "fee": 2.5, "occurredAt": "2024-01-31T14:30:00Z" }
 ```
 
-- `kind` is `buy` or `sell`; `coinId` is a CoinGecko coin id, checked against
-  CoinGecko and stored lowercased.
+- `kind` is `buy` or `sell`; `coinId` is a CoinGecko coin id, stored
+  lowercased. A coin new to the portfolio's ledger is checked against
+  CoinGecko; a coin any of its transactions already holds is not, since it
+  passed that check when first recorded, so a coin CoinGecko has since
+  delisted can still be sold, and a held coin can be traded while CoinGecko
+  is failing.
 - `quantity` is a JSON number greater than zero; `unitPrice` and `fee` are
   JSON numbers of zero or more, in the portfolio's vs_currency. `fee` is
   optional and zero when omitted. A comma decimal or digit grouping (`"1,5"`)
@@ -831,8 +835,8 @@ Failures use the [ProblemDetails](#rest-api) contract above:
 | `404` | No portfolio has that `id`, the portfolio has no transaction with that `txId`, or either is not a whole number (no route matches it) |
 | `409` | The name is taken by another portfolio (ignoring case), or a concurrent write won the race |
 | `412` | `If-Match` does not match the portfolio's current `ETag` |
-| `422` | The ledger would oversell (the `detail` names the coin and date of the sell), the transaction is dated in the future, or CoinGecko does not know the coin or has no price for it in the portfolio's vs_currency |
-| `429`, `502`, `504` | CoinGecko failed while checking a transaction's coin or while valuing |
+| `422` | The ledger would oversell (the `detail` names the coin and date of the sell), the transaction is dated in the future, or CoinGecko does not know a coin new to the portfolio or has no price for it in the portfolio's vs_currency |
+| `429`, `502`, `504` | CoinGecko failed while checking a coin new to the portfolio or while valuing |
 
 ### Alert routes
 

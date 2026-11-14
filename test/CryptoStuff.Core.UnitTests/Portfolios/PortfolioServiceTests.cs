@@ -465,15 +465,84 @@ public class PortfolioServiceTests
     [Fact]
     public async Task Should_ReturnRuleViolatedNamingCoinAndDateWithoutSaving_When_AddTransactionAsyncSellWouldOversell()
     {
-        var (repository, upstream, service) = CreateSut();
+        var (repository, _, service) = CreateSut();
         var portfolio = SeedPortfolio(repository, "Long term");
         portfolio.AddTransaction(Buy("bitcoin", 1m, Day(1)));
-        upstream.PricesResult = PricedIn("bitcoin", "usd");
 
         var result = await service.AddTransactionAsync(AddCommand(portfolio, Sell("bitcoin", 1.5m, Day(2))), CancellationToken.None);
 
         result.ErrorCode.Should().Be(ServiceErrorCode.RuleViolated);
         result.ErrorDetail.Should().Contain("bitcoin").And.Contain("2024-01-02");
+        portfolio.Transactions.Should().ContainSingle();
+        repository.SaveChangesCallCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Should_RecordAndSaveWithoutUpstreamCall_When_AddTransactionAsyncSellsACoinCoinGeckoNoLongerKnows()
+    {
+        var (repository, upstream, service) = CreateSut();
+        var portfolio = SeedPortfolioWith(repository, Buy("ghostcoin", 10m, Day(1)));
+        upstream.PricesResult = ServiceResult<CoinPriceView>.Failure(ServiceErrorCode.NotFound);
+
+        var result = await service.AddTransactionAsync(AddCommand(portfolio, Sell("ghostcoin", 10m, Day(2))), CancellationToken.None);
+
+        SucceededValue(result).Transactions.Select(t => t.Kind).Should().Equal(TransactionKind.Buy, TransactionKind.Sell);
+        upstream.GetPricesCallCount.Should().Be(0);
+        repository.SaveChangesCallCount.Should().Be(1);
+    }
+
+    [Theory]
+    [InlineData(ServiceErrorCode.RateLimited)]
+    [InlineData(ServiceErrorCode.RequestTimedOut)]
+    [InlineData(ServiceErrorCode.UpstreamUnavailable)]
+    public async Task Should_RecordWithoutUpstreamCall_When_AddTransactionAsyncBuysMoreOfAHeldCoinWhileCoinGeckoFails(ServiceErrorCode errorCode)
+    {
+        var (repository, upstream, service) = CreateSut();
+        var portfolio = SeedPortfolioWith(repository, Buy("bitcoin", 1m, Day(1)));
+        upstream.PricesResult = ServiceResult<CoinPriceView>.Failure(errorCode, "upstream said no");
+
+        var result = await service.AddTransactionAsync(AddCommand(portfolio, Buy("bitcoin", 2m, Day(2))), CancellationToken.None);
+
+        SucceededValue(result).Transactions.Should().HaveCount(2);
+        upstream.GetPricesCallCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Should_RecordWithoutUpstreamCall_When_AddTransactionAsyncCoinIsInTheLedgerInAnotherCase()
+    {
+        var (repository, upstream, service) = CreateSut();
+        var portfolio = SeedPortfolioWith(repository, Buy("bitcoin", 1m, Day(1)));
+
+        var result = await service.AddTransactionAsync(AddCommand(portfolio, Sell("BitCoin", 1m, Day(2))), CancellationToken.None);
+
+        SucceededValue(result).Transactions.Should().HaveCount(2);
+        upstream.GetPricesCallCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Should_RecordWithoutUpstreamCall_When_AddTransactionAsyncBuysACoinWhosePositionTheLedgerHasClosed()
+    {
+        var (repository, upstream, service) = CreateSut();
+        var portfolio = SeedPortfolioWith(repository, Buy("bitcoin", 1m, Day(1)), Sell("bitcoin", 1m, Day(2)));
+
+        var result = await service.AddTransactionAsync(AddCommand(portfolio, Buy("bitcoin", 1m, Day(3))), CancellationToken.None);
+
+        SucceededValue(result).Transactions.Should().HaveCount(3);
+        upstream.GetPricesCallCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Should_CheckTheNewCoinUpstream_When_AddTransactionAsyncCoinIsNewToALedgerHoldingOthers()
+    {
+        var (repository, upstream, service) = CreateSut();
+        var portfolio = SeedPortfolioWith(repository, Buy("bitcoin", 1m, Day(1)));
+        upstream.PricesResult = ServiceResult<CoinPriceView>.Failure(ServiceErrorCode.NotFound);
+
+        var result = await service.AddTransactionAsync(AddCommand(portfolio, Buy("notacoin", 1m, Day(2))), CancellationToken.None);
+
+        result.ErrorCode.Should().Be(ServiceErrorCode.RuleViolated);
+        result.ErrorDetail.Should().Contain("notacoin");
+        upstream.CapturedPricesQuery.Should().BeEquivalentTo(new CoinPriceQuery { CoinIds = ["notacoin"], VsCurrencies = ["usd"] });
         portfolio.Transactions.Should().ContainSingle();
         repository.SaveChangesCallCount.Should().Be(0);
     }
@@ -538,6 +607,20 @@ public class PortfolioServiceTests
         var result = await service.ReplaceTransactionAsync(command, CancellationToken.None);
 
         SucceededValue(result).Transactions.Should().ContainSingle().Which.Quantity.Should().Be(3m);
+        upstream.GetPricesCallCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Should_ReplaceWithoutUpstreamCall_When_ReplaceTransactionAsyncChangesTheCoinToAnotherInTheLedger()
+    {
+        var (repository, upstream, service) = CreateSut();
+        var portfolio = SeedPortfolioWith(repository, Buy("bitcoin", 1m, Day(1)), Buy("ghostcoin", 10m, Day(2)));
+        upstream.PricesResult = ServiceResult<CoinPriceView>.Failure(ServiceErrorCode.NotFound);
+        var command = new ReplaceTransactionCommand { PortfolioId = portfolio.Id, TransactionId = portfolio.Transactions[0].Id, Transaction = Buy("ghostcoin", 5m, Day(1)) };
+
+        var result = await service.ReplaceTransactionAsync(command, CancellationToken.None);
+
+        SucceededValue(result).Transactions.Select(t => t.CoinId).Should().Equal("ghostcoin", "ghostcoin");
         upstream.GetPricesCallCount.Should().Be(0);
     }
 
