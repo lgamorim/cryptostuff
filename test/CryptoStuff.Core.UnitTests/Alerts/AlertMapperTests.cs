@@ -21,7 +21,21 @@ public class AlertMapperTests
         view.State.Should().Be(AlertState.Armed);
         view.TriggeredAt.Should().BeNull();
         view.TriggeredPrice.Should().BeNull();
+        view.AwaitingReset.Should().BeFalse();
         view.Version.Should().Be(1);
+    }
+
+    [Fact]
+    public void Should_MapAwaitingReset_When_RearmedAlertMapped()
+    {
+        var alert = PriceAlert.Create("bitcoin", "usd", AlertDirection.Above, 100m);
+        alert.Trigger(105m, new DateTimeOffset(2024, 6, 1, 12, 0, 0, TimeSpan.Zero));
+        alert.Rearm();
+
+        var view = AlertMapper.ToView(alert);
+
+        view.State.Should().Be(AlertState.Armed);
+        view.AwaitingReset.Should().BeTrue();
     }
 
     [Fact]

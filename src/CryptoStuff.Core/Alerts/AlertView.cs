@@ -21,6 +21,12 @@ public sealed record AlertView
     /// <summary>Whether the alert is waiting for its price or has been met.</summary>
     public required AlertState State { get; init; }
 
+    /// <summary>
+    /// Whether the alert was re-armed and waits for its price to move back
+    /// past the threshold before it can trigger again.
+    /// </summary>
+    public required bool AwaitingReset { get; init; }
+
     /// <summary>When the alert last triggered, in UTC; null while it is armed.</summary>
     public required DateTimeOffset? TriggeredAt { get; init; }
 

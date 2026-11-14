@@ -1,3 +1,4 @@
+using System.Globalization;
 using CryptoStuff.Core.Alerts;
 
 namespace CryptoStuff.Core.UnitTests.Alerts;
@@ -22,6 +23,7 @@ public class PriceAlertTests
         alert.State.Should().Be(AlertState.Armed);
         alert.TriggeredAt.Should().BeNull();
         alert.TriggeredPrice.Should().BeNull();
+        alert.AwaitingReset.Should().BeFalse();
         alert.Version.Should().Be(1);
     }
 
@@ -217,11 +219,87 @@ public class PriceAlertTests
     }
 
     [Fact]
-    public void Should_TriggerAgainWithTheNewRecord_When_AlertWasRearmed()
+    public void Should_AwaitReset_When_RearmCalledOnTriggeredAlert()
+    {
+        var alert = PriceAlert.Create("bitcoin", "usd", AlertDirection.Above, 100m);
+        alert.Trigger(105m, TriggerTime);
+
+        alert.Rearm();
+
+        alert.AwaitingReset.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Should_RefuseTriggerAndLeaveAlertUnchanged_When_RearmedAlertsPriceHasNotMovedBack()
     {
         var alert = PriceAlert.Create("bitcoin", "usd", AlertDirection.Above, 100m);
         alert.Trigger(105m, TriggerTime);
         alert.Rearm();
+
+        var outcome = alert.Trigger(105m, TriggerTime.AddHours(1));
+
+        outcome.IsValid.Should().BeFalse();
+        outcome.ErrorMessage.Should().Contain("moved back");
+        alert.State.Should().Be(AlertState.Armed);
+        alert.TriggeredAt.Should().BeNull();
+        alert.AwaitingReset.Should().BeTrue();
+        alert.Version.Should().Be(3);
+    }
+
+    [Theory]
+    [InlineData(AlertDirection.Above, "99.99999999")]
+    [InlineData(AlertDirection.Below, "100.00000001")]
+    public void Should_StopAwaitingResetAndBumpVersion_When_RearmedAlertSeesAPriceThatDoesNotMeetIt(AlertDirection direction, string priceLiteral)
+    {
+        var alert = PriceAlert.Create("bitcoin", "usd", direction, 100m);
+        alert.Trigger(100m, TriggerTime);
+        alert.Rearm();
+
+        var changed = alert.ResetIfNotMetBy(decimal.Parse(priceLiteral, CultureInfo.InvariantCulture));
+
+        changed.Should().BeTrue();
+        alert.AwaitingReset.Should().BeFalse();
+        alert.State.Should().Be(AlertState.Armed);
+        alert.Version.Should().Be(4);
+    }
+
+    [Theory]
+    [InlineData(AlertDirection.Above, "100")]
+    [InlineData(AlertDirection.Above, "150")]
+    [InlineData(AlertDirection.Below, "100")]
+    [InlineData(AlertDirection.Below, "50")]
+    public void Should_KeepAwaitingResetAndLeaveVersion_When_RearmedAlertSeesAPriceThatStillMeetsIt(AlertDirection direction, string priceLiteral)
+    {
+        var alert = PriceAlert.Create("bitcoin", "usd", direction, 100m);
+        alert.Trigger(100m, TriggerTime);
+        alert.Rearm();
+
+        var changed = alert.ResetIfNotMetBy(decimal.Parse(priceLiteral, CultureInfo.InvariantCulture));
+
+        changed.Should().BeFalse();
+        alert.AwaitingReset.Should().BeTrue();
+        alert.Version.Should().Be(3);
+    }
+
+    [Fact]
+    public void Should_ReportNoChange_When_AlertNotAwaitingResetSeesAPriceThatDoesNotMeetIt()
+    {
+        var alert = PriceAlert.Create("bitcoin", "usd", AlertDirection.Above, 100m);
+
+        var changed = alert.ResetIfNotMetBy(50m);
+
+        changed.Should().BeFalse();
+        alert.AwaitingReset.Should().BeFalse();
+        alert.Version.Should().Be(1);
+    }
+
+    [Fact]
+    public void Should_TriggerAgainWithTheNewRecord_When_RearmedAlertsPriceMovedBackThenMetItAgain()
+    {
+        var alert = PriceAlert.Create("bitcoin", "usd", AlertDirection.Above, 100m);
+        alert.Trigger(105m, TriggerTime);
+        alert.Rearm();
+        alert.ResetIfNotMetBy(95m);
 
         var outcome = alert.Trigger(110m, TriggerTime.AddHours(1));
 
@@ -229,7 +307,7 @@ public class PriceAlertTests
         alert.State.Should().Be(AlertState.Triggered);
         alert.TriggeredAt.Should().Be(TriggerTime.AddHours(1));
         alert.TriggeredPrice.Should().Be(110m);
-        alert.Version.Should().Be(4);
+        alert.Version.Should().Be(5);
     }
 
     // Update.
@@ -260,6 +338,20 @@ public class PriceAlertTests
         alert.TriggeredPrice.Should().BeNull();
         alert.Threshold.Should().Be(200m);
         alert.Version.Should().Be(3);
+    }
+
+    [Fact]
+    public void Should_StopAwaitingReset_When_UpdateCalledOnRearmedAlert()
+    {
+        // A new condition is watched from scratch, as a new alert would be.
+        var alert = PriceAlert.Create("bitcoin", "usd", AlertDirection.Above, 100m);
+        alert.Trigger(105m, TriggerTime);
+        alert.Rearm();
+
+        alert.Update(AlertDirection.Above, 104m);
+
+        alert.AwaitingReset.Should().BeFalse();
+        alert.Trigger(105m, TriggerTime.AddHours(1)).IsValid.Should().BeTrue();
     }
 
     [Theory]

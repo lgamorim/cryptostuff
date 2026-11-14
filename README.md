@@ -423,14 +423,25 @@ One evaluation:
 3. Triggers each alert whose price meets it, inclusively: at or above the
    threshold for `above`, at or below it for `below`. An alert whose price has
    not reached it stays armed and is checked again by the next evaluation.
-   Every alert triggered by one evaluation carries the same time, read from
-   the clock once the prices arrived.
+   A re-armed alert is the exception: it triggers only on a fresh crossing
+   (see below). Every alert triggered by one evaluation carries the same
+   time, read from the clock once the prices arrived.
 4. Reports each alert it triggered: its id, coin, currency, direction,
    threshold, the price that met it, and when. It also reports each alert it
    could not price, by id, coin and currency.
 
 A triggered alert is not evaluated again until it is
 re-armed or edited.
+
+**Re-armed alerts wait for a fresh crossing.** Re-arming does not let a price
+that never moved back trigger the alert again: a re-armed alert stays
+`armed` but is marked `awaitingReset` until an evaluation sees a price that
+does not meet it, back below the threshold for `above` or back above it for
+`below`; that evaluation saves the reset without triggering, and a later one
+can trigger the alert as usual. Editing an alert's condition watches the new
+one from scratch, as a new alert would, so an edited alert is never left
+awaiting a reset. Alerts re-armed before this rule existed carry no mark and
+can trigger on the next evaluation that finds their price past the threshold.
 
 **When something goes wrong.** An upstream failure, such as `RateLimited` or
 `RequestTimedOut`, fails the evaluation with that code and leaves every alert
@@ -446,11 +457,12 @@ alert unpriced rather than failing the evaluation.
 
 **Two writers.** Evaluations can overlap another write to the same alert,
 such as another evaluation (the CLI beside the API, or a doubled tick), an
-edit, a re-arm, or a delete. Each trigger is saved on its own, and the alert's
-version turns a lost race into a skip rather than an overwrite: that alert is
-left as the other writer made it and is checked again by the next evaluation,
-while the rest of the evaluation's triggers are still saved. The skipped alert
-does not appear in the report.
+edit, a re-arm, or a delete. Each trigger, and each reset of a re-armed
+alert, is saved on its own, and the alert's version turns a lost race into a
+skip rather than an overwrite: that alert is left as the other writer made it
+and is checked again by the next evaluation, while the rest of the
+evaluation's changes are still saved. The skipped alert does not appear in the
+report.
 
 ### Background evaluation
 
@@ -546,7 +558,7 @@ dotnet run --project src/CryptoStuff.Cli -- price bitcoin usd
 | `alert show` | `<id>` — an alert's id, coin, currency, direction, threshold, state, when and at what price it triggered, and version | `cryptostuff alert show 1` |
 | `alert update` | `<id> <direction> <threshold>` — replaces the alert's direction and threshold, which re-arms it whether or not it had triggered | `cryptostuff alert update 1 below 42000` |
 | `alert delete` | `<id>` — deletes an alert | `cryptostuff alert delete 1` |
-| `alert rearm` | `<id>` — moves a triggered alert back to armed; re-arming an armed alert is refused | `cryptostuff alert rearm 1` |
+| `alert rearm` | `<id>` — moves a triggered alert back to armed, where it waits for its price to move back past the threshold before it can trigger again; re-arming an armed alert is refused | `cryptostuff alert rearm 1` |
 | `alert check` | — evaluates the armed alerts once and prints the ones that triggered, or `Nothing triggered.`, then any it could not price; see [Alert evaluation](#alert-evaluation) | `cryptostuff alert check` |
 
 Each command applies the applicable [input validation](#input-validation)
@@ -579,7 +591,10 @@ with `--json`.
 The `alert` commands follow the same rules. `create`, `show`, `update` and
 `rearm` print the resulting alert, text or `--json` alike, with `above` and
 `below`, `armed` and `triggered` written as the same lowercase tokens Core
-parses; `delete` prints `Deleted alert <id>.`, or `{"Id": <id>, "Deleted": true}`
+parses. A re-armed alert that has not yet seen its price move back shows as
+`armed (waiting for the price to move back)` in `show`, `(armed, waiting for
+the price to move back)` in `list`, and with `"AwaitingReset": true` in
+`--json`. `delete` prints `Deleted alert <id>.`, or `{"Id": <id>, "Deleted": true}`
 with `--json`. A threshold is read like a portfolio quantity (a point for the
 decimal mark, no thousands separators or exponent: `0.5` is accepted, `0,5` and
 `1e3` are not) and must be greater than zero, so `0` and `-1` are rejected as
@@ -880,7 +895,7 @@ curl -i -X POST http://localhost:5200/alerts -H 'Content-Type: application/json'
 HTTP/1.1 201 Created
 Location: /alerts/1
 
-{ "id": 1, "coinId": "bitcoin", "vsCurrency": "usd", "direction": "above", "threshold": 50000, "state": "armed", "triggeredAt": null, "triggeredPrice": null, "version": 1 }
+{ "id": 1, "coinId": "bitcoin", "vsCurrency": "usd", "direction": "above", "threshold": 50000, "state": "armed", "awaitingReset": false, "triggeredAt": null, "triggeredPrice": null, "version": 1 }
 ```
 
 `PUT /alerts/{id}` replaces everything a client can change about an alert,
@@ -908,11 +923,15 @@ curl -s http://localhost:5200/alerts/1
 ```
 
 ```json
-{ "id": 1, "coinId": "bitcoin", "vsCurrency": "usd", "direction": "above", "threshold": 50000, "state": "triggered", "triggeredAt": "2026-11-07T12:30:00Z", "triggeredPrice": 52000.5, "version": 2 }
+{ "id": 1, "coinId": "bitcoin", "vsCurrency": "usd", "direction": "above", "threshold": 50000, "state": "triggered", "awaitingReset": false, "triggeredAt": "2026-11-07T12:30:00Z", "triggeredPrice": 52000.5, "version": 2 }
 ```
 
 It stays `triggered`, and is not evaluated again, until `POST /alerts/{id}/rearm`
-moves it back to `armed` or a `PUT` replaces its condition.
+moves it back to `armed` or a `PUT` replaces its condition. A re-armed alert
+comes back with `"awaitingReset": true` and triggers only after an evaluation
+has seen its price move back past the threshold, which sets `awaitingReset`
+to `false` and the version one higher (see
+[Re-armed alerts](#alert-evaluation)).
 
 | Route | Success | Notes |
 |---|---|---|
@@ -921,7 +940,7 @@ moves it back to `armed` or a `PUT` replaces its condition.
 | `GET /alerts/{id}` | `200` | |
 | `PUT /alerts/{id}` | `200` | The updated, armed alert |
 | `DELETE /alerts/{id}` | `204` | No body |
-| `POST /alerts/{id}/rearm` | `200` | The armed alert |
+| `POST /alerts/{id}/rearm` | `200` | The armed alert, awaiting its reset |
 | `POST /alerts/check` | `200` | The alerts this evaluation triggered, and the ones it could not price |
 
 Alerts carry a `version`, but no `ETag`: as with the CLI, every alert write is

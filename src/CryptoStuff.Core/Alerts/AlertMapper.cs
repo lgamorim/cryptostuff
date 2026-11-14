@@ -13,6 +13,7 @@ public static class AlertMapper
             Direction = alert.Direction,
             Threshold = alert.Threshold,
             State = alert.State,
+            AwaitingReset = alert.AwaitingReset,
             TriggeredAt = alert.TriggeredAt,
             TriggeredPrice = alert.TriggeredPrice,
             Version = alert.Version,

@@ -31,6 +31,7 @@ public class AlertEndpointsTests
         State = AlertState.Armed,
         TriggeredAt = null,
         TriggeredPrice = null,
+        AwaitingReset = false,
         Version = 1,
     };
 

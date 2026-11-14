@@ -23,6 +23,9 @@ namespace CryptoStuff.Persistence.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("INTEGER");
 
+                    b.Property<bool>("AwaitingReset")
+                        .HasColumnType("INTEGER");
+
                     b.Property<string>("CoinId")
                         .IsRequired()
                         .HasColumnType("TEXT");

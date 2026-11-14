@@ -154,7 +154,10 @@ public static class AlertEndpoints
         return ServiceResultHttp.NoContent(result);
     }
 
-    /// <summary><c>POST /alerts/{id}/rearm</c> — moves a triggered alert back to armed.</summary>
+    /// <summary>
+    /// <c>POST /alerts/{id}/rearm</c> — moves a triggered alert back to armed,
+    /// awaiting its price moving back past the threshold before it can trigger again.
+    /// </summary>
     public static async Task<IResult> RearmAsync(int id, IAlertService service, CancellationToken cancellationToken)
     {
         var idProblem = RequestValidation.ValidateId(id, "id");

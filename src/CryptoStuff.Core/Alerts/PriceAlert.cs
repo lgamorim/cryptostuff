@@ -5,7 +5,11 @@ namespace CryptoStuff.Core.Alerts;
 /// in one vs_currency. It starts <see cref="AlertState.Armed"/>; when the
 /// price meets it, <see cref="Trigger"/> records when and at what price and
 /// moves it to <see cref="AlertState.Triggered"/>, where it stays until
-/// <see cref="Rearm"/> or <see cref="Update"/> arms it again. The coin and
+/// <see cref="Rearm"/> or <see cref="Update"/> arms it again. A new or
+/// updated alert triggers on the first price that meets it, but a re-armed
+/// one is <see cref="AwaitingReset"/>: it triggers only after a price has
+/// moved back past the threshold, so a price that never moved back does not
+/// trigger it again. The coin and
 /// the vs_currency are fixed at creation, so a stored alert can never break
 /// the price lookup the coin was validated for; to watch another coin, delete
 /// the alert and create a new one. The id is zero until the repository first
@@ -50,6 +54,13 @@ public sealed class PriceAlert
     public decimal? TriggeredPrice { get; private set; }
 
     /// <summary>
+    /// Whether the alert was re-armed and has not yet seen a price that does
+    /// not meet it. While true, the alert is armed but cannot trigger:
+    /// <see cref="ResetIfNotMetBy"/> clears it once the price has moved back.
+    /// </summary>
+    public bool AwaitingReset { get; private set; }
+
+    /// <summary>
     /// The alert's version: 1 when created, and one higher after every change
     /// to it, so a save can detect that the stored alert changed since it was read.
     /// </summary>
@@ -85,13 +96,19 @@ public sealed class PriceAlert
     /// <summary>
     /// Moves an armed alert to triggered, recording when it happened, stored
     /// in UTC, and at what price. A failed outcome, for an alert that has
-    /// already triggered, leaves the alert unchanged.
+    /// already triggered or is <see cref="AwaitingReset"/>, leaves the alert
+    /// unchanged.
     /// </summary>
     public ValidationOutcome Trigger(decimal price, DateTimeOffset at)
     {
         if (State == AlertState.Triggered)
         {
             return ValidationOutcome.Failure($"Alert {Id} has already triggered; re-arm it before it can trigger again.");
+        }
+
+        if (AwaitingReset)
+        {
+            return ValidationOutcome.Failure($"Alert {Id} was re-armed and triggers only once its price has moved back past the threshold.");
         }
 
         State = AlertState.Triggered;
@@ -103,8 +120,10 @@ public sealed class PriceAlert
 
     /// <summary>
     /// Moves a triggered alert back to armed and forgets when and at what
-    /// price it triggered. A failed outcome, for an alert that is already
-    /// armed, leaves the alert unchanged.
+    /// price it triggered. The price that triggered it is assumed to still
+    /// meet it, so the alert is left <see cref="AwaitingReset"/> until a price
+    /// shows otherwise. A failed outcome, for an alert that is already armed,
+    /// leaves the alert unchanged.
     /// </summary>
     public ValidationOutcome Rearm()
     {
@@ -114,13 +133,34 @@ public sealed class PriceAlert
         }
 
         ResetToArmed();
+        AwaitingReset = true;
         return ValidationOutcome.Success();
+    }
+
+    /// <summary>
+    /// Clears <see cref="AwaitingReset"/> when <paramref name="price"/> does
+    /// not meet the alert, so the next price that does can trigger it.
+    /// Returns whether the alert changed; an alert not awaiting a reset, or
+    /// one the price still meets, is left as it is.
+    /// </summary>
+    public bool ResetIfNotMetBy(decimal price)
+    {
+        if (!AwaitingReset || IsMetBy(price))
+        {
+            return false;
+        }
+
+        AwaitingReset = false;
+        Version++;
+        return true;
     }
 
     /// <summary>
     /// Replaces the direction and threshold, the only editable fields, and arms
     /// the alert, since a triggered record means nothing against a new
-    /// condition. An alert that is already armed stays armed. The alert is left
+    /// condition. An alert that is already armed stays armed. The new
+    /// condition is watched from scratch, as a new alert's would be, so the
+    /// alert is not left <see cref="AwaitingReset"/>. The alert is left
     /// unchanged when an argument is rejected.
     /// </summary>
     /// <exception cref="ArgumentOutOfRangeException">
@@ -134,6 +174,7 @@ public sealed class PriceAlert
         Direction = direction;
         Threshold = threshold;
         ResetToArmed();
+        AwaitingReset = false;
     }
 
     private void ResetToArmed()

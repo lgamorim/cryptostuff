@@ -41,7 +41,7 @@ public static class CliUsage
           alert show <id>                             Show an alert
           alert update <id> <above|below> <threshold> Replace an alert's direction and threshold, which re-arms it
           alert delete <id>                           Delete an alert
-          alert rearm <id>                            Re-arm a triggered alert
+          alert rearm <id>                            Re-arm a triggered alert; it can trigger again only after its price has moved back past the threshold
           alert check                                 Evaluate the armed alerts once and print what triggered and what could not be priced
 
         Options:

@@ -2,7 +2,9 @@ namespace CryptoStuff.Core.Alerts;
 
 /// <summary>
 /// The single evaluation both hosts run: check every armed alert against
-/// current prices and trigger the ones that are met.
+/// current prices and trigger the ones that are met, except a re-armed alert
+/// still awaiting its reset, which a price that does not meet it resets
+/// instead.
 /// </summary>
 public interface IAlertEvaluator
 {

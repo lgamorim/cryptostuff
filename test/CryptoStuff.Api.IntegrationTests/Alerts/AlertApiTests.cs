@@ -52,6 +52,7 @@ public class AlertApiTests
             State = AlertState.Armed,
             TriggeredAt = null,
             TriggeredPrice = null,
+            AwaitingReset = false,
             Version = 1,
         });
     }
@@ -225,10 +226,38 @@ public class AlertApiTests
         var response = await client.PostAsync($"/alerts/{created.Id}/rearm", content: null, cancellationToken);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var expected = created with { Version = 3 };
+        var expected = created with { AwaitingReset = true, Version = 3 };
         (await response.Content.ReadFromJsonAsync<AlertView>(JsonOptions, cancellationToken)).Should().BeEquivalentTo(expected);
         var reloaded = await client.GetFromJsonAsync<AlertView>($"/alerts/{created.Id}", JsonOptions, cancellationToken);
         reloaded.Should().BeEquivalentTo(expected);
+    }
+
+    [Fact]
+    public async Task Should_TriggerARearmedAlertOnlyAfterThePriceMovesBack_When_ChecksRunAfterRearm()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        using var factory = new CryptoStuffApiFactory();
+        factory.CoinGeckoClient.PriceMatrixResponse = BitcoinPricedInUsd(43000m);
+        using var client = WithClock(factory).CreateClient();
+        var created = await CreateAsync(client, cancellationToken, "above", 50000m);
+        factory.CoinGeckoClient.PriceMatrixResponse = BitcoinPricedInUsd(101000m);
+        (await CheckAsync(client, cancellationToken)).Triggered.Should().ContainSingle();
+        (await client.PostAsync($"/alerts/{created.Id}/rearm", content: null, cancellationToken)).StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var stillAbove = await CheckAsync(client, cancellationToken);
+        factory.CoinGeckoClient.PriceMatrixResponse = BitcoinPricedInUsd(49000m);
+        var movedBack = await CheckAsync(client, cancellationToken);
+        var afterMovingBack = await client.GetFromJsonAsync<AlertView>($"/alerts/{created.Id}", JsonOptions, cancellationToken);
+        factory.CoinGeckoClient.PriceMatrixResponse = BitcoinPricedInUsd(101000m);
+        var crossedAgain = await CheckAsync(client, cancellationToken);
+
+        stillAbove.Triggered.Should().BeEmpty();
+        movedBack.Triggered.Should().BeEmpty();
+
+        // `!` is safe: GetFromJsonAsync throws unless the GET succeeded with a body.
+        afterMovingBack!.AwaitingReset.Should().BeFalse();
+        afterMovingBack.State.Should().Be(AlertState.Armed);
+        crossedAgain.Triggered.Should().ContainSingle().Which.Id.Should().Be(created.Id);
     }
 
     [Fact]
@@ -378,6 +407,15 @@ public class AlertApiTests
 
         // `!` is safe: a 201 always carries the created alert.
         return (await response.Content.ReadFromJsonAsync<AlertView>(JsonOptions, cancellationToken))!;
+    }
+
+    private static async Task<AlertEvaluationView> CheckAsync(HttpClient client, CancellationToken cancellationToken)
+    {
+        var response = await client.PostAsync("/alerts/check", content: null, cancellationToken);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        // `!` is safe: a 200 from the check always carries the evaluation.
+        return (await response.Content.ReadFromJsonAsync<AlertEvaluationView>(JsonOptions, cancellationToken))!;
     }
 
     private static async Task<JsonElement> ReadOpenApiDocumentAsync(HttpClient client, CancellationToken cancellationToken)

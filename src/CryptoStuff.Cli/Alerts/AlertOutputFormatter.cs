@@ -44,7 +44,7 @@ public static class AlertOutputFormatter
         views.Count == 0
             ? "(no alerts)"
             : string.Join('\n', views.Select(view =>
-                $"{view.Id}: {view.CoinId} {Token(view.Direction)} {Invariant(view.Threshold)} {view.VsCurrency} ({Token(view.State)})"));
+                $"{view.Id}: {view.CoinId} {Token(view.Direction)} {Invariant(view.Threshold)} {view.VsCurrency} ({Token(view.State)}{(view.AwaitingReset ? $", {AwaitingResetNote}" : string.Empty)})"));
 
     private static string FormatText(AlertView view) =>
         string.Join('\n',
@@ -53,9 +53,12 @@ public static class AlertOutputFormatter
             $"Currency: {view.VsCurrency}",
             $"Direction: {Token(view.Direction)}",
             $"Threshold: {Invariant(view.Threshold)}",
-            $"State: {Token(view.State)}",
+            $"State: {Token(view.State)}{(view.AwaitingReset ? $" ({AwaitingResetNote})" : string.Empty)}",
             FormatTriggerLine(view),
             $"Version: {view.Version}");
+
+    // Shown beside the state of a re-armed alert that cannot trigger yet.
+    private const string AwaitingResetNote = "waiting for the price to move back";
 
     // Core keeps TriggeredAt and TriggeredPrice null together, while the alert is armed.
     private static string FormatTriggerLine(AlertView view) =>

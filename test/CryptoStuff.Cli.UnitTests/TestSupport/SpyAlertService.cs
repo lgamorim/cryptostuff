@@ -15,6 +15,7 @@ internal sealed class SpyAlertService : IAlertService
         State = AlertState.Armed,
         TriggeredAt = null,
         TriggeredPrice = null,
+        AwaitingReset = false,
         Version = 1,
     };
 

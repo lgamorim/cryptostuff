@@ -39,6 +39,22 @@ public class AlertCommandsTests
     }
 
     [Fact]
+    public async Task Should_MarkTheRearmedAlertWaitingForThePriceToMoveBack_When_ListSucceeds()
+    {
+        // Arrange
+        _alerts.ListResult = ServiceResult<IReadOnlyList<AlertView>>.Success(
+            [Armed(id: 1, "bitcoin", "usd", AlertDirection.Above, 50000m) with { AwaitingReset = true }]);
+
+        // Act
+        var exitCode = await _runner.RunAsync(["alert", "list"], CancellationToken.None);
+
+        // Assert
+        exitCode.Should().Be(0);
+        _output.ToString().Should().Be("1: bitcoin above 50000 usd (armed, waiting for the price to move back)\n");
+        _error.ToString().Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task Should_PrintPlaceholder_When_ListIsEmpty()
     {
         // Arrange
@@ -89,6 +105,23 @@ public class AlertCommandsTests
         _alerts.CapturedId.Should().Be(7);
         _output.ToString().Should().Be(
             "Id: 7\nCoin: bitcoin\nCurrency: usd\nDirection: above\nThreshold: 50000\nState: armed\nTriggered: never\nVersion: 1\n");
+        _error.ToString().Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Should_PrintThatTheAlertWaitsForThePriceToMoveBack_When_ShownAlertWasRearmed()
+    {
+        // Arrange
+        _alerts.GetResult = ServiceResult<AlertView>.Success(
+            Armed(id: 7, "bitcoin", "usd", AlertDirection.Above, 50000m) with { AwaitingReset = true, Version = 3 });
+
+        // Act
+        var exitCode = await _runner.RunAsync(["alert", "show", "7"], CancellationToken.None);
+
+        // Assert
+        exitCode.Should().Be(0);
+        _output.ToString().Should().Be(
+            "Id: 7\nCoin: bitcoin\nCurrency: usd\nDirection: above\nThreshold: 50000\nState: armed (waiting for the price to move back)\nTriggered: never\nVersion: 3\n");
         _error.ToString().Should().BeEmpty();
     }
 
@@ -651,6 +684,7 @@ public class AlertCommandsTests
         State = AlertState.Armed,
         TriggeredAt = null,
         TriggeredPrice = null,
+        AwaitingReset = false,
         Version = 1,
     };
 

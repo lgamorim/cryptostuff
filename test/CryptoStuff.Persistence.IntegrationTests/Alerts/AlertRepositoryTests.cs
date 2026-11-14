@@ -297,6 +297,7 @@ public sealed class AlertRepositoryTests : IAsyncLifetime
         found.State.Should().Be(AlertState.Armed);
         found.TriggeredAt.Should().BeNull();
         found.TriggeredPrice.Should().BeNull();
+        found.AwaitingReset.Should().BeTrue();
         found.Version.Should().Be(3);
     }
 

@@ -312,4 +312,74 @@ public class AlertEvaluatorTests
         alert.TriggeredPrice.Should().Be(120m);
         repository.SaveChangesCallCount.Should().Be(0);
     }
+
+    [Fact]
+    public async Task Should_NeitherTriggerNorSave_When_RearmedAlertsPriceStillMeetsIt()
+    {
+        var (repository, upstream, _, evaluator) = CreateSut();
+        var alert = SeedRearmed(repository);
+        upstream.PricesResult = Prices(("bitcoin", "usd", 150m));
+
+        var result = await evaluator.EvaluateAsync(CancellationToken.None);
+
+        SucceededValue(result).Triggered.Should().BeEmpty();
+        alert.State.Should().Be(AlertState.Armed);
+        alert.AwaitingReset.Should().BeTrue();
+        repository.SaveChangesCallCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Should_SaveTheResetWithoutTriggering_When_RearmedAlertsPriceHasMovedBack()
+    {
+        var (repository, upstream, _, evaluator) = CreateSut();
+        var alert = SeedRearmed(repository);
+        upstream.PricesResult = Prices(("bitcoin", "usd", 90m));
+
+        var result = await evaluator.EvaluateAsync(CancellationToken.None);
+
+        SucceededValue(result).Triggered.Should().BeEmpty();
+        alert.State.Should().Be(AlertState.Armed);
+        alert.AwaitingReset.Should().BeFalse();
+        repository.SaveChangesCallCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task Should_TriggerOnTheNextEvaluation_When_RearmedAlertsPriceMovedBackThenMetItAgain()
+    {
+        var (repository, upstream, _, evaluator) = CreateSut();
+        var alert = SeedRearmed(repository);
+        upstream.PricesResult = Prices(("bitcoin", "usd", 90m));
+        await evaluator.EvaluateAsync(CancellationToken.None);
+        upstream.PricesResult = Prices(("bitcoin", "usd", 150m));
+
+        var result = await evaluator.EvaluateAsync(CancellationToken.None);
+
+        SucceededValue(result).Triggered.Should().ContainSingle().Which.Id.Should().Be(alert.Id);
+        alert.State.Should().Be(AlertState.Triggered);
+    }
+
+    [Fact]
+    public async Task Should_DropTheResetAndStillTriggerTheOthers_When_TheResetSaveConflicts()
+    {
+        var (repository, upstream, _, evaluator) = CreateSut();
+        var rearmed = SeedRearmed(repository, "bitcoin");
+        var other = SeedAlert(repository, "ethereum");
+        upstream.PricesResult = Prices(("bitcoin", "usd", 90m), ("ethereum", "usd", 150m));
+        repository.ChangeConcurrently(rearmed.Id);
+
+        var result = await evaluator.EvaluateAsync(CancellationToken.None);
+
+        SucceededValue(result).Triggered.Should().ContainSingle().Which.Id.Should().Be(other.Id);
+        repository.PersistedStateOf(other.Id).Should().Be(AlertState.Triggered);
+    }
+
+    // An Above-100 alert that triggered and was re-armed, so it waits for its
+    // price to move back below 100.
+    private static PriceAlert SeedRearmed(FakeAlertRepository repository, string coinId = "bitcoin")
+    {
+        var alert = PriceAlert.Create(coinId, "usd", AlertDirection.Above, 100m);
+        alert.Trigger(120m, Now.AddHours(-1)).IsValid.Should().BeTrue();
+        alert.Rearm().IsValid.Should().BeTrue();
+        return repository.Seed(alert);
+    }
 }

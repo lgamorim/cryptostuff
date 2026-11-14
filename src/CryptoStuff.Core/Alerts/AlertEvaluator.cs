@@ -74,8 +74,10 @@ public sealed class AlertEvaluator(
 
     /// <summary>
     /// Triggers each alert its price meets and saves it on its own, so an
-    /// alert changed concurrently costs only its own trigger. Every trigger
-    /// carries the same time, read once after the prices arrived.
+    /// alert changed concurrently costs only its own trigger. A re-armed alert
+    /// whose price has moved back is saved with its reset instead, so a later
+    /// evaluation can trigger it. Every trigger carries the same time, read
+    /// once after the prices arrived.
     /// </summary>
     private async Task<List<TriggeredAlertView>> TriggerAsync(IReadOnlyList<PricedAlert> priced, CancellationToken cancellationToken)
     {
@@ -83,7 +85,16 @@ public sealed class AlertEvaluator(
         var triggered = new List<TriggeredAlertView>();
         foreach (var (alert, price) in priced)
         {
-            // A refused trigger means the alert was not armed after all; it is left as it is.
+            // A reset that fails to save is dropped like a trigger would be;
+            // the next evaluation sees the price again.
+            if (alert.ResetIfNotMetBy(price))
+            {
+                await TrySaveAsync(alert, cancellationToken);
+                continue;
+            }
+
+            // A refused trigger means the alert was not armed after all, or is
+            // still awaiting its reset; it is left as it is.
             if (!alert.IsMetBy(price) || !alert.Trigger(price, now).IsValid)
             {
                 continue;
@@ -110,7 +121,7 @@ public sealed class AlertEvaluator(
     }
 
     /// <summary>
-    /// Saves the trigger just made to <paramref name="alert"/>, returning
+    /// Saves the change just made to <paramref name="alert"/>, returning
     /// false, with the alert dropped, when another writer changed or deleted it
     /// since it was read. A failed save leaves its change pending, so without
     /// the discard every later save would fail on the same stale alert; the
