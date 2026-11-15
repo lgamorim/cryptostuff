@@ -44,14 +44,14 @@ public static class PortfolioOutputFormatter
         views.Count == 0
             ? "(no portfolios)"
             : string.Join('\n', views.Select(view =>
-                $"{view.Id}: {view.Name} ({view.VsCurrency}, {Token(view.CostBasisMethod)}, {FormatTransactionCount(view.Transactions.Count)})"));
+                $"{view.Id}: {TerminalText.Escape(view.Name)} ({view.VsCurrency}, {Token(view.CostBasisMethod)}, {FormatTransactionCount(view.Transactions.Count)})"));
 
     private static string FormatText(PortfolioView view)
     {
         var lines = new List<string>
         {
             $"Id: {view.Id}",
-            $"Name: {view.Name}",
+            $"Name: {TerminalText.Escape(view.Name)}",
             $"Currency: {view.VsCurrency}",
             $"Method: {Token(view.CostBasisMethod)}",
             $"Version: {view.Version}",

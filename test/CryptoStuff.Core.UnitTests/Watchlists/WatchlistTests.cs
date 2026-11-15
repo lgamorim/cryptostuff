@@ -306,4 +306,56 @@ public class WatchlistTests
 
         coinIds.Should().BeAssignableTo<IList<string>>().Which.IsReadOnly.Should().BeTrue();
     }
+
+    // Outer whitespace.
+
+    [Fact]
+    public void Should_StoreNameWithoutOuterWhitespace_When_Created()
+    {
+        var watchlist = Watchlist.Create("  Majors\t");
+
+        watchlist.Name.Should().Be("Majors");
+    }
+
+    [Fact]
+    public void Should_StoreNameWithoutOuterWhitespace_When_Renamed()
+    {
+        var watchlist = Watchlist.Create("Majors");
+
+        watchlist.Rename(" Large caps ");
+
+        watchlist.Name.Should().Be("Large caps");
+    }
+
+    [Fact]
+    public void Should_ThrowArgumentException_When_CreatedWithNameContainingAControlCharacter()
+    {
+        var act = () => Watchlist.Create("Majors\u001b[2J");
+
+        act.Should().Throw<ArgumentException>();
+    }
+
+    [Fact]
+    public void Should_StoreCoinIdWithoutOuterWhitespace_When_CoinAdded()
+    {
+        var watchlist = Watchlist.Create("Majors");
+
+        watchlist.AddCoin(" BitCoin\t");
+
+        watchlist.CoinIds.Should().Equal("bitcoin");
+    }
+
+    [Fact]
+    public void Should_FindAndRemoveCoin_When_CoinIdGivenWithOuterWhitespace()
+    {
+        var watchlist = Watchlist.Create("Majors");
+        watchlist.AddCoin("bitcoin");
+
+        var contains = watchlist.Contains(" bitcoin ");
+        var removed = watchlist.RemoveCoin("bitcoin\t");
+
+        contains.Should().BeTrue();
+        removed.Should().BeTrue();
+        watchlist.CoinIds.Should().BeEmpty();
+    }
 }

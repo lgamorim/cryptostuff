@@ -18,9 +18,10 @@ internal sealed class WatchlistConfiguration : IEntityTypeConfiguration<Watchlis
         builder.HasKey(w => w.Id);
         builder.Property(w => w.Id).ValueGeneratedOnAdd();
 
-        // NOCASE on the column makes both the unique index and every name
-        // comparison case-insensitive, matching NameExistsAsync's contract.
-        builder.Property(w => w.Name).UseCollation("NOCASE");
+        // The collation on the column makes both the unique index and every
+        // name comparison case-insensitive across Unicode, matching
+        // NameExistsAsync's contract; SQLite's NOCASE folds only ASCII.
+        builder.Property(w => w.Name).UseCollation(UnicodeNoCaseCollation.Name);
         builder.HasIndex(w => w.Name).IsUnique();
 
         // The domain bumps Version on every accepted change to the name or the

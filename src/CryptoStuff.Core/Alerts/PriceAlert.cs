@@ -66,7 +66,7 @@ public sealed class PriceAlert
     /// </summary>
     public int Version { get; private set; } = 1;
 
-    /// <summary>Creates an armed alert; the coin id and vs_currency are stored lowercased.</summary>
+    /// <summary>Creates an armed alert; the coin id and vs_currency are stored trimmed and lowercased.</summary>
     /// <exception cref="ArgumentException">
     /// <paramref name="coinId"/> or <paramref name="vsCurrency"/> is null,
     /// empty, or whitespace-only.
@@ -81,7 +81,7 @@ public sealed class PriceAlert
         ArgumentException.ThrowIfNullOrWhiteSpace(vsCurrency);
         EnsurePositive(threshold);
         EnsureDefined(direction);
-        return new(coinId.ToLowerInvariant(), vsCurrency.ToLowerInvariant(), direction, threshold);
+        return new(coinId.Trim().ToLowerInvariant(), vsCurrency.Trim().ToLowerInvariant(), direction, threshold);
     }
 
     /// <summary>

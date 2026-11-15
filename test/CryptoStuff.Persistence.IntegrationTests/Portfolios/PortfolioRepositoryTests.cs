@@ -183,6 +183,24 @@ public sealed class PortfolioRepositoryTests : IAsyncLifetime
             .Which.SqliteExtendedErrorCode.Should().Be(UniqueViolation);
     }
 
+    [Theory]
+    [InlineData("AÇÃO")]
+    [InlineData("AçÃo")]
+    public async Task Should_ThrowPersistenceConflictException_When_AddedNameMatchesSavedNameIgnoringNonAsciiCase(string name)
+    {
+        await SaveNewAsync("Ação");
+        await using var context = _database.CreateContext();
+        var repository = new PortfolioRepository(context);
+        repository.Add(Portfolio.Create(name, "usd", CostBasisMethod.AverageCost));
+
+        var act = () => repository.SaveChangesAsync(Token);
+
+        (await act.Should().ThrowAsync<PersistenceConflictException>())
+            .WithInnerException<DbUpdateException>()
+            .WithInnerException<SqliteException>()
+            .Which.SqliteExtendedErrorCode.Should().Be(UniqueViolation);
+    }
+
     [Fact]
     public async Task Should_ThrowPersistenceConflictException_When_PortfolioChangedSinceItWasRead()
     {
@@ -333,6 +351,33 @@ public sealed class PortfolioRepositoryTests : IAsyncLifetime
         var exists = await repository.NameExistsAsync(name, excludingId: null, Token);
 
         exists.Should().BeTrue();
+    }
+
+    // SQLite's own NOCASE folds only ASCII letters.
+    [Theory]
+    [InlineData("AÇÃO")]
+    [InlineData("AçÃo")]
+    public async Task Should_ReportNameExists_When_SavedNameMatchesIgnoringNonAsciiCase(string name)
+    {
+        await SaveNewAsync("Ação");
+        await using var context = _database.CreateContext();
+        var repository = new PortfolioRepository(context);
+
+        var exists = await repository.NameExistsAsync(name, excludingId: null, Token);
+
+        exists.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Should_ReportNameAbsent_When_SavedNameDiffersOnlyInAccents()
+    {
+        await SaveNewAsync("Ação");
+        await using var context = _database.CreateContext();
+        var repository = new PortfolioRepository(context);
+
+        var exists = await repository.NameExistsAsync("Acao", excludingId: null, Token);
+
+        exists.Should().BeFalse("case is ignored, but a letter with an accent is still a different letter");
     }
 
     [Fact]

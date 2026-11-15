@@ -114,6 +114,48 @@ public sealed class WatchlistRepositoryTests : IAsyncLifetime
         exists.Should().BeTrue();
     }
 
+    // SQLite's own NOCASE folds only ASCII letters.
+    [Theory]
+    [InlineData("AÇÃO")]
+    [InlineData("AçÃo")]
+    public async Task Should_ReportNameExists_When_SavedNameMatchesIgnoringNonAsciiCase(string name)
+    {
+        await SaveNewAsync("Ação");
+        await using var context = _database.CreateContext();
+        var repository = new WatchlistRepository(context);
+
+        var exists = await repository.NameExistsAsync(name, excludingId: null, Token);
+
+        exists.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Should_ReportNameAbsent_When_SavedNameDiffersOnlyInAccents()
+    {
+        await SaveNewAsync("Ação");
+        await using var context = _database.CreateContext();
+        var repository = new WatchlistRepository(context);
+
+        var exists = await repository.NameExistsAsync("Acao", excludingId: null, Token);
+
+        exists.Should().BeFalse("case is ignored, but a letter with an accent is still a different letter");
+    }
+
+    [Fact]
+    public async Task Should_CompareNamesUnderTheCollation_When_TheConnectionWasOpenedSynchronously()
+    {
+        await SaveNewAsync("Ação");
+        await using var context = _database.CreateContext();
+        var repository = new WatchlistRepository(context);
+
+        // Opened by the synchronous path, as dotnet ef database update and any
+        // synchronous query do; the lookup then reuses this open connection.
+        context.Database.OpenConnection();
+        var exists = await repository.NameExistsAsync("AÇÃO", excludingId: null, Token);
+
+        exists.Should().BeTrue();
+    }
+
     [Fact]
     public async Task Should_ReportNameAbsent_When_NoSavedNameMatches()
     {
@@ -233,6 +275,24 @@ public sealed class WatchlistRepositoryTests : IAsyncLifetime
     public async Task Should_ThrowPersistenceConflictException_When_AddedNameMatchesSavedNameIgnoringCase(string name)
     {
         await SaveNewAsync("Majors");
+        await using var context = _database.CreateContext();
+        var repository = new WatchlistRepository(context);
+        repository.Add(Watchlist.Create(name));
+
+        var act = () => repository.SaveChangesAsync(Token);
+
+        (await act.Should().ThrowAsync<PersistenceConflictException>())
+            .WithInnerException<DbUpdateException>()
+            .WithInnerException<SqliteException>()
+            .Which.SqliteExtendedErrorCode.Should().Be(UniqueViolation);
+    }
+
+    [Theory]
+    [InlineData("AÇÃO")]
+    [InlineData("AçÃo")]
+    public async Task Should_ThrowPersistenceConflictException_When_AddedNameMatchesSavedNameIgnoringNonAsciiCase(string name)
+    {
+        await SaveNewAsync("Ação");
         await using var context = _database.CreateContext();
         var repository = new WatchlistRepository(context);
         repository.Add(Watchlist.Create(name));

@@ -31,13 +31,13 @@ public sealed class PortfolioService(
     public async Task<ServiceResult<PortfolioView>> CreateAsync(CreatePortfolioCommand command, CancellationToken cancellationToken)
     {
         var portfolio = Portfolio.Create(command.Name, command.VsCurrency, command.CostBasisMethod);
-        if (await repository.NameExistsAsync(command.Name, excludingId: null, cancellationToken))
+        if (await repository.NameExistsAsync(portfolio.Name, excludingId: null, cancellationToken))
         {
-            return NameTaken(command.Name);
+            return NameTaken(portfolio.Name);
         }
 
         repository.Add(portfolio);
-        return await SaveAsync(portfolio, cancellationToken) == SaveOutcome.Saved ? Success(portfolio) : NameTaken(command.Name);
+        return await SaveAsync(portfolio, cancellationToken) == SaveOutcome.Saved ? Success(portfolio) : NameTaken(portfolio.Name);
     }
 
     /// <inheritdoc />
@@ -54,12 +54,13 @@ public sealed class PortfolioService(
             return ServiceResult<PortfolioView>.Failure(ServiceErrorCode.PreconditionFailed, staleVersion);
         }
 
-        if (await repository.NameExistsAsync(command.Name, command.PortfolioId, cancellationToken))
+        var name = NameValidator.Normalize(command.Name);
+        if (await repository.NameExistsAsync(name, command.PortfolioId, cancellationToken))
         {
-            return NameTaken(command.Name);
+            return NameTaken(name);
         }
 
-        portfolio.Update(command.Name, command.CostBasisMethod);
+        portfolio.Update(name, command.CostBasisMethod);
 
         // Any race can lose this save: another portfolio taking the name since
         // the check above, another write moving the version on, or another
@@ -70,7 +71,7 @@ public sealed class PortfolioService(
             SaveOutcome.Deleted => NotFound(portfolio.Id),
             _ => ServiceResult<PortfolioView>.Failure(
                 ServiceErrorCode.Conflict,
-                $"Portfolio {portfolio.Id} could not be saved: another portfolio may have taken the name '{command.Name}', or another operation changed it; reload it and try again."),
+                $"Portfolio {portfolio.Id} could not be saved: another portfolio may have taken the name '{name}', or another operation changed it; reload it and try again."),
         };
     }
 

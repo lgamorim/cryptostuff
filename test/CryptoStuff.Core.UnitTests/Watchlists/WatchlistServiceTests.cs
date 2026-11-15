@@ -772,4 +772,47 @@ public class WatchlistServiceTests
 
         await act.Should().ThrowAsync<PersistenceBusyException>();
     }
+
+    // Outer whitespace.
+
+    [Fact]
+    public async Task Should_ReturnConflictWithoutSaving_When_CreateAsyncNameDiffersFromATakenOneOnlyInOuterWhitespace()
+    {
+        var (repository, _, service) = CreateSut();
+        SeedWatchlist(repository, "Majors");
+
+        var result = await service.CreateAsync(new CreateWatchlistCommand { Name = " Majors " }, CancellationToken.None);
+
+        result.ErrorCode.Should().Be(ServiceErrorCode.Conflict);
+        result.ErrorDetail.Should().Be("A watchlist named 'Majors' already exists.");
+        repository.SaveChangesCallCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Should_ReturnConflictWithoutSaving_When_RenameAsyncNameDiffersFromATakenOneOnlyInOuterWhitespace()
+    {
+        var (repository, _, service) = CreateSut();
+        SeedWatchlist(repository, "Majors");
+        var watchlist = SeedWatchlist(repository, "Large caps");
+
+        var result = await service.RenameAsync(new RenameWatchlistCommand { WatchlistId = watchlist.Id, Name = "Majors\t" }, CancellationToken.None);
+
+        result.ErrorCode.Should().Be(ServiceErrorCode.Conflict);
+        result.ErrorDetail.Should().Be("A watchlist named 'Majors' already exists.");
+        watchlist.Name.Should().Be("Large caps");
+        repository.SaveChangesCallCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Should_CheckAndStoreTrimmedId_When_AddCoinAsyncCoinIdHasOuterWhitespace()
+    {
+        var (repository, upstream, service) = CreateSut();
+        var watchlist = SeedWatchlist(repository, "Majors");
+
+        var result = await service.AddCoinAsync(new WatchlistCoinCommand { WatchlistId = watchlist.Id, CoinId = " bitcoin " }, CancellationToken.None);
+
+        result.IsSuccess.Should().BeTrue();
+        upstream.CapturedCoinQuery.Should().Be(new CoinQuery { CoinId = "bitcoin" });
+        watchlist.CoinIds.Should().Equal("bitcoin");
+    }
 }

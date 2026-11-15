@@ -131,6 +131,12 @@ Each rule reports which field failed and what was expected of it.
 | Non-empty collection | Coin id lists, contract address lists, vs_currency lists | At least one value must be given |
 | Positive day count | The number of days of history to fetch | A whole number greater than zero |
 | Well-formed date | The developer-data date | A real calendar date written as `dd-MM-yyyy` (e.g. `29-02-2024`) |
+| Resource name | Watchlist and portfolio names | Present and not just whitespace, free of control characters (such as tabs, line breaks, or the escape that starts a terminal colour code), and at most 100 characters once trimmed |
+
+Leading and trailing whitespace is trimmed before a name, or a coin id or
+vs_currency kept with a watchlist, portfolio, transaction or alert, is stored,
+so `"Main "` and `"Main"` are the same name and `" bitcoin"` is `bitcoin`.
+Values stored by an earlier release keep any whitespace they were stored with.
 
 ## Caching
 
@@ -296,6 +302,22 @@ is written: the CLI prints `Error: The database is busy with another write; try
 again shortly.` and exits with code `1`, the API answers
 [`503`](#rest-api) with a `Retry-After` header, and the background evaluation
 logs the failure and tries again on its next tick.
+
+Watchlist and portfolio names are unique ignoring case for every letter, not
+just the ASCII ones, so `Ação` and `AÇÃO` are the same name. SQLite's own
+`NOCASE` folds only ASCII letters, so the name columns use a collation of the
+application's, `UNICODE_NOCASE`, which both hosts register on every connection
+they open. Other tools, such as the `sqlite3` shell, do not know it: they can
+read the rows with a plain `SELECT`, but a statement that compares or sorts by
+name, or that goes through the unique index on it (adding, renaming or
+deleting a watchlist or portfolio, even by id, or counting them), fails with
+`no such collation sequence: UNICODE_NOCASE`. Upgrading from an earlier
+release rebuilds both tables on the new collation and keeps every row. A
+database that already holds two names differing only in the case of a
+non-ASCII letter cannot be upgraded: the migration checks for them before it
+changes anything and stops, and the hosts report the database could not be
+migrated, as above. The earlier release still opens that database, so rename
+one of the two with it, then upgrade again.
 
 A write also notices when another writer deleted the record it is changing
 after reading it: an update, a delete, a coin or transaction change, or a
@@ -560,7 +582,7 @@ dotnet run --project src/CryptoStuff.Cli -- price bitcoin usd
 | `coin` | `<id>` — a coin id | `cryptostuff coin bitcoin` |
 | `developer` | `<id> <date>` — a coin id and a date in `dd-MM-yyyy` | `cryptostuff developer bitcoin 29-02-2024` |
 | `watchlist list` | — lists every watchlist, with its id, name, and coins | `cryptostuff watchlist list` |
-| `watchlist create` | `<name>` — a new, empty watchlist; the name is at most 100 characters and unique, ignoring case | `cryptostuff watchlist create majors` |
+| `watchlist create` | `<name>` — a new, empty watchlist; the name follows the [resource name](#input-validation) rule and is unique, ignoring case | `cryptostuff watchlist create majors` |
 | `watchlist show` | `<id>` — a watchlist's id, name, and coins | `cryptostuff watchlist show 1` |
 | `watchlist rename` | `<id> <name>` — a new name for a watchlist | `cryptostuff watchlist rename 1 blue-chips` |
 | `watchlist delete` | `<id>` — deletes a watchlist | `cryptostuff watchlist delete 1` |
@@ -568,7 +590,7 @@ dotnet run --project src/CryptoStuff.Cli -- price bitcoin usd
 | `watchlist remove` | `<id> <coin>` — removes a coin id; removing one that is absent changes nothing | `cryptostuff watchlist remove 1 bitcoin` |
 | `watchlist prices` | `<id> <currency>` — live prices of the watchlist's coins in a vs_currency; a coin CoinGecko gives no price for prints `no price` | `cryptostuff watchlist prices 1 usd` |
 | `portfolio list` | — lists every portfolio, with its id, name, currency, method, and transaction count | `cryptostuff portfolio list` |
-| `portfolio create` | `<name> <currency> <method>` — a new, empty portfolio priced in a vs_currency that never changes; `<method>` is `average-cost` or `fifo`; the name is at most 100 characters and unique, ignoring case | `cryptostuff portfolio create main usd fifo` |
+| `portfolio create` | `<name> <currency> <method>` — a new, empty portfolio priced in a vs_currency that never changes; `<method>` is `average-cost` or `fifo`; the name follows the [resource name](#input-validation) rule and is unique, ignoring case | `cryptostuff portfolio create main usd fifo` |
 | `portfolio show` | `<id>` — a portfolio's id, name, currency, method, version, and transactions | `cryptostuff portfolio show 1` |
 | `portfolio update` | `<id> <name> <method>` — replaces the portfolio's name and cost-basis method | `cryptostuff portfolio update 1 retirement average-cost` |
 | `portfolio delete` | `<id>` — deletes a portfolio with all its transactions | `cryptostuff portfolio delete 1` |
@@ -592,7 +614,11 @@ entry (e.g. `bitcoin,,ethereum`), which is reported as such.
 
 The `watchlist` commands take a watchlist's id as a positive whole number, which
 `create` prints and `list` shows; anything else is reported as a validation
-failure. They read and write the shared [database](#data-storage), so these
+failure. Text output prints any control character in a stored name as its
+`\uXXXX` escape (`\u001b` for the escape that starts a terminal colour code),
+so a name written before control characters were refused, or by another tool,
+cannot recolour or clear the terminal; `--json` output escapes them as JSON
+does. They read and write the shared [database](#data-storage), so these
 and the `portfolio` and `alert` commands are the only commands that open it (and
 migrate it first). A failure the service
 reports for them — an unknown id, a duplicate name, a coin CoinGecko doesn't
@@ -766,8 +792,8 @@ The `/watchlists` routes drive the same watchlists as the CLI's
 [database](#data-storage). Ids are the positive whole numbers the database
 assigns.
 
-Create and rename take a JSON body with the watchlist's name — at most 100
-characters, unique ignoring case, as for the CLI:
+Create and rename take a JSON body with the watchlist's name — following the
+[resource name](#input-validation) rule and unique ignoring case, as for the CLI:
 
 ```bash
 curl -i -X POST http://localhost:5200/watchlists -H 'Content-Type: application/json' -d '{ "name": "majors" }'
@@ -814,7 +840,8 @@ The `/portfolios` routes drive the same portfolios as the CLI's
 goes through the same Core validators and token parsers. Ids are the positive
 whole numbers the database assigns.
 
-Create takes the name (at most 100 characters, unique ignoring case), the
+Create takes the name (following the [resource name](#input-validation) rule,
+unique ignoring case), the
 vs_currency every amount is in (fixed for good once created), and the
 [cost-basis method](#cost-basis), `average-cost` or `fifo`:
 
@@ -840,7 +867,7 @@ routes. Recording or replacing a transaction takes this body:
 ```
 
 - `kind` is `buy` or `sell`; `coinId` is a CoinGecko coin id, stored
-  lowercased. A coin new to the portfolio's ledger is checked against
+  trimmed and lowercased. A coin new to the portfolio's ledger is checked against
   CoinGecko; a coin any of its transactions already holds is not, since it
   passed that check when first recorded, so a coin CoinGecko has since
   delisted can still be sold, and a held coin can be traded while CoinGecko
@@ -912,7 +939,7 @@ goes through the same Core validators and token parsers. Ids are the positive
 whole numbers the database assigns.
 
 Create takes the CoinGecko coin id and the vs_currency it is priced in (both
-checked against CoinGecko, stored lowercased, and fixed for good once created),
+checked against CoinGecko, stored trimmed and lowercased, and fixed for good once created),
 the direction, `above` or `below`, and the threshold, a JSON number greater
 than zero in that vs_currency:
 

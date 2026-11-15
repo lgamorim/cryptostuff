@@ -314,6 +314,72 @@ public class CryptoStuffDatabaseTests
     }
 
     [Fact]
+    public async Task Should_KeepEveryNameAndTransaction_When_UpgradingFromAddAlertAwaitingResetToUnicodeCaseInsensitiveNames()
+    {
+        var filePath = Path.Combine(TestDatabase.Root, $"{Guid.NewGuid():N}.db");
+        try
+        {
+            await StoreAtAddAlertAwaitingResetAsync(
+                filePath,
+                """INSERT INTO "Watchlists" ("Name", "CoinIds", "Version") VALUES ('Ação', '["bitcoin"]', 3)""",
+                """INSERT INTO "Portfolios" ("Name", "VsCurrency", "CostBasisMethod", "Version") VALUES ('Ação', 'eur', 'fifo', 2)""",
+                """
+                INSERT INTO "PortfolioTransactions" ("Sequence", "Kind", "CoinId", "Quantity", "UnitPrice", "Fee", "OccurredAt", "PortfolioId")
+                VALUES (1, 'buy', 'bitcoin', '0.5', '40000', '0', '2026-01-05 12:30:15', 1)
+                """);
+
+            await UpgradeAsync(filePath);
+
+            await using var verification = TestDatabase.CreateContextFor(filePath);
+            var watchlist = await verification.Watchlists.SingleAsync(TestContext.Current.CancellationToken);
+            watchlist.Name.Should().Be("Ação");
+            watchlist.CoinIds.Should().Equal("bitcoin");
+            watchlist.Version.Should().Be(3);
+            var portfolio = await verification.Portfolios.SingleAsync(TestContext.Current.CancellationToken);
+            portfolio.Name.Should().Be("Ação");
+            portfolio.Version.Should().Be(2);
+            portfolio.Transactions.Should().ContainSingle().Which.Quantity.Should().Be(0.5m);
+            (await verification.Watchlists.AnyAsync(w => w.Name == "AÇÃO", TestContext.Current.CancellationToken)).Should().BeTrue();
+            (await verification.Portfolios.AnyAsync(p => p.Name == "AÇÃO", TestContext.Current.CancellationToken)).Should().BeTrue();
+        }
+        finally
+        {
+            File.Delete(filePath);
+        }
+    }
+
+    [Theory]
+    [InlineData("Watchlists", """INSERT INTO "Watchlists" ("Name", "CoinIds", "Version") VALUES ('Ação', '[]', 1), ('AÇÃO', '[]', 1)""")]
+    [InlineData("Portfolios", """INSERT INTO "Portfolios" ("Name", "VsCurrency", "CostBasisMethod", "Version") VALUES ('Ação', 'eur', 'fifo', 1), ('AÇÃO', 'eur', 'fifo', 1)""")]
+    public async Task Should_RefuseTheUpgradeAndLeaveTheDatabaseAsItWas_When_TwoStoredNamesDifferOnlyInNonAsciiCase(string table, string insert)
+    {
+        var filePath = Path.Combine(TestDatabase.Root, $"{Guid.NewGuid():N}.db");
+        try
+        {
+            await StoreAtAddAlertAwaitingResetAsync(filePath, insert);
+            var schemaBefore = await ReadSchemaAsync(filePath);
+
+            var act = () => UpgradeAsync(filePath);
+
+            (await act.Should().ThrowAsync<SqliteException>()).Which.SqliteExtendedErrorCode.Should().Be(2067, "SQLITE_CONSTRAINT_UNIQUE");
+            (await ReadSchemaAsync(filePath)).Should().Equal(
+                schemaBefore,
+                "the earlier release must still open the database, so the user can rename one of the two names with it");
+            await using var verification = TestDatabase.CreateContextFor(filePath);
+            var names = await verification.Database
+                .SqlQueryRaw<string>(string.Concat("SELECT \"Name\" AS \"Value\" FROM \"", table, "\""))
+                .ToListAsync(TestContext.Current.CancellationToken);
+            names.Should().BeEquivalentTo("Ação", "AÇÃO");
+            (await verification.Database.GetAppliedMigrationsAsync(TestContext.Current.CancellationToken))
+                .Last().Should().EndWith("AddAlertAwaitingReset");
+        }
+        finally
+        {
+            File.Delete(filePath);
+        }
+    }
+
+    [Fact]
     public async Task Should_ThrowOperationCanceledException_When_MigrationCanceled()
     {
         var filePath = Path.Combine(TestDatabase.Root, $"{Guid.NewGuid():N}.db");
@@ -340,6 +406,38 @@ public class CryptoStuffDatabaseTests
         await before.Database.ExecuteSqlRawAsync(
             """INSERT INTO "Watchlists" ("Name", "CoinIds") VALUES ('Majors', '["bitcoin"]')""",
             TestContext.Current.CancellationToken);
+    }
+
+    // Stops at the schema the alert re-arm release shipped and runs each
+    // statement against it.
+    private static async Task StoreAtAddAlertAwaitingResetAsync(string filePath, params string[] statements)
+    {
+        await using var before = TestDatabase.CreateContextFor(filePath);
+        Directory.CreateDirectory(TestDatabase.Root);
+        await before.GetService<IMigrator>().MigrateAsync("AddAlertAwaitingReset", TestContext.Current.CancellationToken);
+        foreach (var statement in statements)
+        {
+            await before.Database.ExecuteSqlRawAsync(statement, TestContext.Current.CancellationToken);
+        }
+    }
+
+    // Every table, index and trigger with the SQL that created it, in name
+    // order, read on a plain connection so nothing the context registers can
+    // hide a difference.
+    private static async Task<List<string>> ReadSchemaAsync(string filePath)
+    {
+        await using var connection = new SqliteConnection(TestDatabase.ConnectionStringFor(filePath));
+        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT type || ' ' || name || ': ' || coalesce(sql, '') FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' ORDER BY name";
+        var schema = new List<string>();
+        await using var reader = await command.ExecuteReaderAsync(TestContext.Current.CancellationToken);
+        while (await reader.ReadAsync(TestContext.Current.CancellationToken))
+        {
+            schema.Add(reader.GetString(0));
+        }
+
+        return schema;
     }
 
     private static async Task UpgradeAsync(string filePath)

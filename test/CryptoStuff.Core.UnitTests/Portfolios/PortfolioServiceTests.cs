@@ -1068,4 +1068,60 @@ public class PortfolioServiceTests
 
         await act.Should().ThrowAsync<PersistenceBusyException>();
     }
+
+    // Outer whitespace.
+
+    [Fact]
+    public async Task Should_ReturnConflictWithoutSaving_When_CreateAsyncNameDiffersFromATakenOneOnlyInOuterWhitespace()
+    {
+        var (repository, _, service) = CreateSut();
+        SeedPortfolio(repository, "Long term");
+
+        var result = await service.CreateAsync(NewPortfolioCommand(" Long term "), CancellationToken.None);
+
+        result.ErrorCode.Should().Be(ServiceErrorCode.Conflict);
+        result.ErrorDetail.Should().Be("A portfolio named 'Long term' already exists.");
+        repository.SaveChangesCallCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Should_ReturnConflictWithoutSaving_When_UpdateAsyncNameDiffersFromATakenOneOnlyInOuterWhitespace()
+    {
+        var (repository, _, service) = CreateSut();
+        SeedPortfolio(repository, "Long term");
+        var portfolio = SeedPortfolio(repository, "Trading");
+        var command = new UpdatePortfolioCommand { PortfolioId = portfolio.Id, Name = "Long term\t", CostBasisMethod = CostBasisMethod.Fifo };
+
+        var result = await service.UpdateAsync(command, CancellationToken.None);
+
+        result.ErrorCode.Should().Be(ServiceErrorCode.Conflict);
+        result.ErrorDetail.Should().Be("A portfolio named 'Long term' already exists.");
+        portfolio.Name.Should().Be("Trading");
+        repository.SaveChangesCallCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Should_CheckTrimmedCoinIdUpstream_When_AddTransactionAsyncCoinIdHasOuterWhitespace()
+    {
+        var (repository, upstream, service) = CreateSut();
+        var portfolio = SeedPortfolio(repository, "Long term");
+        upstream.PricesResult = PricedIn("bitcoin", "usd");
+
+        var result = await service.AddTransactionAsync(AddCommand(portfolio, Buy(" bitcoin ", 1m, Day(1))), CancellationToken.None);
+
+        SucceededValue(result).Transactions.Should().ContainSingle().Which.CoinId.Should().Be("bitcoin");
+        upstream.CapturedPricesQuery.Should().BeEquivalentTo(new CoinPriceQuery { CoinIds = ["bitcoin"], VsCurrencies = ["usd"] });
+    }
+
+    [Fact]
+    public async Task Should_SkipTheUpstreamCheck_When_AddTransactionAsyncCoinIdIsAHeldCoinWithOuterWhitespace()
+    {
+        var (repository, upstream, service) = CreateSut();
+        var portfolio = SeedPortfolioWith(repository, Buy("bitcoin", 1m, Day(1)));
+
+        var result = await service.AddTransactionAsync(AddCommand(portfolio, Buy("bitcoin\t", 1m, Day(2))), CancellationToken.None);
+
+        result.IsSuccess.Should().BeTrue();
+        upstream.GetPricesCallCount.Should().Be(0, "the ledger already holds the coin");
+    }
 }

@@ -1,4 +1,5 @@
 using CryptoStuff.Core.Portfolios;
+using CryptoStuff.Core.UnitTests.TestSupport;
 
 namespace CryptoStuff.Core.UnitTests.Portfolios;
 
@@ -145,5 +146,34 @@ public class PortfolioTests
         portfolio.Name.Should().Be("Long term");
         portfolio.CostBasisMethod.Should().Be(CostBasisMethod.Fifo);
         portfolio.Version.Should().Be(1);
+    }
+
+    // Outer whitespace.
+
+    [Fact]
+    public void Should_StoreNameAndCurrencyWithoutOuterWhitespace_When_Created()
+    {
+        var portfolio = Portfolio.Create(" Long term ", " USD\t", CostBasisMethod.Fifo);
+
+        portfolio.Name.Should().Be("Long term");
+        portfolio.VsCurrency.Should().Be("usd");
+    }
+
+    [Fact]
+    public void Should_StoreNameWithoutOuterWhitespace_When_Updated()
+    {
+        var portfolio = Portfolio.Create("Long term", "usd", CostBasisMethod.Fifo);
+
+        portfolio.Update("  Retirement ", CostBasisMethod.Fifo);
+
+        portfolio.Name.Should().Be("Retirement");
+    }
+
+    [Fact]
+    public void Should_StoreCoinIdWithoutOuterWhitespace_When_TransactionAdded()
+    {
+        var transactions = Ledger.Of(Ledger.Buy(1m, 100m, 1, coinId: " BitCoin\t"));
+
+        transactions.Should().ContainSingle().Which.CoinId.Should().Be("bitcoin");
     }
 }

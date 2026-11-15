@@ -73,7 +73,7 @@ namespace CryptoStuff.Persistence.Migrations
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasColumnType("TEXT")
-                        .UseCollation("NOCASE");
+                        .UseCollation("UNICODE_NOCASE");
 
                     b.Property<int>("Version")
                         .IsConcurrencyToken()
@@ -100,7 +100,7 @@ namespace CryptoStuff.Persistence.Migrations
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasColumnType("TEXT")
-                        .UseCollation("NOCASE");
+                        .UseCollation("UNICODE_NOCASE");
 
                     b.Property<int>("Version")
                         .IsConcurrencyToken()

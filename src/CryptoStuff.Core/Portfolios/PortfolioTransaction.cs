@@ -49,7 +49,7 @@ public sealed class PortfolioTransaction
     }
 
     /// <summary>The form in which a coin id is stored and compared.</summary>
-    internal static string NormalizeCoinId(string coinId) => coinId.ToLowerInvariant();
+    internal static string NormalizeCoinId(string coinId) => coinId.Trim().ToLowerInvariant();
 
     /// <summary>
     /// Takes every detail of <paramref name="replacement"/>, a transaction

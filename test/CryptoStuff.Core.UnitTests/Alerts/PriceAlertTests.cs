@@ -391,4 +391,13 @@ public class PriceAlertTests
         alert.TriggeredPrice.Should().Be(105m);
         alert.Version.Should().Be(2);
     }
+
+    [Fact]
+    public void Should_StoreCoinIdAndCurrencyWithoutOuterWhitespace_When_CreateGivenPaddedValues()
+    {
+        var alert = PriceAlert.Create(" BitCoin\t", " USD ", AlertDirection.Above, 100m);
+
+        alert.CoinId.Should().Be("bitcoin");
+        alert.VsCurrency.Should().Be("usd");
+    }
 }

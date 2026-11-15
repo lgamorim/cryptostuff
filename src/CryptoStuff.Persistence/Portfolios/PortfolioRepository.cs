@@ -24,7 +24,7 @@ public sealed class PortfolioRepository(CryptoStuffDbContext context) : IPortfol
         await context.Portfolios.FindAsync([id], cancellationToken);
 
     /// <inheritdoc />
-    /// <remarks>The comparison runs under the name column's <c>NOCASE</c> collation.</remarks>
+    /// <remarks>The comparison runs under the name column's <see cref="UnicodeNoCaseCollation"/>.</remarks>
     public Task<bool> NameExistsAsync(string name, int? excludingId, CancellationToken cancellationToken) =>
         context.Portfolios.AnyAsync(
             p => p.Name == name && (excludingId == null || p.Id != excludingId),

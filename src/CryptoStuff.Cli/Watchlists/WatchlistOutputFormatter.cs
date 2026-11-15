@@ -13,7 +13,7 @@ public static class WatchlistOutputFormatter
     public static string Format(WatchlistView view, bool json) =>
         json
             ? JsonSerializer.Serialize(view, JsonOptions)
-            : string.Join('\n', $"Id: {view.Id}", $"Name: {view.Name}", $"Coins: {FormatCoins(view.CoinIds)}");
+            : string.Join('\n', $"Id: {view.Id}", $"Name: {TerminalText.Escape(view.Name)}", $"Coins: {FormatCoins(view.CoinIds)}");
 
     /// <summary>Formats a watchlist's prices, saying so in text when it holds no coins.</summary>
     public static string FormatPrices(CoinPriceView view, bool json) =>
@@ -34,7 +34,7 @@ public static class WatchlistOutputFormatter
     private static string FormatListText(IReadOnlyList<WatchlistView> views) =>
         views.Count == 0
             ? "(no watchlists)"
-            : string.Join('\n', views.Select(view => $"{view.Id}: {view.Name} ({FormatCoins(view.CoinIds)})"));
+            : string.Join('\n', views.Select(view => $"{view.Id}: {TerminalText.Escape(view.Name)} ({FormatCoins(view.CoinIds)})"));
 
     private static string FormatCoins(IReadOnlyList<string> coinIds) =>
         coinIds.Count == 0 ? "no coins" : string.Join(", ", coinIds);

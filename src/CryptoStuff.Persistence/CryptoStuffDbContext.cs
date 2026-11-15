@@ -23,6 +23,15 @@ public sealed class CryptoStuffDbContext(DbContextOptions<CryptoStuffDbContext> 
     public DbSet<Watchlist> Watchlists => Set<Watchlist>();
 
     /// <inheritdoc />
+    /// <remarks>
+    /// Registers <see cref="UnicodeNoCaseCollation"/> on every connection this
+    /// context opens, the migration's included, since the name columns and
+    /// their unique indexes are built on it.
+    /// </remarks>
+    protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder) =>
+        optionsBuilder.AddInterceptors(UnicodeNoCaseCollation.Registration);
+
+    /// <inheritdoc />
     protected override void OnModelCreating(ModelBuilder modelBuilder) =>
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(CryptoStuffDbContext).Assembly);
 }

@@ -2,7 +2,8 @@ namespace CryptoStuff.Core.Watchlists;
 
 /// <summary>
 /// A named, ordered list of distinct CoinGecko coin ids. Coin ids are stored
-/// lowercased, so ids differing only in case are the same coin. The id is
+/// trimmed and lowercased, so ids differing only in case or in outer
+/// whitespace are the same coin, and the name is stored trimmed. The id is
 /// zero until the repository first saves the watchlist and assigns one.
 /// </summary>
 public sealed class Watchlist
@@ -35,18 +36,13 @@ public sealed class Watchlist
 
     /// <summary>Creates an empty watchlist with the given name.</summary>
     /// <exception cref="ArgumentException"><paramref name="name"/> fails <see cref="NameValidator"/>.</exception>
-    public static Watchlist Create(string name)
-    {
-        EnsureValidName(name);
-        return new Watchlist(name);
-    }
+    public static Watchlist Create(string name) => new(NameValidator.Normalize(name));
 
     /// <summary>Gives the watchlist a new name.</summary>
     /// <exception cref="ArgumentException"><paramref name="name"/> fails <see cref="NameValidator"/>.</exception>
     public void Rename(string name)
     {
-        EnsureValidName(name);
-        Name = name;
+        Name = NameValidator.Normalize(name);
         Version++;
     }
 
@@ -55,7 +51,7 @@ public sealed class Watchlist
     public bool Contains(string coinId) => _coinIds.Contains(NormalizeCoinId(coinId));
 
     /// <summary>
-    /// Appends <paramref name="coinId"/>, lowercased, to the end of the list.
+    /// Appends <paramref name="coinId"/>, trimmed and lowercased, to the end of the list.
     /// Returns false, leaving the list unchanged, when the coin is already present.
     /// </summary>
     /// <exception cref="ArgumentException"><paramref name="coinId"/> is null, empty, or whitespace-only.</exception>
@@ -92,15 +88,6 @@ public sealed class Watchlist
     internal static string NormalizeCoinId(string coinId)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(coinId);
-        return coinId.ToLowerInvariant();
-    }
-
-    private static void EnsureValidName(string name)
-    {
-        var outcome = NameValidator.Validate(name, nameof(name));
-        if (!outcome.IsValid)
-        {
-            throw new ArgumentException(outcome.ErrorMessage, nameof(name));
-        }
+        return coinId.Trim().ToLowerInvariant();
     }
 }

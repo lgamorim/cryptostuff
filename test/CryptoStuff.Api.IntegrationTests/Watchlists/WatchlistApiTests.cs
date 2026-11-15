@@ -309,6 +309,41 @@ public class WatchlistApiTests
     }
 
     [Fact]
+    public async Task Should_StoreTheNameTrimmedAndRefuseItsCaseVariant_When_CreatedWithOuterWhitespaceAndNonAsciiLetters()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        using var factory = new CryptoStuffApiFactory();
+        using var client = factory.CreateClient();
+
+        var created = await client.PostAsJsonAsync("/watchlists", new { name = " Ação\t" }, cancellationToken);
+        var duplicate = await client.PostAsJsonAsync("/watchlists", new { name = "AÇÃO" }, cancellationToken);
+
+        created.StatusCode.Should().Be(HttpStatusCode.Created);
+        var body = await created.Content.ReadFromJsonAsync<WatchlistView>(JsonOptions, cancellationToken);
+        // `!` is safe: a 201 always carries the created watchlist.
+        body!.Name.Should().Be("Ação");
+        duplicate.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        var problem = await duplicate.Content.ReadFromJsonAsync<ProblemDetails>(JsonOptions, cancellationToken);
+        // `!` is safe: every error response carries a ProblemDetails body.
+        problem!.Detail.Should().Be("A watchlist named 'AÇÃO' already exists.");
+    }
+
+    [Fact]
+    public async Task Should_ReturnValidationProblem_When_CreateNameHoldsAControlCharacter()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        using var factory = new CryptoStuffApiFactory();
+        using var client = factory.CreateClient();
+
+        var response = await client.PostAsJsonAsync("/watchlists", new { name = "majors\u001b[2J" }, cancellationToken);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var problem = await response.Content.ReadFromJsonAsync<HttpValidationProblemDetails>(JsonOptions, cancellationToken);
+        // `!` is safe: a 400 always carries a validation-problem body.
+        problem!.Errors.Should().ContainKey("name").WhoseValue.Should().Equal("name must not contain control characters.");
+    }
+
+    [Fact]
     public async Task Should_ReturnValidationProblemAndKeepName_When_RenameNameBlank()
     {
         var cancellationToken = TestContext.Current.CancellationToken;

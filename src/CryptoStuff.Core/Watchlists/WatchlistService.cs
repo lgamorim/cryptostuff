@@ -25,13 +25,13 @@ public sealed class WatchlistService(IWatchlistRepository repository, ICryptocur
     public async Task<ServiceResult<WatchlistView>> CreateAsync(CreateWatchlistCommand command, CancellationToken cancellationToken)
     {
         var watchlist = Watchlist.Create(command.Name);
-        if (await repository.NameExistsAsync(command.Name, excludingId: null, cancellationToken))
+        if (await repository.NameExistsAsync(watchlist.Name, excludingId: null, cancellationToken))
         {
-            return NameTaken(command.Name);
+            return NameTaken(watchlist.Name);
         }
 
         repository.Add(watchlist);
-        return await SaveAsync(watchlist, cancellationToken) == SaveOutcome.Saved ? Success(watchlist) : NameTaken(command.Name);
+        return await SaveAsync(watchlist, cancellationToken) == SaveOutcome.Saved ? Success(watchlist) : NameTaken(watchlist.Name);
     }
 
     /// <inheritdoc />
@@ -43,12 +43,13 @@ public sealed class WatchlistService(IWatchlistRepository repository, ICryptocur
             return NotFound<WatchlistView>(command.WatchlistId);
         }
 
-        if (await repository.NameExistsAsync(command.Name, command.WatchlistId, cancellationToken))
+        var name = NameValidator.Normalize(command.Name);
+        if (await repository.NameExistsAsync(name, command.WatchlistId, cancellationToken))
         {
-            return NameTaken(command.Name);
+            return NameTaken(name);
         }
 
-        watchlist.Rename(command.Name);
+        watchlist.Rename(name);
 
         // Any race can lose this save: another watchlist taking the name since
         // the check above, another write moving the version on, or another
@@ -59,7 +60,7 @@ public sealed class WatchlistService(IWatchlistRepository repository, ICryptocur
             SaveOutcome.Deleted => NotFound<WatchlistView>(watchlist.Id),
             _ => ServiceResult<WatchlistView>.Failure(
                 ServiceErrorCode.Conflict,
-                $"Watchlist {watchlist.Id} could not be saved: another watchlist may have taken the name '{command.Name}', or another operation changed it; reload it and try again."),
+                $"Watchlist {watchlist.Id} could not be saved: another watchlist may have taken the name '{name}', or another operation changed it; reload it and try again."),
         };
     }
 

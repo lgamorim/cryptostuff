@@ -16,7 +16,7 @@ public sealed class WatchlistRepository(CryptoStuffDbContext context) : IWatchli
         await context.Watchlists.FindAsync([id], cancellationToken);
 
     /// <inheritdoc />
-    /// <remarks>The comparison runs under the name column's <c>NOCASE</c> collation.</remarks>
+    /// <remarks>The comparison runs under the name column's <see cref="UnicodeNoCaseCollation"/>.</remarks>
     public Task<bool> NameExistsAsync(string name, int? excludingId, CancellationToken cancellationToken) =>
         context.Watchlists.AnyAsync(
             w => w.Name == name && (excludingId == null || w.Id != excludingId),

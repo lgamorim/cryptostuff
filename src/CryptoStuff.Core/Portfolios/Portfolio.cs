@@ -53,7 +53,10 @@ public sealed class Portfolio
     /// <summary>The portfolio's transactions in ledger order.</summary>
     public IReadOnlyList<PortfolioTransaction> Transactions => InLedgerOrder(_transactions).ToList().AsReadOnly();
 
-    /// <summary>Creates an empty portfolio priced in <paramref name="vsCurrency"/>, which is stored lowercased.</summary>
+    /// <summary>
+    /// Creates an empty portfolio priced in <paramref name="vsCurrency"/>,
+    /// which is stored trimmed and lowercased; the name is stored trimmed.
+    /// </summary>
     /// <exception cref="ArgumentException">
     /// <paramref name="name"/> fails <see cref="NameValidator"/>, or
     /// <paramref name="vsCurrency"/> is null, empty, or whitespace-only.
@@ -61,10 +64,10 @@ public sealed class Portfolio
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="costBasisMethod"/> is not a defined method.</exception>
     public static Portfolio Create(string name, string vsCurrency, CostBasisMethod costBasisMethod)
     {
-        EnsureValidName(name);
+        var normalizedName = NameValidator.Normalize(name);
         ArgumentException.ThrowIfNullOrWhiteSpace(vsCurrency);
         EnsureDefined(costBasisMethod);
-        return new Portfolio(name, vsCurrency.ToLowerInvariant(), costBasisMethod);
+        return new Portfolio(normalizedName, vsCurrency.Trim().ToLowerInvariant(), costBasisMethod);
     }
 
     /// <summary>Gives the portfolio a new name and cost-basis method. The vs_currency never changes.</summary>
@@ -72,9 +75,9 @@ public sealed class Portfolio
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="costBasisMethod"/> is not a defined method.</exception>
     public void Update(string name, CostBasisMethod costBasisMethod)
     {
-        EnsureValidName(name);
+        var normalizedName = NameValidator.Normalize(name);
         EnsureDefined(costBasisMethod);
-        Name = name;
+        Name = normalizedName;
         CostBasisMethod = costBasisMethod;
         Version++;
     }
@@ -250,15 +253,6 @@ public sealed class Portfolio
         ValidationOutcome.Failure(string.Create(
             CultureInfo.InvariantCulture,
             $"The amounts in {coinId}'s transactions would be too large to compute: no holding, cost, proceeds or profit can go beyond {decimal.MaxValue} or need more significant digits than a decimal holds."));
-
-    private static void EnsureValidName(string name)
-    {
-        var outcome = NameValidator.Validate(name, nameof(name));
-        if (!outcome.IsValid)
-        {
-            throw new ArgumentException(outcome.ErrorMessage, nameof(name));
-        }
-    }
 
     private static void EnsureDefined(CostBasisMethod costBasisMethod)
     {

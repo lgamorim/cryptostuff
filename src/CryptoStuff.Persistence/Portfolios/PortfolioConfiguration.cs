@@ -16,9 +16,10 @@ internal sealed class PortfolioConfiguration : IEntityTypeConfiguration<Portfoli
         builder.HasKey(p => p.Id);
         builder.Property(p => p.Id).ValueGeneratedOnAdd();
 
-        // NOCASE on the column makes both the unique index and every name
-        // comparison case-insensitive, matching NameExistsAsync's contract.
-        builder.Property(p => p.Name).UseCollation("NOCASE");
+        // The collation on the column makes both the unique index and every
+        // name comparison case-insensitive across Unicode, matching
+        // NameExistsAsync's contract; SQLite's NOCASE folds only ASCII.
+        builder.Property(p => p.Name).UseCollation(UnicodeNoCaseCollation.Name);
         builder.HasIndex(p => p.Name).IsUnique();
 
         // The domain bumps Version on every accepted change to the portfolio or
