@@ -45,7 +45,8 @@ public interface IPortfolioService
     /// <summary>
     /// Records a transaction in a portfolio. It is a
     /// <see cref="ServiceErrorCode.RuleViolated"/> when the transaction is
-    /// dated after the current time, when its coin is new to the ledger and
+    /// dated more than five minutes after the current time (the allowance for
+    /// a client clock running ahead), when its coin is new to the ledger and
     /// CoinGecko doesn't know it or has no price for it in the portfolio's
     /// vs_currency, when replaying the ledger with it would take a holding
     /// below zero, or when it would make a coin's amounts too large to

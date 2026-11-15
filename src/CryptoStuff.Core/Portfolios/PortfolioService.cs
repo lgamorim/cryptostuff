@@ -13,6 +13,9 @@ public sealed class PortfolioService(
     ICryptocurrencyService cryptocurrencyService,
     TimeProvider timeProvider) : IPortfolioService
 {
+    /// <summary>How far after the current time a transaction may still be dated.</summary>
+    private static readonly TimeSpan ClockSkewTolerance = TimeSpan.FromMinutes(5);
+
     /// <inheritdoc />
     public async Task<ServiceResult<IReadOnlyList<PortfolioView>>> ListAsync(CancellationToken cancellationToken)
     {
@@ -337,18 +340,20 @@ public sealed class PortfolioService(
 
     /// <summary>
     /// Returns the failure to report when <paramref name="transaction"/>
-    /// happened after the current time, or null when it did not; exactly now
-    /// is allowed.
+    /// happened more than <see cref="ClockSkewTolerance"/> after the current
+    /// time, or null when it did not. The tolerance lets a client whose clock
+    /// runs a little ahead of the server's record a trade made "now"; the
+    /// timestamp is still stored as given.
     /// </summary>
     private ServiceResult<PortfolioView>? RejectIfFutureDated(TransactionDetails transaction)
     {
         var now = timeProvider.GetUtcNow();
-        return transaction.OccurredAt > now
+        return transaction.OccurredAt > now + ClockSkewTolerance
             ? ServiceResult<PortfolioView>.Failure(
                 ServiceErrorCode.RuleViolated,
                 string.Create(
                     CultureInfo.InvariantCulture,
-                    $"A transaction cannot be dated in the future: {UtcTimestamp.Format(transaction.OccurredAt)} is after the current time, {UtcTimestamp.Format(now)}."))
+                    $"A transaction cannot be dated in the future: {UtcTimestamp.Format(transaction.OccurredAt)} is more than {ClockSkewTolerance.TotalMinutes} minutes after the current time, {UtcTimestamp.Format(now)}."))
             : null;
     }
 

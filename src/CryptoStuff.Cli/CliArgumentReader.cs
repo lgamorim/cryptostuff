@@ -11,6 +11,10 @@ namespace CryptoStuff.Cli;
 /// </summary>
 public static class CliArgumentReader
 {
+    private const NumberStyles DecimalStyles = NumberStyles.AllowLeadingSign | NumberStyles.AllowDecimalPoint | NumberStyles.AllowExponent;
+
+    private const string NumberCharacters = "0123456789+-.eE";
+
     // A CLI positional argument is never null, and string.Split always returns
     // at least one element (an empty string splits to [""]), so a genuinely
     // empty list can never reach this method - only per-element blank entries
@@ -107,15 +111,32 @@ public static class CliArgumentReader
     }
 
     /// <summary>
-    /// Parses <paramref name="raw"/> as a plain decimal number, such as
-    /// <c>0.5</c>, under the invariant culture: a point for the decimal mark,
-    /// no thousands separators, exponent, or whitespace, so a comma is never
-    /// read as either.
+    /// Parses <paramref name="raw"/> as a decimal number, such as <c>0.5</c>
+    /// or <c>5e-1</c>, under the invariant culture: a point for the decimal
+    /// mark, an optional exponent as JSON allows one, and no thousands
+    /// separators or whitespace, so a comma is never read as either. A
+    /// well-formed number beyond what a <see cref="decimal"/> holds is
+    /// reported as too large or too small rather than as not a number.
     /// </summary>
     public static bool TryParseDecimal(string raw, string fieldName, out decimal value, out string errorMessage)
     {
-        errorMessage = $"{fieldName} must be a number.";
-        return decimal.TryParse(raw, NumberStyles.AllowLeadingSign | NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out value);
+        if (decimal.TryParse(raw, DecimalStyles, CultureInfo.InvariantCulture, out value))
+        {
+            errorMessage = string.Empty;
+            return true;
+        }
+
+        // double reads the same grammar over a far wider range, so a number it
+        // reads that decimal does not is out of range. Its infinity and NaN
+        // symbols are letters other than an exponent's, and are not numbers.
+        var outOfRange = raw.AsSpan().IndexOfAnyExcept(NumberCharacters) < 0
+            && double.TryParse(raw, DecimalStyles, CultureInfo.InvariantCulture, out _);
+        errorMessage = !outOfRange
+            ? $"{fieldName} must be a number."
+            : raw.StartsWith('-')
+                ? string.Create(CultureInfo.InvariantCulture, $"{fieldName} is too small; the smallest number accepted is {decimal.MinValue}.")
+                : string.Create(CultureInfo.InvariantCulture, $"{fieldName} is too large; the largest number accepted is {decimal.MaxValue}.");
+        return false;
     }
 
     /// <summary>Parses <paramref name="raw"/> as a decimal number greater than zero, such as a quantity.</summary>

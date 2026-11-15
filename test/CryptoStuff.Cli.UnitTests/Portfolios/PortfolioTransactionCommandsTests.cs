@@ -94,10 +94,14 @@ public class PortfolioTransactionCommandsTests
     [InlineData("")]
     [InlineData("1,5")]
     [InlineData("1.2.3")]
-    [InlineData("1e3")]
+    [InlineData("1e")]
+    [InlineData("e3")]
+    [InlineData("1e3.5")]
     [InlineData(" 1")]
     [InlineData("1,000")]
     [InlineData("NaN")]
+    [InlineData("Infinity")]
+    [InlineData("-Infinity")]
     public async Task Should_ReturnOneAndNumberError_When_FeeIsNotANumber(string rawFee)
     {
         // Act
@@ -110,6 +114,57 @@ public class PortfolioTransactionCommandsTests
         _error.ToString().Should().Be("Fee must be a number.\n");
         _output.ToString().Should().BeEmpty();
         _portfolios.CallCount.Should().Be(0);
+    }
+
+    // The API reads a JSON number with an exponent, so the CLI reads one too.
+    [Fact]
+    public async Task Should_ReadEachAmount_When_QuantityPriceAndFeeUseAnExponent()
+    {
+        // Act
+        var exitCode = await _runner.RunAsync(
+            ["portfolio", "tx", "add", "3", "buy", "bitcoin", "5e-1", "4.000025E4", "2024-01-31T14:30:00Z", "--fee", "1e+1"],
+            CancellationToken.None);
+
+        // Assert
+        exitCode.Should().Be(0);
+        // `!` is safe: a command that exits 0 has reached the service, so the command was captured.
+        var transaction = _portfolios.CapturedAddTransactionCommand!.Transaction;
+        transaction.Quantity.Should().Be(0.5m);
+        transaction.UnitPrice.Should().Be(40000.25m);
+        transaction.Fee.Should().Be(10m);
+    }
+
+    [Theory]
+    [InlineData("79228162514264337593543950336", "40000", "0", "Quantity is too large; the largest number accepted is 79228162514264337593543950335.")]
+    [InlineData("1e29", "40000", "0", "Quantity is too large; the largest number accepted is 79228162514264337593543950335.")]
+    [InlineData("+1.5E+29", "40000", "0", "Quantity is too large; the largest number accepted is 79228162514264337593543950335.")]
+    [InlineData("0.5", "1e400", "0", "Price is too large; the largest number accepted is 79228162514264337593543950335.")]
+    [InlineData("0.5", "40000", "-1e40", "Fee is too small; the smallest number accepted is -79228162514264337593543950335.")]
+    public async Task Should_ReturnOneAndRangeError_When_AnAmountIsBeyondWhatADecimalHolds(string rawQuantity, string rawPrice, string rawFee, string expectedError)
+    {
+        // Act
+        var exitCode = await _runner.RunAsync(
+            ["portfolio", "tx", "add", "3", "buy", "bitcoin", rawQuantity, rawPrice, "2024-01-31T14:30:00Z", "--fee", rawFee],
+            CancellationToken.None);
+
+        // Assert
+        exitCode.Should().Be(1);
+        _error.ToString().Should().Be($"{expectedError}\n");
+        _portfolios.CallCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Should_AcceptTheQuantity_When_ItIsTheLargestADecimalHolds()
+    {
+        // Act
+        var exitCode = await _runner.RunAsync(
+            ["portfolio", "tx", "add", "3", "buy", "bitcoin", "79228162514264337593543950335", "0", "2024-01-31T14:30:00Z"],
+            CancellationToken.None);
+
+        // Assert
+        exitCode.Should().Be(0);
+        // `!` is safe: a command that exits 0 has reached the service, so the command was captured.
+        _portfolios.CapturedAddTransactionCommand!.Transaction.Quantity.Should().Be(decimal.MaxValue);
     }
 
     [Theory]

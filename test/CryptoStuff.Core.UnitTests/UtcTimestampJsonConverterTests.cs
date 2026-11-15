@@ -80,4 +80,31 @@ public class UtcTimestampJsonConverterTests
         // Assert
         value.Should().Be(new DateTimeOffset(2024, 3, 1, 12, 0, 0, TimeSpan.Zero));
     }
+
+    [Fact]
+    public void Should_ReadTheValueInUtc_When_TextHasAnotherOffset()
+    {
+        // Act
+        var value = JsonSerializer.Deserialize<DateTimeOffset>("\"2024-03-01T14:00:00+02:00\"", Options);
+
+        // Assert
+        value.Offset.Should().Be(TimeSpan.Zero);
+    }
+
+    [Theory]
+    [InlineData("\"2024-03-01T12:00:00\"")]
+    [InlineData("\"2024-03-01T12:00:00.5\"")]
+    [InlineData("\"2024-03-01\"")]
+    [InlineData("\"2024-03-01T12:00Z\"")]
+    [InlineData("\"\"")]
+    [InlineData("1709294400")]
+    [InlineData("null")]
+    public void Should_Throw_When_TextIsNotATimestampWithAnOffset(string json)
+    {
+        // Act
+        var act = () => JsonSerializer.Deserialize<DateTimeOffset>(json, Options);
+
+        // Assert
+        act.Should().Throw<JsonException>();
+    }
 }

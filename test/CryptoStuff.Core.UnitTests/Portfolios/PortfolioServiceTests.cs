@@ -403,42 +403,49 @@ public class PortfolioServiceTests
     }
 
     [Fact]
-    public async Task Should_ReturnRuleViolatedWithoutUpstreamCallOrSave_When_AddTransactionAsyncIsDatedOneTickAfterNow()
+    public async Task Should_ReturnRuleViolatedWithoutUpstreamCallOrSave_When_AddTransactionAsyncIsDatedOneTickPastTheClockSkewTolerance()
     {
         var (repository, upstream, service) = CreateSut();
         var portfolio = SeedPortfolio(repository, "Long term");
         upstream.PricesResult = PricedIn("bitcoin", "usd");
 
-        var result = await service.AddTransactionAsync(AddCommand(portfolio, Buy("bitcoin", 1m, Now.AddTicks(1))), CancellationToken.None);
+        var result = await service.AddTransactionAsync(AddCommand(portfolio, Buy("bitcoin", 1m, Now.AddMinutes(5).AddTicks(1))), CancellationToken.None);
 
         result.ErrorCode.Should().Be(ServiceErrorCode.RuleViolated);
-        result.ErrorDetail.Should().Contain("future");
+        result.ErrorDetail.Should().Be(
+            "A transaction cannot be dated in the future: 2024-06-01T12:05:00.0000001Z is more than 5 minutes after the current time, 2024-06-01T12:00:00Z.");
         portfolio.Transactions.Should().BeEmpty();
         upstream.GetPricesCallCount.Should().Be(0);
         repository.SaveChangesCallCount.Should().Be(0);
     }
 
-    [Fact]
-    public async Task Should_Record_When_AddTransactionAsyncIsDatedExactlyNow()
+    // A client whose clock runs a little ahead of the server's records a
+    // trade made "now" a few seconds or minutes in the future.
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2 * TimeSpan.TicksPerSecond)]
+    [InlineData(5 * TimeSpan.TicksPerMinute)]
+    public async Task Should_RecordTheTimestampAsGiven_When_AddTransactionAsyncIsDatedWithinTheClockSkewTolerance(long ticksAfterNow)
     {
         var (repository, upstream, service) = CreateSut();
         var portfolio = SeedPortfolio(repository, "Long term");
         upstream.PricesResult = PricedIn("bitcoin", "usd");
 
-        var result = await service.AddTransactionAsync(AddCommand(portfolio, Buy("bitcoin", 1m, Now)), CancellationToken.None);
+        var result = await service.AddTransactionAsync(AddCommand(portfolio, Buy("bitcoin", 1m, Now.AddTicks(ticksAfterNow))), CancellationToken.None);
 
-        SucceededValue(result).Transactions.Should().ContainSingle().Which.OccurredAt.Should().Be(Now);
+        SucceededValue(result).Transactions.Should().ContainSingle().Which.OccurredAt.Should().Be(Now.AddTicks(ticksAfterNow));
     }
 
     [Theory]
-    [InlineData(2, 0, true)] // 14:00 at +02:00 reads later than the clock's 12:00 UTC, but is the same instant.
-    [InlineData(-5, 1, false)] // 07:00 at -05:00 reads earlier than the clock's 12:00 UTC, but is one tick after it.
-    public async Task Should_CompareInstantsNotWallClocks_When_AddTransactionAsyncTimestampHasAnotherOffset(int offsetHours, int ticksAfterNow, bool expectedSuccess)
+    [InlineData(2, 0, true)] // 14:05 at +02:00 reads far later than the clock's 12:00 UTC, but is exactly the tolerance after it.
+    [InlineData(-5, 1, false)] // 07:05 at -05:00 reads earlier than the clock's 12:00 UTC, but is one tick past the tolerance.
+    public async Task Should_CompareInstantsNotWallClocks_When_AddTransactionAsyncTimestampHasAnotherOffset(int offsetHours, int ticksPastTolerance, bool expectedSuccess)
     {
         var (repository, upstream, service) = CreateSut();
         var portfolio = SeedPortfolio(repository, "Long term");
         upstream.PricesResult = PricedIn("bitcoin", "usd");
-        var occurredAt = Now.AddTicks(ticksAfterNow).ToOffset(TimeSpan.FromHours(offsetHours));
+        var occurredAt = Now.AddMinutes(5).AddTicks(ticksPastTolerance).ToOffset(TimeSpan.FromHours(offsetHours));
 
         var result = await service.AddTransactionAsync(AddCommand(portfolio, Buy("bitcoin", 1m, occurredAt)), CancellationToken.None);
 
@@ -672,11 +679,11 @@ public class PortfolioServiceTests
     }
 
     [Fact]
-    public async Task Should_ReturnRuleViolatedWithoutUpstreamCallOrSave_When_ReplaceTransactionAsyncIsDatedOneTickAfterNow()
+    public async Task Should_ReturnRuleViolatedWithoutUpstreamCallOrSave_When_ReplaceTransactionAsyncIsDatedOneTickPastTheClockSkewTolerance()
     {
         var (repository, upstream, service) = CreateSut();
         var portfolio = SeedPortfolioWith(repository, Buy("bitcoin", 1m, Day(1)));
-        var command = new ReplaceTransactionCommand { PortfolioId = portfolio.Id, TransactionId = portfolio.Transactions[0].Id, Transaction = Buy("ethereum", 1m, Now.AddTicks(1)) };
+        var command = new ReplaceTransactionCommand { PortfolioId = portfolio.Id, TransactionId = portfolio.Transactions[0].Id, Transaction = Buy("ethereum", 1m, Now.AddMinutes(5).AddTicks(1)) };
 
         var result = await service.ReplaceTransactionAsync(command, CancellationToken.None);
 

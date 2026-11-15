@@ -218,10 +218,11 @@ public class AlertCommandsTests
     [Theory]
     [InlineData("abc")]
     [InlineData("")]
-    [InlineData("1e3")]
+    [InlineData("1e")]
     [InlineData("1,5")]
     [InlineData("1,000.5")]
     [InlineData(" 5")]
+    [InlineData("Infinity")]
     public async Task Should_ReturnOneAndValidationError_When_CreateThresholdIsNotANumber(string rawThreshold)
     {
         // Act
@@ -265,6 +266,21 @@ public class AlertCommandsTests
         exitCode.Should().Be(1);
         _error.ToString().Should().Be($"{expectedError}\n");
         _alerts.CallCount.Should().Be(0);
+    }
+
+    [Theory]
+    [InlineData("1.50025e3")]
+    [InlineData("150025E-2")]
+    [InlineData("1.50025e+3")]
+    public async Task Should_CreateAlertWithTheThreshold_When_ThresholdUsesAnExponent(string rawThreshold)
+    {
+        // Act
+        var exitCode = await _runner.RunAsync(["alert", "create", "bitcoin", "usd", "above", rawThreshold], CancellationToken.None);
+
+        // Assert
+        exitCode.Should().Be(0);
+        // `!` is safe: a command that exits 0 has reached the service, so the command was captured.
+        _alerts.CapturedCreateCommand!.Threshold.Should().Be(1500.25m);
     }
 
     [Fact]
@@ -434,7 +450,9 @@ public class AlertCommandsTests
     [InlineData("abc", "Threshold must be a number.")]
     [InlineData("", "Threshold must be a number.")]
     [InlineData("1,5", "Threshold must be a number.")]
-    [InlineData("1e3", "Threshold must be a number.")]
+    [InlineData("1e", "Threshold must be a number.")]
+    [InlineData("1e29", "Threshold is too large; the largest number accepted is 79228162514264337593543950335.")]
+    [InlineData("-1e29", "Threshold is too small; the smallest number accepted is -79228162514264337593543950335.")]
     [InlineData("0", "Threshold must be greater than zero.")]
     [InlineData("-1", "Threshold must be greater than zero.")]
     public async Task Should_ReturnOneAndValidationError_When_UpdateThresholdIsInvalid(string rawThreshold, string expectedError)

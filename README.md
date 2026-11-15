@@ -632,7 +632,9 @@ they open the shared [database](#data-storage), and a failure the service
 reports is printed as `Error: …` and exits `1`. The ledger rules reach you that
 way: selling more of a coin than the portfolio held at that moment, or editing
 or deleting a transaction a later sell depends on, is refused with a message
-naming the coin and date, and so is a transaction dated in the future. `show`,
+naming the coin and date, and so is a transaction dated more than five
+minutes after the current time (the allowance for a clock running a little
+ahead of the machine that checks it; the timestamp is stored as given). `show`,
 `create`, `update` and the three `tx` commands print the resulting portfolio;
 `delete` prints `Deleted portfolio <id>.`, or `{"Id": <id>, "Deleted": true}`
 with `--json`.
@@ -645,8 +647,8 @@ parses. A re-armed alert that has not yet seen its price move back shows as
 the price to move back)` in `list`, and with `"AwaitingReset": true` in
 `--json`. `delete` prints `Deleted alert <id>.`, or `{"Id": <id>, "Deleted": true}`
 with `--json`. A threshold is read like a portfolio quantity (a point for the
-decimal mark, no thousands separators or exponent: `0.5` is accepted, `0,5` and
-`1e3` are not) and must be greater than zero, so `0` and `-1` are rejected as
+decimal mark, an optional exponent, and no thousands separators: `0.5` and
+`1.5e3` are accepted, `0,5` is not) and must be greater than zero, so `0` and `-1` are rejected as
 `Threshold must be greater than zero.` Core refuses a coin or currency
 CoinGecko doesn't know, or that has no price in that currency, when the alert is
 created, and refuses to re-arm an alert that is already armed, in a message
@@ -669,10 +671,13 @@ on its own timer.
 Arguments stay positional; the one option besides `--json` is `--fee`, which
 only `tx add` and `tx edit` take (anywhere on the command line, followed by its
 value) and which defaults to `0`. Numbers are read the same way on every
-machine, whatever its regional settings: a plain decimal with a point for the
-decimal mark, and no thousands separators or exponent. `0.5` is accepted;
-`0,5`, `1,000` and `1e3` are rejected as `Quantity must be a number.` (or
-`Price`, or `Fee`) rather than read as something else. A quantity must be
+machine, whatever its regional settings: a decimal with a point for the
+decimal mark, an optional exponent as a JSON number allows (`5e-1`, `1.5E+3`),
+and no thousands separators. `0.5` and `5e-1` are accepted; `0,5` and `1,000`
+are rejected as `Quantity must be a number.` (or `Price`, or `Fee`) rather than
+read as something else. A number beyond the largest a decimal holds,
+79228162514264337593543950335, is rejected as `Quantity is too large; …` (and
+one below its negative as `… is too small; …`). A quantity must be
 greater than zero, a price and a fee zero or greater. `<when>` is an ISO 8601
 timestamp with a UTC offset, `2024-01-31T14:30:00Z` or
 `2024-01-31T16:30:00+02:00`; a date alone, or a timestamp without an offset,
@@ -877,7 +882,9 @@ routes. Recording or replacing a transaction takes this body:
   optional and zero when omitted. A comma decimal or digit grouping (`"1,5"`)
   is a `400`.
 - `occurredAt` is an ISO 8601 timestamp with `Z` or a `±hh:mm` offset, and
-  stored as UTC; it cannot be in the future. Responses always give it as UTC
+  stored as UTC; it cannot be more than five minutes in the future, an
+  allowance for a client clock running a little ahead (the timestamp is still
+  stored as given). Responses always give it as UTC
   ending in `Z`: `2024-01-31T16:30:00+02:00` is returned as `2024-01-31T14:30:00Z`.
 
 Every route that returns a portfolio returns it whole, as above, with its
@@ -927,7 +934,7 @@ Failures use the [ProblemDetails](#rest-api) contract above:
 | `404` | No portfolio has that `id`, another writer deleted it while the request was saving, the portfolio has no transaction with that `txId`, or either is not a whole number (no route matches it) |
 | `409` | The name is taken by another portfolio (ignoring case), or a concurrent write won the race |
 | `412` | `If-Match` does not match the portfolio's current `ETag` |
-| `422` | The ledger would oversell (the `detail` names the coin and date of the sell), a coin's amounts would be [too large to compute](#cost-basis) (the `detail` names the coin), the transaction is dated in the future, or CoinGecko does not know a coin new to the portfolio or has no price for it in the portfolio's vs_currency; valuing a portfolio whose valuation has an amount too large to compute |
+| `422` | The ledger would oversell (the `detail` names the coin and date of the sell), a coin's amounts would be [too large to compute](#cost-basis) (the `detail` names the coin), the transaction is dated more than five minutes in the future, or CoinGecko does not know a coin new to the portfolio or has no price for it in the portfolio's vs_currency; valuing a portfolio whose valuation has an amount too large to compute |
 | `429`, `502`, `504` | CoinGecko failed while checking a coin new to the portfolio or while valuing |
 
 ### Alert routes
