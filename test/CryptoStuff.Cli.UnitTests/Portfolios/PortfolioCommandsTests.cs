@@ -453,6 +453,97 @@ public class PortfolioCommandsTests
     }
 
     [Fact]
+    public async Task Should_RoundComputedFiguresToEightPlacesButKeepTheQuantity_When_ValuationIsPrintedAsText()
+    {
+        // Arrange
+        _portfolios.ValuationResult = ServiceResult<PortfolioValuationView>.Success(new PortfolioValuationView
+        {
+            PortfolioId = 3,
+            VsCurrency = "usd",
+            CostBasisMethod = CostBasisMethod.AverageCost,
+            Coins =
+            [
+                new CoinValuationView
+                {
+                    CoinId = "bitcoin",
+                    Quantity = 0.123456789012345678m,
+                    MarketValue = 1000.123456785m,
+                    CostBasis = 733.33333333333333333333333333m,
+                    UnrealizedProfitAndLoss = 266.79012345166666666666666667m,
+                    RealizedProfitAndLoss = -0.000000005m,
+                },
+            ],
+            UnpricedCoins = [],
+            Totals = new PortfolioValuationTotals
+            {
+                MarketValue = 1000.123456785m,
+                CostBasis = 733.33333333333333333333333333m,
+                UnrealizedProfitAndLoss = 266.79012345166666666666666667m,
+                RealizedProfitAndLoss = -0.000000004m,
+            },
+        });
+
+        // Act
+        await _runner.RunAsync(["portfolio", "value", "3"], CancellationToken.None);
+
+        // Assert
+        // A midpoint rounds away from zero, a loss's as a gain's, and a loss too
+        // small to show prints as 0, not -0.
+        _output.ToString().Should().Be(
+            "Portfolio: 3 (usd, average-cost)\n"
+            + "bitcoin: quantity 0.123456789012345678, market value 1000.12345679, cost basis 733.33333333, unrealized 266.79012345, realized -0.00000001\n"
+            + "Total: market value 1000.12345679, cost basis 733.33333333, unrealized 266.79012345, realized 0\n");
+    }
+
+    [Fact]
+    public async Task Should_KeepComputedFiguresAtFullPrecision_When_ValuationIsPrintedAsJson()
+    {
+        // Arrange
+        _portfolios.ValuationResult = ServiceResult<PortfolioValuationView>.Success(new PortfolioValuationView
+        {
+            PortfolioId = 3,
+            VsCurrency = "usd",
+            CostBasisMethod = CostBasisMethod.AverageCost,
+            Coins = [],
+            UnpricedCoins = [],
+            Totals = new PortfolioValuationTotals
+            {
+                MarketValue = 0m,
+                CostBasis = 733.33333333333333333333333333m,
+                UnrealizedProfitAndLoss = 0m,
+                RealizedProfitAndLoss = 0m,
+            },
+        });
+
+        // Act
+        await _runner.RunAsync(["portfolio", "value", "3", "--json"], CancellationToken.None);
+
+        // Assert
+        _output.ToString().Should().Contain("\"CostBasis\": 733.33333333333333333333333333");
+    }
+
+    [Fact]
+    public async Task Should_PrintEnteredFiguresExactly_When_TheyHaveMoreThanEightPlaces()
+    {
+        // Arrange
+        _portfolios.GetResult = ServiceResult<PortfolioView>.Success(new PortfolioView
+        {
+            Id = 7,
+            Name = "main",
+            VsCurrency = "eth",
+            CostBasisMethod = CostBasisMethod.Fifo,
+            Version = 1,
+            Transactions = [Transaction(id: 12) with { Quantity = 0.000000000123m, UnitPrice = 0.000000001234m, Fee = 0.000000000001m }],
+        });
+
+        // Act
+        await _runner.RunAsync(["portfolio", "show", "7"], CancellationToken.None);
+
+        // Assert
+        _output.ToString().Should().Contain(" buy 0.000000000123 bitcoin @ 0.000000001234 eth, fee 0.000000000001 eth");
+    }
+
+    [Fact]
     public async Task Should_PrintNoHoldingsPlaceholder_When_ValuedPortfolioHasNoCoins()
     {
         // Arrange

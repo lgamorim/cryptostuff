@@ -16,6 +16,12 @@ public sealed record ServiceResult
     /// A message explaining the failure, preferred over the fixed text for
     /// <see cref="ErrorCode"/> when present. Null when none was given.
     /// </summary>
+    /// <remarks>
+    /// Users read it verbatim, as the CLI's <c>Error:</c> line and as the
+    /// API's ProblemDetails <c>detail</c>, so it must be text written for them:
+    /// never an exception's message, which can carry paths, SQL or other
+    /// internals.
+    /// </remarks>
     public string? ErrorDetail { get; }
 
     private ServiceResult(bool isSuccess, ServiceErrorCode? errorCode, string? errorDetail)

@@ -432,7 +432,14 @@ keeping it means the priced rows always add up to the totals. Coins are
 listed in order of coin id.
 
 Every figure is an exact `decimal`: Core rounds nothing, so a host that shows
-currency places rounds when it formats. A live price times the quantity held,
+currency places rounds when it formats. The API's responses and the CLI's
+`--json` output keep every figure exact. `portfolio value`'s text rounds the
+market values, cost bases and profits and losses, which come out of
+multiplying and dividing and can run to 28 decimal places, to at most 8, the
+places a bitcoin divides into: a midpoint rounds away from zero, trailing
+zeros are dropped, and a figure that rounds to nothing prints as `0`, so a cost
+basis of 2200 / 3 prints as `733.33333333`. Quantities, and the prices and
+fees you entered, are always printed exactly. A live price times the quantity held,
 or a total across coins, can still go past the largest `decimal`; the
 valuation then fails with `RuleViolated` rather than giving a wrong figure.
 
@@ -742,6 +749,9 @@ default human-readable text:
 dotnet run --project src/CryptoStuff.Cli -- coin bitcoin --json
 ```
 
+A valuation's computed figures are rounded to 8 decimal places in the text and
+kept exact in the JSON; see [Valuation](#valuation).
+
 Timestamps are written the same way in the text and the JSON, and in the API's
 responses and error messages: UTC, ending in `Z`, such as `2024-01-31T14:30:00Z`,
 with a fraction of a second only when there is one. A timestamp you send with
@@ -821,7 +831,9 @@ failure returns `400` with an
 `{ "errors": { "<field>": ["<message>"] }, ... }`. A service
 failure (see [Error codes](#error-codes)) returns a `ProblemDetails` body
 with one of the statuses below; its `detail` is the failure's detail message
-when it has one, and fixed text for the code otherwise:
+when it has one, and fixed text for the code otherwise (a blank message counts
+as none). A `detail` is always text written for the client: no exception's
+message reaches a response, since one can carry paths, SQL or other internals.
 
 | Status | `ServiceErrorCode` |
 |---|---|
@@ -836,7 +848,8 @@ when it has one, and fixed text for the code otherwise:
 
 A write that finds the [database](#data-storage) locked by another writer for
 longer than SQLite waits returns `503` with a `ProblemDetails` body, `detail`
-`The database is busy with another write; try again shortly.`, and a
+`The database is busy with another write; try again shortly.` (always that
+text, whatever the database reported), and a
 `Retry-After: 5` header. Nothing was written, so the same request can be
 retried as it is.
 

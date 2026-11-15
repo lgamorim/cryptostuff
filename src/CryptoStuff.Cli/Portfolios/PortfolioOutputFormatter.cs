@@ -9,6 +9,16 @@ namespace CryptoStuff.Cli.Portfolios;
 /// <summary>Renders portfolio views as either indented JSON or human-readable text.</summary>
 public static class PortfolioOutputFormatter
 {
+    // A valuation's market values, cost bases and profits and losses come out
+    // of multiplying and dividing, so they can run to 28 decimal places. Text
+    // shows them to at most this many, the places a bitcoin divides into;
+    // JSON, and every figure the user entered, keep their full precision.
+    private const int ComputedFigurePlaces = 8;
+
+    // Rounds to ComputedFigurePlaces, a midpoint away from zero, and drops
+    // trailing zeros; a loss too small to show prints as 0, not -0.
+    private static readonly string ComputedFigureFormat = "0." + new string('#', ComputedFigurePlaces);
+
     // Enums travel as the kebab-case tokens Core parses, in JSON as in text; timestamps as UTC ending in Z.
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -86,10 +96,12 @@ public static class PortfolioOutputFormatter
     }
 
     private static string FormatFigures(decimal? marketValue, decimal costBasis, decimal? unrealized, decimal realized) =>
-        $"market value {FormatPriced(marketValue)}, cost basis {Invariant(costBasis)}, unrealized {FormatPriced(unrealized)}, realized {Invariant(realized)}";
+        $"market value {FormatPriced(marketValue)}, cost basis {Computed(costBasis)}, unrealized {FormatPriced(unrealized)}, realized {Computed(realized)}";
 
     // A figure that needs the coin's live price, which CoinGecko may not have given.
-    private static string FormatPriced(decimal? value) => value is { } figure ? Invariant(figure) : "unpriced";
+    private static string FormatPriced(decimal? value) => value is { } figure ? Computed(figure) : "unpriced";
+
+    private static string Computed(decimal value) => value.ToString(ComputedFigureFormat, CultureInfo.InvariantCulture);
 
     private static string FormatTransaction(PortfolioTransactionView transaction, string vsCurrency) =>
         $"  {transaction.Id}: {UtcTimestamp.Format(transaction.OccurredAt)} {Token(transaction.Kind)} {Invariant(transaction.Quantity)} {transaction.CoinId}"

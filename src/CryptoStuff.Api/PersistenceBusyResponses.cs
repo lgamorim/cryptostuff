@@ -15,6 +15,10 @@ public static class PersistenceBusyResponses
 {
     private const int RetryAfterSeconds = 5;
 
+    // The response's own words, not the exception's message: a ProblemDetails
+    // reaches API clients, and an exception's message is not written for them.
+    private const string BusyDetail = "The database is busy with another write; try again shortly.";
+
     internal static IApplicationBuilder UsePersistenceBusyResponses(this IApplicationBuilder app) =>
         app.Use(InvokeAsync);
 
@@ -30,14 +34,14 @@ public static class PersistenceBusyResponses
         {
             await next(context);
         }
-        catch (PersistenceBusyException exception) when (!context.Response.HasStarted)
+        catch (PersistenceBusyException) when (!context.Response.HasStarted)
         {
             context.Response.Clear();
             context.Response.Headers.RetryAfter = RetryAfterSeconds.ToString(CultureInfo.InvariantCulture);
             await TypedResults.Problem(
                     statusCode: StatusCodes.Status503ServiceUnavailable,
                     title: "Service Unavailable",
-                    detail: exception.Message)
+                    detail: BusyDetail)
                 .ExecuteAsync(context);
         }
     }

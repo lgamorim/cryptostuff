@@ -3,12 +3,12 @@ using CryptoStuff.Core;
 namespace CryptoStuff.Api;
 
 /// <summary>Maps a <see cref="ServiceErrorCode"/> to the HTTP response the API returns for it.</summary>
-internal static class ServiceErrorHttpMapper
+public static class ServiceErrorHttpMapper
 {
     /// <summary>
     /// Returns a ProblemDetails result for <paramref name="errorCode"/>, using
     /// <paramref name="errorDetail"/> as its `detail` when one is present and
-    /// the code's fixed text otherwise.
+    /// the code's fixed text otherwise; a blank detail counts as none.
     /// </summary>
     public static IResult ToProblem(ServiceErrorCode errorCode, string? errorDetail = null)
     {
@@ -32,6 +32,6 @@ internal static class ServiceErrorHttpMapper
                 StatusCodes.Status500InternalServerError, "Internal Server Error", "An unknown error occurred."),
         };
 
-        return TypedResults.Problem(statusCode: statusCode, title: title, detail: errorDetail ?? fixedDetail);
+        return TypedResults.Problem(statusCode: statusCode, title: title, detail: string.IsNullOrWhiteSpace(errorDetail) ? fixedDetail : errorDetail);
     }
 }
