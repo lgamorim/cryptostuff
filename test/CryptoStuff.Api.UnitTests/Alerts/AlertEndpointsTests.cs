@@ -83,12 +83,25 @@ public class AlertEndpointsTests
     }
 
     [Fact]
+    public async Task Should_PrefixThePathBase_When_CreateSucceedsUnderOne()
+    {
+        _service.CreateResult = ServiceResult<AlertView>.Success(ArmedView);
+        var request = new CreateAlertRequest { CoinId = "bitcoin", VsCurrency = "usd", Direction = "above", Threshold = 1m };
+        var httpRequest = new DefaultHttpContext().Request;
+        httpRequest.PathBase = "/api";
+
+        var result = await AlertEndpoints.CreateAsync(request, _service, httpRequest, CancellationToken.None);
+
+        result.Should().BeOfType<Created<AlertView>>().Which.Location.Should().Be("/api/alerts/7");
+    }
+
+    [Fact]
     public async Task Should_ReturnCreatedWithLocationAndForwardCommand_When_CreateSucceeds()
     {
         _service.CreateResult = ServiceResult<AlertView>.Success(ArmedView);
         var request = new CreateAlertRequest { CoinId = "Bitcoin", VsCurrency = "USD", Direction = "Above", Threshold = 50000.5m };
 
-        var result = await AlertEndpoints.CreateAsync(request, _service, CancellationToken.None);
+        var result = await AlertEndpoints.CreateAsync(request, _service, new DefaultHttpContext().Request, CancellationToken.None);
 
         var created = result.Should().BeOfType<Created<AlertView>>().Subject;
         created.Location.Should().Be("/alerts/7");
@@ -108,7 +121,7 @@ public class AlertEndpointsTests
         _service.CreateResult = ServiceResult<AlertView>.Success(ArmedView);
         var request = ValidCreateRequest with { Direction = "below" };
 
-        await AlertEndpoints.CreateAsync(request, _service, CancellationToken.None);
+        await AlertEndpoints.CreateAsync(request, _service, new DefaultHttpContext().Request, CancellationToken.None);
 
         // A valid request always reaches the service, so the command was captured.
         _service.CapturedCreateCommand!.Direction.Should().Be(AlertDirection.Below);
@@ -117,7 +130,7 @@ public class AlertEndpointsTests
     [Fact]
     public async Task Should_ReturnValidationProblem_When_CreateBodyMissing()
     {
-        var result = await AlertEndpoints.CreateAsync(null, _service, CancellationToken.None);
+        var result = await AlertEndpoints.CreateAsync(null, _service, new DefaultHttpContext().Request, CancellationToken.None);
 
         AssertValidationProblem(result, "coinId", "coinId is required.");
     }
@@ -130,7 +143,7 @@ public class AlertEndpointsTests
     {
         var request = ValidCreateRequest with { CoinId = coinId };
 
-        var result = await AlertEndpoints.CreateAsync(request, _service, CancellationToken.None);
+        var result = await AlertEndpoints.CreateAsync(request, _service, new DefaultHttpContext().Request, CancellationToken.None);
 
         AssertValidationProblem(result, "coinId", "coinId is required.");
     }
@@ -143,7 +156,7 @@ public class AlertEndpointsTests
     {
         var request = ValidCreateRequest with { VsCurrency = vsCurrency };
 
-        var result = await AlertEndpoints.CreateAsync(request, _service, CancellationToken.None);
+        var result = await AlertEndpoints.CreateAsync(request, _service, new DefaultHttpContext().Request, CancellationToken.None);
 
         AssertValidationProblem(result, "vsCurrency", "vsCurrency is required.");
     }
@@ -158,7 +171,7 @@ public class AlertEndpointsTests
     {
         var request = ValidCreateRequest with { Direction = direction };
 
-        var result = await AlertEndpoints.CreateAsync(request, _service, CancellationToken.None);
+        var result = await AlertEndpoints.CreateAsync(request, _service, new DefaultHttpContext().Request, CancellationToken.None);
 
         AssertValidationProblem(result, "direction", "direction must be 'above' or 'below'.");
     }
@@ -168,7 +181,7 @@ public class AlertEndpointsTests
     {
         var request = ValidCreateRequest with { Threshold = null };
 
-        var result = await AlertEndpoints.CreateAsync(request, _service, CancellationToken.None);
+        var result = await AlertEndpoints.CreateAsync(request, _service, new DefaultHttpContext().Request, CancellationToken.None);
 
         AssertValidationProblem(result, "threshold", "threshold is required.");
     }
@@ -180,7 +193,7 @@ public class AlertEndpointsTests
     {
         var request = ValidCreateRequest with { Threshold = decimal.Parse(threshold, CultureInfo.InvariantCulture) };
 
-        var result = await AlertEndpoints.CreateAsync(request, _service, CancellationToken.None);
+        var result = await AlertEndpoints.CreateAsync(request, _service, new DefaultHttpContext().Request, CancellationToken.None);
 
         AssertValidationProblem(result, "threshold", "threshold must be greater than zero.");
     }
@@ -384,7 +397,7 @@ public class AlertEndpointsTests
         {
             AlertRoute.List => AlertEndpoints.ListAsync(_service, cancellationToken),
             AlertRoute.Get => AlertEndpoints.GetAsync(7, _service, cancellationToken),
-            AlertRoute.Create => AlertEndpoints.CreateAsync(ValidCreateRequest, _service, cancellationToken),
+            AlertRoute.Create => AlertEndpoints.CreateAsync(ValidCreateRequest, _service, new DefaultHttpContext().Request, cancellationToken),
             AlertRoute.Update => AlertEndpoints.UpdateAsync(7, ValidUpdateRequest, _service, cancellationToken),
             AlertRoute.Delete => AlertEndpoints.DeleteAsync(7, _service, cancellationToken),
             AlertRoute.Rearm => AlertEndpoints.RearmAsync(7, _service, cancellationToken),

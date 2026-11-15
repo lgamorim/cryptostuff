@@ -76,7 +76,8 @@ public static class AlertEndpoints
     }
 
     /// <summary><c>POST /alerts</c> — creates an armed alert.</summary>
-    public static async Task<IResult> CreateAsync(CreateAlertRequest? request, IAlertService service, CancellationToken cancellationToken)
+    public static async Task<IResult> CreateAsync(
+        CreateAlertRequest? request, IAlertService service, HttpRequest httpRequest, CancellationToken cancellationToken)
     {
         var coinProblem = RequestValidation.ValidateScalar(request?.CoinId, "coinId");
         if (coinProblem is not null)
@@ -111,7 +112,7 @@ public static class AlertEndpoints
             Threshold = request.Threshold!.Value,
         };
         var result = await service.CreateAsync(command, cancellationToken);
-        return ServiceResultHttp.Created(result, view => $"/alerts/{view.Id}");
+        return ServiceResultHttp.Created(result, httpRequest.PathBase, view => $"/alerts/{view.Id}");
     }
 
     /// <summary><c>PUT /alerts/{id}</c> — replaces an alert's direction and threshold, which re-arms it.</summary>

@@ -58,7 +58,8 @@ public static class WatchlistEndpoints
     }
 
     /// <summary><c>POST /watchlists</c> — creates an empty watchlist.</summary>
-    public static async Task<IResult> CreateAsync(WatchlistRequest? request, IWatchlistService service, CancellationToken cancellationToken)
+    public static async Task<IResult> CreateAsync(
+        WatchlistRequest? request, IWatchlistService service, HttpRequest httpRequest, CancellationToken cancellationToken)
     {
         var nameProblem = RequestValidation.ValidateName(request?.Name, "name");
         if (nameProblem is not null)
@@ -68,7 +69,7 @@ public static class WatchlistEndpoints
 
         // ValidateName returning null guarantees request and its Name are non-null and non-whitespace.
         var result = await service.CreateAsync(new CreateWatchlistCommand { Name = request!.Name! }, cancellationToken);
-        return ServiceResultHttp.Created(result, view => $"/watchlists/{view.Id}");
+        return ServiceResultHttp.Created(result, httpRequest.PathBase, view => $"/watchlists/{view.Id}");
     }
 
     /// <summary><c>PUT /watchlists/{id}</c> — replaces a watchlist's name.</summary>

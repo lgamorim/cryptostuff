@@ -31,6 +31,48 @@ public class WatchlistApiTests
         body.Should().BeEquivalentTo(new WatchlistView { Id = 1, Name = "majors", CoinIds = [] });
     }
 
+    // A reverse proxy that serves the API under /api, forwarding requests
+    // with that prefix on, is met by setting PathBase; Location must then keep
+    // the prefix to name the new watchlist.
+    [Fact]
+    public async Task Should_KeepThePathBaseInLocation_When_WatchlistCreatedUnderTheConfiguredOne()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        using var factory = new CryptoStuffApiFactory();
+        using var mounted = factory.WithWebHostBuilder(builder => builder.UseSetting("PathBase", "/api"));
+        using var client = mounted.CreateClient();
+
+        var response = await client.PostAsJsonAsync("/api/watchlists", new { name = "majors" }, cancellationToken);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
+        // `!` is safe: a 201 always carries Location.
+        response.Headers.Location!.OriginalString.Should().Be("/api/watchlists/1");
+        (await client.GetAsync(response.Headers.Location, cancellationToken)).StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task Should_ReturnNotFound_When_PathIsPrefixedButNoPathBaseIsConfigured()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        using var factory = new CryptoStuffApiFactory();
+        using var client = factory.CreateClient();
+
+        var response = await client.PostAsJsonAsync("/api/watchlists", new { name = "majors" }, cancellationToken);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public void Should_FailToStart_When_ConfiguredPathBaseDoesNotStartWithASlash()
+    {
+        using var factory = new CryptoStuffApiFactory();
+        using var mounted = factory.WithWebHostBuilder(builder => builder.UseSetting("PathBase", "api"));
+
+        var act = () => mounted.CreateClient();
+
+        act.Should().Throw<ArgumentException>().WithMessage("*must start with '/'*");
+    }
+
     [Fact]
     public async Task Should_ReturnWatchlist_When_GetByIdAfterCreate()
     {
@@ -446,16 +488,28 @@ public class WatchlistApiTests
         responses.EnumerateObject().Select(response => response.Name).Should().BeEquivalentTo(expectedStatuses);
     }
 
-    [Fact]
-    public async Task Should_ReturnNotFound_When_IdNotNumeric()
+    // A path whose id is not a whole number names no resource, so no route
+    // matches it; the 404 still carries a ProblemDetails body.
+    [Theory]
+    [InlineData("/watchlists/abc")]
+    [InlineData("/watchlists/1.5")]
+    [InlineData("/watchlists/99999999999")]
+    [InlineData("/portfolios/abc/transactions/1")]
+    [InlineData("/alerts/abc")]
+    public async Task Should_ReturnNotFoundProblem_When_IdIsNotAWholeNumber(string path)
     {
         var cancellationToken = TestContext.Current.CancellationToken;
         using var factory = new CryptoStuffApiFactory();
         using var client = factory.CreateClient();
 
-        var response = await client.GetAsync("/watchlists/abc", cancellationToken);
+        var response = await client.GetAsync(path, cancellationToken);
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        // `!` is safe: a ProblemDetails response always has a content type.
+        response.Content.Headers.ContentType!.MediaType.Should().Be("application/problem+json");
+        var problem = await response.Content.ReadFromJsonAsync<ProblemDetails>(JsonOptions, cancellationToken);
+        // `!` is safe: the content type asserted above is a ProblemDetails body.
+        problem!.Status.Should().Be(StatusCodes.Status404NotFound);
     }
 
     [Theory]

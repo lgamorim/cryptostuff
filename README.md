@@ -74,6 +74,15 @@ demo API key described in Prerequisites (`CoinGecko:ApiKey` locally,
 `CoinGecko__ApiKey` in deployment), sent as the `x-cg-demo-api-key` HTTP
 header.
 
+The API host reads `PathBase` (in `appsettings.json`, or the `PathBase`
+environment variable), empty by default. Behind a reverse proxy that serves
+the API under a path and forwards requests with that prefix still on, set it
+to the prefix, such as `/api`: the routes then answer beneath it (and still
+at the root, for a request without the prefix) and every `Location` header on
+a prefixed request names it. It must start with `/`, or the host fails to
+start. A proxy that strips the prefix before forwarding needs no setting, but
+its clients then get `Location` headers without the prefix.
+
 ## Error codes
 
 `CryptoStuff.Core` reports a failed operation as a `ServiceErrorCode`. A failed
@@ -743,6 +752,7 @@ dotnet run --project src/CryptoStuff.Api
 | `PUT /portfolios/{id}` | `id` (path), JSON body `{ "name": "<name>", "costBasisMethod": "<method>" }`, optional `If-Match` | `/portfolios/1` |
 | `DELETE /portfolios/{id}` | `id` (path), optional `If-Match` | `/portfolios/1` |
 | `POST /portfolios/{id}/transactions` | `id` (path), JSON [transaction body](#portfolio-routes), optional `If-Match` | `/portfolios/1/transactions` |
+| `GET /portfolios/{id}/transactions/{txId}` | `id`, `txId` (path) | `/portfolios/1/transactions/1` |
 | `PUT /portfolios/{id}/transactions/{txId}` | `id`, `txId` (path), JSON [transaction body](#portfolio-routes), optional `If-Match` | `/portfolios/1/transactions/1` |
 | `DELETE /portfolios/{id}/transactions/{txId}` | `id`, `txId` (path), optional `If-Match` | `/portfolios/1/transactions/1` |
 | `GET /portfolios/{id}/valuation` | `id` (path) | `/portfolios/1/valuation` |
@@ -789,6 +799,11 @@ longer than SQLite waits returns `503` with a `ProblemDetails` body, `detail`
 `The database is busy with another write; try again shortly.`, and a
 `Retry-After: 5` header. Nothing was written, so the same request can be
 retried as it is.
+
+A path whose id is not a whole number (`/watchlists/abc`) matches no route and
+returns `404` with a `ProblemDetails` body. A `Location` header keeps the
+[`PathBase`](#configuration) the host is configured with, so with `/api` a new
+watchlist's is `/api/watchlists/1`.
 
 ### Watchlist routes
 
@@ -899,6 +914,7 @@ transactions in ledger order, each shaped like the body plus its `id` and
 | `PUT /portfolios/{id}` | `200` with `ETag` | The updated portfolio |
 | `DELETE /portfolios/{id}` | `204` | No body; its transactions go with it |
 | `POST /portfolios/{id}/transactions` | `201` with `Location` and `ETag` | The portfolio; `Location` names the new transaction, `/portfolios/{id}/transactions/{txId}` |
+| `GET /portfolios/{id}/transactions/{txId}` | `200` with `ETag` | The one transaction, shaped as in the portfolio's list; the `ETag` is the portfolio's, the one this URI's `PUT` and `DELETE` take |
 | `PUT /portfolios/{id}/transactions/{txId}` | `200` with `ETag` | The portfolio; the transaction keeps its id and sequence |
 | `DELETE /portfolios/{id}/transactions/{txId}` | `200` with `ETag` | The portfolio, without the transaction |
 | `GET /portfolios/{id}/valuation` | `200` | A [valuation](#valuation): one CoinGecko call for the coins still held, more only when one of them is unknown; a coin CoinGecko gives no price for is [left unpriced](#unpriced-coins) |
@@ -908,17 +924,24 @@ transactions in ledger order, each shaped like the body plus its `id` and
 A portfolio's version, which goes up by one with every change to it or its
 ledger, is its entity tag. Every response that carries a portfolio carries
 its version as a strong `ETag`, such as `ETag: "3"`, and every write
-(`PUT`, `DELETE`, and the three transaction routes) honours an optional
+(`PUT`, `DELETE`, and the three transaction writes) honours an optional
 `If-Match`:
 
 - Without `If-Match`, or with `If-Match: *`, the write is unconditional.
-- With the current tag, the write goes ahead and the response carries the new
-  one.
-- With any other tag, the write is refused with `412` and changes nothing; the
-  `detail` names the version the portfolio is at. `If-Match` compares
-  strongly, so a weak tag (`W/"3"`) never matches.
-- A value that is not one entity tag (`3` unquoted, or a list such as
-  `"3", "4"`) is a `400`.
+- With the current tag, or a list of tags that includes it (`"3", "4"`, or
+  several `If-Match` header lines), the write goes ahead and the response
+  carries the new one.
+- With any other tag or tags, the write is refused with `412` and changes
+  nothing; the `detail` names the version the portfolio is at and the
+  versions the request listed. `If-Match` compares strongly, so a weak tag
+  (`W/"3"`) never matches.
+- A value that is neither `*` nor a list of entity tags (`3` unquoted, `"3"
+  "4"` without a comma, or `*` alongside a tag) is a `400`.
+- A missing target is reported before a stale tag: an unknown portfolio, or a
+  transaction id the portfolio does not have, is a `404` whatever tags the
+  request sends, as RFC 9110 asks. Failures that depend on what the write
+  would change, such as a taken name, a future date or an oversell, are
+  checked after `If-Match`, so a stale tag reports `412` first.
 
 `If-Match` is checked against the version the write has just read. A
 concurrent write that saves between that read and this write's own save is
@@ -930,7 +953,7 @@ Failures use the [ProblemDetails](#rest-api) contract above:
 
 | Status | When |
 |---|---|
-| `400` | A missing body or malformed JSON; a blank or over-long `name`; a blank `vsCurrency` or `coinId`; a `costBasisMethod` or `kind` that is not one of its tokens; a missing or out-of-range `quantity`, `unitPrice` or `fee`; an `occurredAt` that is not an ISO 8601 timestamp with an offset; an `id` or `txId` of zero or below; an `If-Match` that is not one entity tag |
+| `400` | A missing body or malformed JSON; a blank or over-long `name`; a blank `vsCurrency` or `coinId`; a `costBasisMethod` or `kind` that is not one of its tokens; a missing or out-of-range `quantity`, `unitPrice` or `fee`; an `occurredAt` that is not an ISO 8601 timestamp with an offset; an `id` or `txId` of zero or below; an `If-Match` that is neither `*` nor a list of entity tags |
 | `404` | No portfolio has that `id`, another writer deleted it while the request was saving, the portfolio has no transaction with that `txId`, or either is not a whole number (no route matches it) |
 | `409` | The name is taken by another portfolio (ignoring case), or a concurrent write won the race |
 | `412` | `If-Match` does not match the portfolio's current `ETag` |

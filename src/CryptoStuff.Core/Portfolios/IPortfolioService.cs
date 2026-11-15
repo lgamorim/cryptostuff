@@ -36,11 +36,11 @@ public interface IPortfolioService
 
     /// <summary>
     /// Deletes a portfolio with all its transactions. When
-    /// <paramref name="expectedVersion"/> is given and the stored portfolio is
-    /// at another version, it is a <see cref="ServiceErrorCode.PreconditionFailed"/>;
+    /// <paramref name="expectedVersions"/> is given and the stored portfolio is
+    /// at none of them, it is a <see cref="ServiceErrorCode.PreconditionFailed"/>;
     /// null deletes unconditionally.
     /// </summary>
-    Task<ServiceResult> DeleteAsync(int id, int? expectedVersion, CancellationToken cancellationToken);
+    Task<ServiceResult> DeleteAsync(int id, IReadOnlyCollection<int>? expectedVersions, CancellationToken cancellationToken);
 
     /// <summary>
     /// Records a transaction in a portfolio. It is a

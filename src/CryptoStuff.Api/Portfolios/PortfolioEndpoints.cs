@@ -53,6 +53,8 @@ public static class PortfolioEndpoints
                 StatusCodes.Status412PreconditionFailed);
         group.MapPost("/{id:int}/transactions", AddTransactionAsync)
             .WithProblemMetadata<PortfolioView>(StatusCodes.Status201Created, CheckedTransactionWriteProblems);
+        group.MapGet("/{id:int}/transactions/{txId:int}", GetTransactionAsync)
+            .WithProblemMetadata<PortfolioTransactionView>(StatusCodes.Status200OK, StatusCodes.Status400BadRequest, StatusCodes.Status404NotFound);
         group.MapPut("/{id:int}/transactions/{txId:int}", ReplaceTransactionAsync)
             .WithProblemMetadata<PortfolioView>(StatusCodes.Status200OK, CheckedTransactionWriteProblems);
         group.MapDelete("/{id:int}/transactions/{txId:int}", RemoveTransactionAsync)
@@ -121,7 +123,7 @@ public static class PortfolioEndpoints
         var command = new CreatePortfolioCommand { Name = request!.Name!, VsCurrency = request.VsCurrency!, CostBasisMethod = method };
         var result = await service.CreateAsync(command, cancellationToken);
         SetETagOnSuccess(response, result);
-        return ServiceResultHttp.Created(result, view => $"/portfolios/{view.Id}");
+        return ServiceResultHttp.Created(result, response.HttpContext.Request.PathBase, view => $"/portfolios/{view.Id}");
     }
 
     /// <summary><c>PUT /portfolios/{id}</c> — replaces a portfolio's name and cost-basis method.</summary>
@@ -139,7 +141,7 @@ public static class PortfolioEndpoints
             return idProblem;
         }
 
-        var (expectedVersion, ifMatchProblem) = PortfolioETag.ParseIfMatch(ifMatch);
+        var (expectedVersions, ifMatchProblem) = PortfolioETag.ParseIfMatch(ifMatch);
         if (ifMatchProblem is not null)
         {
             return ifMatchProblem;
@@ -163,7 +165,7 @@ public static class PortfolioEndpoints
             PortfolioId = id,
             Name = request!.Name!,
             CostBasisMethod = method,
-            ExpectedVersion = expectedVersion,
+            ExpectedVersions = expectedVersions,
         };
         var result = await service.UpdateAsync(command, cancellationToken);
         SetETagOnSuccess(response, result);
@@ -180,13 +182,13 @@ public static class PortfolioEndpoints
             return idProblem;
         }
 
-        var (expectedVersion, ifMatchProblem) = PortfolioETag.ParseIfMatch(ifMatch);
+        var (expectedVersions, ifMatchProblem) = PortfolioETag.ParseIfMatch(ifMatch);
         if (ifMatchProblem is not null)
         {
             return ifMatchProblem;
         }
 
-        var result = await service.DeleteAsync(id, expectedVersion, cancellationToken);
+        var result = await service.DeleteAsync(id, expectedVersions, cancellationToken);
         return ServiceResultHttp.NoContent(result);
     }
 
@@ -205,7 +207,7 @@ public static class PortfolioEndpoints
             return idProblem;
         }
 
-        var (expectedVersion, ifMatchProblem) = PortfolioETag.ParseIfMatch(ifMatch);
+        var (expectedVersions, ifMatchProblem) = PortfolioETag.ParseIfMatch(ifMatch);
         if (ifMatchProblem is not null)
         {
             return ifMatchProblem;
@@ -218,12 +220,45 @@ public static class PortfolioEndpoints
         }
 
         // ParseTransaction returns details whenever it returns no problem.
-        var command = new AddTransactionCommand { PortfolioId = id, Transaction = details!, ExpectedVersion = expectedVersion };
+        var command = new AddTransactionCommand { PortfolioId = id, Transaction = details!, ExpectedVersions = expectedVersions };
         var result = await service.AddTransactionAsync(command, cancellationToken);
         SetETagOnSuccess(response, result);
 
         // Transaction ids are never reused, so the one just recorded has the highest.
-        return ServiceResultHttp.Created(result, view => $"/portfolios/{view.Id}/transactions/{view.Transactions.Max(t => t.Id)}");
+        return ServiceResultHttp.Created(
+            result, response.HttpContext.Request.PathBase, view => $"/portfolios/{view.Id}/transactions/{view.Transactions.Max(t => t.Id)}");
+    }
+
+    /// <summary>
+    /// <c>GET /portfolios/{id}/transactions/{txId}</c> — one transaction, the
+    /// resource a recorded transaction's <c>Location</c> names. It carries the
+    /// portfolio's <c>ETag</c>, the one its <c>PUT</c> and <c>DELETE</c> take in <c>If-Match</c>.
+    /// </summary>
+    public static async Task<IResult> GetTransactionAsync(
+        int id, int txId, IPortfolioService service, HttpResponse response, CancellationToken cancellationToken)
+    {
+        var idProblem = RequestValidation.ValidateId(id, "id") ?? RequestValidation.ValidateId(txId, "txId");
+        if (idProblem is not null)
+        {
+            return idProblem;
+        }
+
+        var result = await service.GetAsync(id, cancellationToken);
+        if (!result.IsSuccess)
+        {
+            return ServiceResultHttp.Ok(result);
+        }
+
+        // ServiceResult<T> guarantees Value is non-null when IsSuccess is true.
+        var portfolio = result.Value!;
+        var transaction = portfolio.Transactions.FirstOrDefault(t => t.Id == txId);
+        if (transaction is null)
+        {
+            return ServiceErrorHttpMapper.ToProblem(ServiceErrorCode.NotFound, $"Portfolio {id} has no transaction with id {txId}.");
+        }
+
+        response.Headers.ETag = PortfolioETag.Format(portfolio.Version);
+        return TypedResults.Ok(transaction);
     }
 
     /// <summary><c>PUT /portfolios/{id}/transactions/{txId}</c> — replaces every detail of a transaction; the response is the whole portfolio.</summary>
@@ -242,7 +277,7 @@ public static class PortfolioEndpoints
             return idProblem;
         }
 
-        var (expectedVersion, ifMatchProblem) = PortfolioETag.ParseIfMatch(ifMatch);
+        var (expectedVersions, ifMatchProblem) = PortfolioETag.ParseIfMatch(ifMatch);
         if (ifMatchProblem is not null)
         {
             return ifMatchProblem;
@@ -255,7 +290,7 @@ public static class PortfolioEndpoints
         }
 
         // ParseTransaction returns details whenever it returns no problem.
-        var command = new ReplaceTransactionCommand { PortfolioId = id, TransactionId = txId, Transaction = details!, ExpectedVersion = expectedVersion };
+        var command = new ReplaceTransactionCommand { PortfolioId = id, TransactionId = txId, Transaction = details!, ExpectedVersions = expectedVersions };
         var result = await service.ReplaceTransactionAsync(command, cancellationToken);
         SetETagOnSuccess(response, result);
         return ServiceResultHttp.Ok(result);
@@ -276,13 +311,13 @@ public static class PortfolioEndpoints
             return idProblem;
         }
 
-        var (expectedVersion, ifMatchProblem) = PortfolioETag.ParseIfMatch(ifMatch);
+        var (expectedVersions, ifMatchProblem) = PortfolioETag.ParseIfMatch(ifMatch);
         if (ifMatchProblem is not null)
         {
             return ifMatchProblem;
         }
 
-        var command = new RemoveTransactionCommand { PortfolioId = id, TransactionId = txId, ExpectedVersion = expectedVersion };
+        var command = new RemoveTransactionCommand { PortfolioId = id, TransactionId = txId, ExpectedVersions = expectedVersions };
         var result = await service.RemoveTransactionAsync(command, cancellationToken);
         SetETagOnSuccess(response, result);
         return ServiceResultHttp.Ok(result);

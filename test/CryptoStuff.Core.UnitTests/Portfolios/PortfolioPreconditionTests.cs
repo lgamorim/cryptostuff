@@ -3,8 +3,9 @@ using CryptoStuff.Core.UnitTests.TestSupport;
 
 namespace CryptoStuff.Core.UnitTests.Portfolios;
 
-// The expected version a write may carry: the API's If-Match. Omitted, a
-// write is unconditional, which every test in PortfolioServiceTests covers.
+// The expected versions a write may carry: the API's If-Match, which may list
+// several entity tags. Omitted, a write is unconditional, which every test in
+// PortfolioServiceTests covers.
 public class PortfolioPreconditionTests
 {
     private const int UnknownId = 999;
@@ -41,7 +42,7 @@ public class PortfolioPreconditionTests
             PortfolioId = portfolio.Id,
             Name = "Retirement",
             CostBasisMethod = CostBasisMethod.AverageCost,
-            ExpectedVersion = 2,
+            ExpectedVersions = [2],
         };
 
         var result = await service.UpdateAsync(command, CancellationToken.None);
@@ -63,7 +64,7 @@ public class PortfolioPreconditionTests
             PortfolioId = portfolio.Id,
             Name = "Retirement",
             CostBasisMethod = CostBasisMethod.AverageCost,
-            ExpectedVersion = 1,
+            ExpectedVersions = [1],
         };
 
         var result = await service.UpdateAsync(command, CancellationToken.None);
@@ -82,7 +83,7 @@ public class PortfolioPreconditionTests
         var (repository, _, service) = CreateSut();
         var portfolio = SeedPortfolio(repository);
 
-        var result = await service.DeleteAsync(portfolio.Id, expectedVersion: 2, CancellationToken.None);
+        var result = await service.DeleteAsync(portfolio.Id, expectedVersions: [2], CancellationToken.None);
 
         result.ErrorCode.Should().Be(ServiceErrorCode.PreconditionFailed);
         result.ErrorDetail.Should().Be($"Portfolio {portfolio.Id} is at version 1, not the expected version 2; reload it and try again.");
@@ -95,7 +96,7 @@ public class PortfolioPreconditionTests
     {
         var (repository, upstream, service) = CreateSut();
         var portfolio = SeedPortfolio(repository);
-        var command = new AddTransactionCommand { PortfolioId = portfolio.Id, Transaction = Buy(1m, 1), ExpectedVersion = 2 };
+        var command = new AddTransactionCommand { PortfolioId = portfolio.Id, Transaction = Buy(1m, 1), ExpectedVersions = [2] };
 
         var result = await service.AddTransactionAsync(command, CancellationToken.None);
 
@@ -117,7 +118,7 @@ public class PortfolioPreconditionTests
             PortfolioId = portfolio.Id,
             TransactionId = transaction.Id,
             Transaction = Buy(2m, 1) with { CoinId = "ethereum" },
-            ExpectedVersion = 1,
+            ExpectedVersions = [1],
         };
 
         var result = await service.ReplaceTransactionAsync(command, CancellationToken.None);
@@ -136,7 +137,7 @@ public class PortfolioPreconditionTests
         var (repository, _, service) = CreateSut();
         var portfolio = SeedPortfolioWithOneBuy(repository);
         var transaction = portfolio.Transactions.Single();
-        var command = new RemoveTransactionCommand { PortfolioId = portfolio.Id, TransactionId = transaction.Id, ExpectedVersion = 1 };
+        var command = new RemoveTransactionCommand { PortfolioId = portfolio.Id, TransactionId = transaction.Id, ExpectedVersions = [1] };
 
         var result = await service.RemoveTransactionAsync(command, CancellationToken.None);
 
@@ -155,7 +156,7 @@ public class PortfolioPreconditionTests
             Coins = [new CoinPrice { CoinId = "bitcoin", Amounts = [new CurrencyAmount { Currency = "usd", Amount = 100m }] }],
         });
         var portfolio = SeedPortfolioWithOneBuy(repository);
-        var command = new AddTransactionCommand { PortfolioId = portfolio.Id, Transaction = Buy(1m, 2), ExpectedVersion = 2 };
+        var command = new AddTransactionCommand { PortfolioId = portfolio.Id, Transaction = Buy(1m, 2), ExpectedVersions = [2] };
 
         var result = await service.AddTransactionAsync(command, CancellationToken.None);
 
@@ -168,13 +169,115 @@ public class PortfolioPreconditionTests
         repository.SaveChangesCallCount.Should().Be(1);
     }
 
+    [Fact]
+    public async Task Should_Save_When_UpdateAsyncExpectedVersionsIncludeTheCurrentOneAmongOthers()
+    {
+        var (repository, _, service) = CreateSut();
+        var portfolio = SeedPortfolio(repository);
+        var command = new UpdatePortfolioCommand
+        {
+            PortfolioId = portfolio.Id,
+            Name = "Retirement",
+            CostBasisMethod = CostBasisMethod.AverageCost,
+            ExpectedVersions = [3, 1],
+        };
+
+        var result = await service.UpdateAsync(command, CancellationToken.None);
+
+        result.IsSuccess.Should().BeTrue();
+        repository.SaveChangesCallCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task Should_ReturnPreconditionFailedNamingEveryExpectedVersionInOrder_When_UpdateAsyncExpectedVersionsAreAllStale()
+    {
+        var (repository, _, service) = CreateSut();
+        var portfolio = SeedPortfolio(repository);
+        var command = new UpdatePortfolioCommand
+        {
+            PortfolioId = portfolio.Id,
+            Name = "Retirement",
+            CostBasisMethod = CostBasisMethod.AverageCost,
+            ExpectedVersions = [3, 2, 3],
+        };
+
+        var result = await service.UpdateAsync(command, CancellationToken.None);
+
+        result.ErrorCode.Should().Be(ServiceErrorCode.PreconditionFailed);
+        result.ErrorDetail.Should().Be($"Portfolio {portfolio.Id} is at version 1, not any of the expected versions 2, 3; reload it and try again.");
+        portfolio.Name.Should().Be("Long term");
+        repository.SaveChangesCallCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Should_NameTheOneVersion_When_DeleteAsyncExpectedVersionsRepeatOneStaleVersion()
+    {
+        var (repository, _, service) = CreateSut();
+        var portfolio = SeedPortfolio(repository);
+
+        var result = await service.DeleteAsync(portfolio.Id, expectedVersions: [2, 2], CancellationToken.None);
+
+        result.ErrorDetail.Should().Be($"Portfolio {portfolio.Id} is at version 1, not the expected version 2; reload it and try again.");
+    }
+
+    // An empty set expects no version at all, so nothing matches it.
+    [Fact]
+    public async Task Should_ReturnPreconditionFailedWithoutRemoving_When_DeleteAsyncExpectedVersionsAreEmpty()
+    {
+        var (repository, _, service) = CreateSut();
+        var portfolio = SeedPortfolio(repository);
+
+        var result = await service.DeleteAsync(portfolio.Id, expectedVersions: [], CancellationToken.None);
+
+        result.ErrorCode.Should().Be(ServiceErrorCode.PreconditionFailed);
+        result.ErrorDetail.Should().Be($"Portfolio {portfolio.Id} is at version 1, not a version the caller expected; reload it and try again.");
+        repository.Saved.Should().Equal(portfolio);
+    }
+
+    // RFC 9110 has a server ignore a precondition when the request would fail
+    // without it, so a missing transaction is a 404 whatever If-Match says.
+    [Fact]
+    public async Task Should_ReturnNotFoundNamingTheTransaction_When_ReplaceTransactionAsyncTransactionIsUnknownAndExpectedVersionIsStale()
+    {
+        var (repository, upstream, service) = CreateSut();
+        var portfolio = SeedPortfolioWithOneBuy(repository);
+        var command = new ReplaceTransactionCommand
+        {
+            PortfolioId = portfolio.Id,
+            TransactionId = UnknownId,
+            Transaction = Buy(2m, 1),
+            ExpectedVersions = [1],
+        };
+
+        var result = await service.ReplaceTransactionAsync(command, CancellationToken.None);
+
+        result.ErrorCode.Should().Be(ServiceErrorCode.NotFound);
+        result.ErrorDetail.Should().Be($"Portfolio {portfolio.Id} has no transaction with id {UnknownId}.");
+        upstream.GetPricesCallCount.Should().Be(0);
+        repository.SaveChangesCallCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Should_ReturnNotFoundNamingTheTransaction_When_RemoveTransactionAsyncTransactionIsUnknownAndExpectedVersionIsStale()
+    {
+        var (repository, _, service) = CreateSut();
+        var portfolio = SeedPortfolioWithOneBuy(repository);
+        var command = new RemoveTransactionCommand { PortfolioId = portfolio.Id, TransactionId = UnknownId, ExpectedVersions = [1] };
+
+        var result = await service.RemoveTransactionAsync(command, CancellationToken.None);
+
+        result.ErrorCode.Should().Be(ServiceErrorCode.NotFound);
+        result.ErrorDetail.Should().Be($"Portfolio {portfolio.Id} has no transaction with id {UnknownId}.");
+        repository.SaveChangesCallCount.Should().Be(0);
+    }
+
     // A missing portfolio has no version to compare, so the API answers 404, not 412.
     [Fact]
     public async Task Should_ReturnNotFound_When_DeleteAsyncIdIsUnknownAndExpectedVersionGiven()
     {
         var (repository, _, service) = CreateSut();
 
-        var result = await service.DeleteAsync(UnknownId, expectedVersion: 1, CancellationToken.None);
+        var result = await service.DeleteAsync(UnknownId, expectedVersions: [1], CancellationToken.None);
 
         result.ErrorCode.Should().Be(ServiceErrorCode.NotFound);
         repository.SaveChangesCallCount.Should().Be(0);

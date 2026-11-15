@@ -146,6 +146,46 @@ public class PortfolioApiTests
         body.GetProperty("transactions")[0].GetProperty("occurredAt").GetString().Should().Be("2024-01-31T14:30:00Z");
     }
 
+    // A client following a recorded transaction's Location gets that
+    // transaction, with the ETag its PUT and DELETE take in If-Match.
+    [Fact]
+    public async Task Should_ReturnTheRecordedTransactionWithThePortfolioETag_When_ItsLocationIsFollowed()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        using var factory = new CryptoStuffApiFactory();
+        factory.CoinGeckoClient.PriceMatrixResponse = BitcoinPricedInUsd();
+        using var client = factory.CreateClient();
+        var created = await CreateAsync(client, "main", cancellationToken);
+        var recorded = await client.PostAsJsonAsync($"/portfolios/{created.Id}/transactions", Buy(0.5m), cancellationToken);
+
+        // `!` is safe: a 201 always carries Location.
+        var response = await client.GetAsync(recorded.Headers.Location!, cancellationToken);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Headers.ETag.Should().Be(recorded.Headers.ETag);
+        var transaction = await response.Content.ReadFromJsonAsync<PortfolioTransactionView>(JsonOptions, cancellationToken);
+        // `!` is safe: a 200 always carries the transaction.
+        transaction!.Id.Should().Be(1);
+        transaction.CoinId.Should().Be("bitcoin");
+        transaction.Quantity.Should().Be(0.5m);
+    }
+
+    [Theory]
+    [InlineData("/portfolios/1/transactions/99", "Portfolio 1 has no transaction with id 99.")]
+    [InlineData("/portfolios/99/transactions/1", "No portfolio has id 99.")]
+    public async Task Should_ReturnNotFoundProblem_When_TransactionOrPortfolioIsUnknown(string path, string expectedDetail)
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        using var factory = new CryptoStuffApiFactory();
+        using var client = factory.CreateClient();
+        await CreateAsync(client, "main", cancellationToken);
+
+        var response = await client.GetAsync(path, cancellationToken);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        (await ReadProblemAsync(response, cancellationToken)).Detail.Should().Be(expectedDetail);
+    }
+
     [Fact]
     public async Task Should_ReturnCreatedAtTransactionWithPortfolioAndNewETag_When_TransactionAdded()
     {
@@ -742,7 +782,10 @@ public class PortfolioApiTests
     [InlineData("W/\"1\"", HttpStatusCode.PreconditionFailed)]
     [InlineData("\"one\"", HttpStatusCode.PreconditionFailed)]
     [InlineData("1", HttpStatusCode.BadRequest)]
-    [InlineData("\"1\", \"2\"", HttpStatusCode.BadRequest)]
+    [InlineData("\"1\", \"2\"", HttpStatusCode.OK)]
+    [InlineData("\"2\", W/\"1\", \"one\"", HttpStatusCode.PreconditionFailed)]
+    [InlineData("\"1\" \"2\"", HttpStatusCode.BadRequest)]
+    [InlineData("*, \"1\"", HttpStatusCode.BadRequest)]
     [InlineData("*", HttpStatusCode.OK)]
     public async Task Should_ReturnStatusForIfMatchForm_When_UpdateCarriesIt(string ifMatch, HttpStatusCode expected)
     {
@@ -759,6 +802,66 @@ public class PortfolioApiTests
         var response = await client.SendAsync(request, cancellationToken);
 
         response.StatusCode.Should().Be(expected);
+    }
+
+    // A client may also send the list as several If-Match header lines.
+    [Fact]
+    public async Task Should_MatchAnyListedTag_When_IfMatchArrivesAsSeveralHeaderLines()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        using var factory = new CryptoStuffApiFactory();
+        using var client = factory.CreateClient();
+        var created = await CreateAsync(client, "main", cancellationToken);
+        using var request = new HttpRequestMessage(HttpMethod.Put, $"/portfolios/{created.Id}")
+        {
+            Content = JsonContent.Create(new { name = "renamed", costBasisMethod = "fifo" }),
+        };
+        request.Headers.IfMatch.Add(new EntityTagHeaderValue("\"3\""));
+        request.Headers.IfMatch.Add(new EntityTagHeaderValue("\"1\""));
+
+        var response = await client.SendAsync(request, cancellationToken);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task Should_ReturnPreconditionFailedNamingEveryListedVersion_When_IfMatchListsOnlyStaleTags()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        using var factory = new CryptoStuffApiFactory();
+        using var client = factory.CreateClient();
+        var created = await CreateAsync(client, "main", cancellationToken);
+        using var request = new HttpRequestMessage(HttpMethod.Delete, $"/portfolios/{created.Id}");
+        request.Headers.TryAddWithoutValidation("If-Match", "\"3\", \"2\"").Should().BeTrue();
+
+        var response = await client.SendAsync(request, cancellationToken);
+
+        response.StatusCode.Should().Be(HttpStatusCode.PreconditionFailed);
+        (await ReadProblemAsync(response, cancellationToken)).Detail.Should().Be(
+            $"Portfolio {created.Id} is at version 1, not any of the expected versions 2, 3; reload it and try again.");
+    }
+
+    // RFC 9110 has a server ignore a precondition when the request would fail
+    // without it, so a missing transaction is a 404 even under a stale If-Match.
+    [Theory]
+    [InlineData("PUT")]
+    [InlineData("DELETE")]
+    public async Task Should_ReturnNotFound_When_TransactionIsUnknownAndIfMatchIsStale(string method)
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        using var factory = new CryptoStuffApiFactory();
+        using var client = factory.CreateClient();
+        var created = await CreateAsync(client, "main", cancellationToken);
+        using var request = new HttpRequestMessage(new HttpMethod(method), $"/portfolios/{created.Id}/transactions/99")
+        {
+            Content = method == "PUT" ? JsonContent.Create(Buy(0.5m)) : null,
+        };
+        request.Headers.IfMatch.Add(new EntityTagHeaderValue("\"7\""));
+
+        var response = await client.SendAsync(request, cancellationToken);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        (await ReadProblemAsync(response, cancellationToken)).Detail.Should().Be($"Portfolio {created.Id} has no transaction with id 99.");
     }
 
     [Theory]
@@ -885,6 +988,7 @@ public class PortfolioApiTests
     [InlineData("/portfolios/{id}", "put")]
     [InlineData("/portfolios/{id}", "delete")]
     [InlineData("/portfolios/{id}/transactions", "post")]
+    [InlineData("/portfolios/{id}/transactions/{txId}", "get")]
     [InlineData("/portfolios/{id}/transactions/{txId}", "put")]
     [InlineData("/portfolios/{id}/transactions/{txId}", "delete")]
     [InlineData("/portfolios/{id}/valuation", "get")]
@@ -906,6 +1010,7 @@ public class PortfolioApiTests
     [InlineData("/portfolios/{id}", "put", new[] { "200", "400", "404", "409", "412", "500" })]
     [InlineData("/portfolios/{id}", "delete", new[] { "204", "400", "404", "409", "412", "500" })]
     [InlineData("/portfolios/{id}/transactions", "post", new[] { "201", "400", "404", "409", "412", "422", "429", "502", "504", "500" })]
+    [InlineData("/portfolios/{id}/transactions/{txId}", "get", new[] { "200", "400", "404", "500" })]
     [InlineData("/portfolios/{id}/transactions/{txId}", "put", new[] { "200", "400", "404", "409", "412", "422", "429", "502", "504", "500" })]
     [InlineData("/portfolios/{id}/transactions/{txId}", "delete", new[] { "200", "400", "404", "409", "412", "422", "500" })]
     [InlineData("/portfolios/{id}/valuation", "get", new[] { "200", "400", "404", "422", "429", "502", "504", "500" })]

@@ -270,7 +270,7 @@ public class PortfolioServiceTests
         var portfolio = SeedPortfolio(repository, "Long term");
         var kept = SeedPortfolio(repository, "Trading");
 
-        var result = await service.DeleteAsync(portfolio.Id, expectedVersion: null, CancellationToken.None);
+        var result = await service.DeleteAsync(portfolio.Id, expectedVersions: null, CancellationToken.None);
 
         result.IsSuccess.Should().BeTrue();
         repository.Saved.Should().Equal(kept);
@@ -283,7 +283,7 @@ public class PortfolioServiceTests
         var portfolio = SeedPortfolio(repository, "Long term");
         repository.SaveChangesException = new PersistenceConflictException();
 
-        var result = await service.DeleteAsync(portfolio.Id, expectedVersion: null, CancellationToken.None);
+        var result = await service.DeleteAsync(portfolio.Id, expectedVersions: null, CancellationToken.None);
 
         result.ErrorCode.Should().Be(ServiceErrorCode.Conflict);
         result.ErrorDetail.Should().Contain($"Portfolio {portfolio.Id}");
@@ -294,7 +294,7 @@ public class PortfolioServiceTests
     {
         var (repository, _, service) = CreateSut();
 
-        var result = await service.DeleteAsync(UnknownId, expectedVersion: null, CancellationToken.None);
+        var result = await service.DeleteAsync(UnknownId, expectedVersions: null, CancellationToken.None);
 
         result.ErrorCode.Should().Be(ServiceErrorCode.NotFound);
         result.ErrorDetail.Should().Contain("999");
@@ -910,7 +910,7 @@ public class PortfolioServiceTests
         var portfolio = SeedPortfolio(repository, "Long term");
         using var cts = new CancellationTokenSource();
 
-        await service.DeleteAsync(portfolio.Id, expectedVersion: null, cts.Token);
+        await service.DeleteAsync(portfolio.Id, expectedVersions: null, cts.Token);
 
         repository.CapturedCancellationTokens.Should().HaveCount(2).And.OnlyContain(token => token == cts.Token);
     }
@@ -992,7 +992,7 @@ public class PortfolioServiceTests
         var portfolio = SeedPortfolio(repository, "Long term");
         repository.DeleteConcurrentlyOnSave(portfolio.Id);
 
-        var result = await service.DeleteAsync(portfolio.Id, expectedVersion: null, CancellationToken.None);
+        var result = await service.DeleteAsync(portfolio.Id, expectedVersions: null, CancellationToken.None);
 
         result.ErrorCode.Should().Be(ServiceErrorCode.NotFound);
         result.ErrorDetail.Should().Be($"No portfolio has id {portfolio.Id}.");

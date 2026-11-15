@@ -67,12 +67,26 @@ public class WatchlistEndpointsTests
         var view = new WatchlistView { Id = 7, Name = "majors", CoinIds = [] };
         _service.CreateResult = ServiceResult<WatchlistView>.Success(view);
 
-        var result = await WatchlistEndpoints.CreateAsync(new WatchlistRequest { Name = "majors" }, _service, CancellationToken.None);
+        var result = await WatchlistEndpoints.CreateAsync(new WatchlistRequest { Name = "majors" }, _service, new DefaultHttpContext().Request, CancellationToken.None);
 
         var created = result.Should().BeOfType<Created<WatchlistView>>().Subject;
         created.Location.Should().Be("/watchlists/7");
         created.Value.Should().BeEquivalentTo(view);
         _service.CapturedCreateCommand.Should().BeEquivalentTo(new CreateWatchlistCommand { Name = "majors" });
+    }
+
+    // Behind a reverse proxy that mounts the API under a path, Location must
+    // carry that path to name the watchlist.
+    [Fact]
+    public async Task Should_PrefixThePathBase_When_CreateSucceedsUnderOne()
+    {
+        _service.CreateResult = ServiceResult<WatchlistView>.Success(new WatchlistView { Id = 7, Name = "majors", CoinIds = [] });
+        var httpRequest = new DefaultHttpContext().Request;
+        httpRequest.PathBase = "/api";
+
+        var result = await WatchlistEndpoints.CreateAsync(new WatchlistRequest { Name = "majors" }, _service, httpRequest, CancellationToken.None);
+
+        result.Should().BeOfType<Created<WatchlistView>>().Which.Location.Should().Be("/api/watchlists/7");
     }
 
     [Theory]
@@ -82,7 +96,7 @@ public class WatchlistEndpointsTests
     [InlineData("0123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789X", "name must be at most 100 characters.")]
     public async Task Should_ReturnValidationProblem_When_CreateNameInvalid(string? name, string expectedMessage)
     {
-        var result = await WatchlistEndpoints.CreateAsync(new WatchlistRequest { Name = name }, _service, CancellationToken.None);
+        var result = await WatchlistEndpoints.CreateAsync(new WatchlistRequest { Name = name }, _service, new DefaultHttpContext().Request, CancellationToken.None);
 
         var problem = result.Should().BeOfType<ValidationProblem>().Subject;
         problem.ProblemDetails.Status.Should().Be(400);
@@ -93,7 +107,7 @@ public class WatchlistEndpointsTests
     [Fact]
     public async Task Should_ReturnValidationProblem_When_CreateBodyMissing()
     {
-        var result = await WatchlistEndpoints.CreateAsync(null, _service, CancellationToken.None);
+        var result = await WatchlistEndpoints.CreateAsync(null, _service, new DefaultHttpContext().Request, CancellationToken.None);
 
         var problem = result.Should().BeOfType<ValidationProblem>().Subject;
         problem.ProblemDetails.Errors.Should().ContainKey("name").WhoseValue.Should().Equal("name is required.");
@@ -319,7 +333,7 @@ public class WatchlistEndpointsTests
         return route switch
         {
             WatchlistRoute.List => WatchlistEndpoints.ListAsync(_service, cancellationToken),
-            WatchlistRoute.Create => WatchlistEndpoints.CreateAsync(request, _service, cancellationToken),
+            WatchlistRoute.Create => WatchlistEndpoints.CreateAsync(request, _service, new DefaultHttpContext().Request, cancellationToken),
             WatchlistRoute.Get => WatchlistEndpoints.GetAsync(7, _service, cancellationToken),
             WatchlistRoute.Rename => WatchlistEndpoints.RenameAsync(7, request, _service, cancellationToken),
             WatchlistRoute.Delete => WatchlistEndpoints.DeleteAsync(7, _service, cancellationToken),

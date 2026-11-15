@@ -18,6 +18,7 @@ public enum PortfolioRoute
     AddTransaction,
     ReplaceTransaction,
     RemoveTransaction,
+    GetTransaction,
     Valuation,
 }
 
@@ -127,6 +128,30 @@ public class PortfolioEndpointsTests
     }
 
     [Fact]
+    public async Task Should_PrefixThePathBase_When_CreateSucceedsUnderOne()
+    {
+        _service.CreateResult = ServiceResult<PortfolioView>.Success(View(version: 1));
+        var request = new CreatePortfolioRequest { Name = "main", VsCurrency = "usd", CostBasisMethod = "fifo" };
+        var response = new DefaultHttpContext().Response;
+        response.HttpContext.Request.PathBase = "/api";
+
+        var result = await PortfolioEndpoints.CreateAsync(request, _service, response, CancellationToken.None);
+
+        result.Should().BeOfType<Created<PortfolioView>>().Which.Location.Should().Be("/api/portfolios/7");
+    }
+
+    [Fact]
+    public async Task Should_PrefixThePathBase_When_AddTransactionSucceedsUnderOne()
+    {
+        var response = new DefaultHttpContext().Response;
+        response.HttpContext.Request.PathBase = "/api";
+
+        var result = await PortfolioEndpoints.AddTransactionAsync(7, ValidTransaction(), null, _service, response, CancellationToken.None);
+
+        result.Should().BeOfType<Created<PortfolioView>>().Which.Location.Should().Be("/api/portfolios/7/transactions/1");
+    }
+
+    [Fact]
     public async Task Should_SetStrongETagFromVersion_When_CreateSucceeds()
     {
         _service.CreateResult = ServiceResult<PortfolioView>.Success(View(version: 1));
@@ -210,7 +235,7 @@ public class PortfolioEndpointsTests
         var ok = result.Should().BeOfType<Ok<PortfolioView>>().Subject;
         ok.Value.Should().BeEquivalentTo(view);
         _service.CapturedUpdateCommand.Should().BeEquivalentTo(
-            new UpdatePortfolioCommand { PortfolioId = 7, Name = "long term", CostBasisMethod = CostBasisMethod.Fifo, ExpectedVersion = null });
+            new UpdatePortfolioCommand { PortfolioId = 7, Name = "long term", CostBasisMethod = CostBasisMethod.Fifo, ExpectedVersions = null });
     }
 
     [Fact]
@@ -233,16 +258,19 @@ public class PortfolioEndpointsTests
         await PortfolioEndpoints.UpdateAsync(7, request, "\"3\"", _service, new DefaultHttpContext().Response, CancellationToken.None);
 
         // `!` is safe: a valid request always reaches the service, and a null command fails the assertion anyway.
-        _service.CapturedUpdateCommand!.ExpectedVersion.Should().Be(3);
+        _service.CapturedUpdateCommand!.ExpectedVersions.Should().Equal(3);
     }
 
     [Theory]
     [InlineData("3")]
     [InlineData("\"3")]
-    [InlineData("\"1\", \"2\"")]
+    [InlineData("\"1\" \"2\"")]
+    [InlineData("*, \"2\"")]
+    [InlineData("\"1\", *")]
+    [InlineData("\"1\", 2")]
     [InlineData("W/")]
     [InlineData("abc")]
-    public async Task Should_ReturnValidationProblem_When_UpdateIfMatchIsNotOneEntityTag(string ifMatch)
+    public async Task Should_ReturnValidationProblem_When_UpdateIfMatchIsNotAListOfEntityTags(string ifMatch)
     {
         var request = new UpdatePortfolioRequest { Name = "long term", CostBasisMethod = "fifo" };
 
@@ -250,8 +278,27 @@ public class PortfolioEndpointsTests
 
         var problem = result.Should().BeOfType<ValidationProblem>().Subject;
         problem.ProblemDetails.Errors.Should().ContainKey("If-Match")
-            .WhoseValue.Should().Equal("If-Match must be * or one entity tag, such as \"3\".");
+            .WhoseValue.Should().Equal("If-Match must be * or a list of entity tags, such as \"3\" or \"3\", \"4\".");
         _service.CallCount.Should().Be(0);
+    }
+
+    // RFC 9110 lets If-Match list several tags: the write goes ahead when the
+    // portfolio is at any of them. A tag this API never issued names no
+    // version, so it adds none.
+    [Theory]
+    [InlineData("\"3\", \"4\"", new[] { 3, 4 })]
+    [InlineData("\"4\",\"3\", \"4\"", new[] { 4, 3 })]
+    [InlineData("\"3\", W/\"4\", \"abc\"", new[] { 3 })]
+    [InlineData("\"3\", , \"5\"", new[] { 3, 5 })]
+    [InlineData("W/\"3\", \"abc\"", new[] { 0 })]
+    public async Task Should_ForwardEveryTaggedVersion_When_UpdateIfMatchListsSeveralEntityTags(string ifMatch, int[] expectedVersions)
+    {
+        var request = new UpdatePortfolioRequest { Name = "long term", CostBasisMethod = "fifo" };
+
+        await PortfolioEndpoints.UpdateAsync(7, request, ifMatch, _service, new DefaultHttpContext().Response, CancellationToken.None);
+
+        // `!` is safe: a valid request always reaches the service, and a null command fails the assertion anyway.
+        _service.CapturedUpdateCommand!.ExpectedVersions.Should().BeEquivalentTo(expectedVersions);
     }
 
     // `*` matches any current version, and the portfolio's existence is checked anyway.
@@ -265,7 +312,7 @@ public class PortfolioEndpointsTests
         result.Should().BeOfType<Ok<PortfolioView>>();
 
         // `!` is safe: the assertion above fails unless the request reached the service.
-        _service.CapturedUpdateCommand!.ExpectedVersion.Should().BeNull();
+        _service.CapturedUpdateCommand!.ExpectedVersions.Should().BeNull();
     }
 
     // If-Match compares strongly, so a weak tag never matches; nor does a tag
@@ -286,7 +333,7 @@ public class PortfolioEndpointsTests
         await PortfolioEndpoints.UpdateAsync(7, request, ifMatch, _service, new DefaultHttpContext().Response, CancellationToken.None);
 
         // `!` is safe: a valid request always reaches the service, and a null command fails the assertion anyway.
-        _service.CapturedUpdateCommand!.ExpectedVersion.Should().Be(0);
+        _service.CapturedUpdateCommand!.ExpectedVersions.Should().Equal(0);
     }
 
     [Fact]
@@ -338,11 +385,11 @@ public class PortfolioEndpointsTests
 
         result.Should().BeOfType<NoContent>();
         _service.CapturedId.Should().Be(7);
-        _service.CapturedDeleteExpectedVersion.Should().Be(5);
+        _service.CapturedDeleteExpectedVersions.Should().Equal(5);
     }
 
     [Fact]
-    public async Task Should_ReturnValidationProblem_When_DeleteIfMatchIsNotOneEntityTag()
+    public async Task Should_ReturnValidationProblem_When_DeleteIfMatchIsNotAListOfEntityTags()
     {
         var result = await PortfolioEndpoints.DeleteAsync(7, "5", _service, CancellationToken.None);
 
@@ -386,7 +433,7 @@ public class PortfolioEndpointsTests
                 Fee = 0m,
                 OccurredAt = new DateTimeOffset(2024, 1, 31, 14, 30, 0, TimeSpan.Zero),
             },
-            ExpectedVersion = null,
+            ExpectedVersions = null,
         });
     }
 
@@ -407,11 +454,11 @@ public class PortfolioEndpointsTests
         await PortfolioEndpoints.AddTransactionAsync(7, ValidTransaction(), "\"5\"", _service, new DefaultHttpContext().Response, CancellationToken.None);
 
         // `!` is safe: a valid request always reaches the service, and a null command fails the assertion anyway.
-        _service.CapturedAddTransactionCommand!.ExpectedVersion.Should().Be(5);
+        _service.CapturedAddTransactionCommand!.ExpectedVersions.Should().Equal(5);
     }
 
     [Fact]
-    public async Task Should_ReturnValidationProblem_When_AddTransactionIfMatchIsNotOneEntityTag()
+    public async Task Should_ReturnValidationProblem_When_AddTransactionIfMatchIsNotAListOfEntityTags()
     {
         var result = await PortfolioEndpoints.AddTransactionAsync(7, ValidTransaction(), "W/5", _service, new DefaultHttpContext().Response, CancellationToken.None);
 
@@ -571,7 +618,7 @@ public class PortfolioEndpointsTests
                 Fee = 0m,
                 OccurredAt = new DateTimeOffset(2024, 1, 31, 14, 30, 0, TimeSpan.Zero),
             },
-            ExpectedVersion = 4,
+            ExpectedVersions = [4],
         });
     }
 
@@ -601,7 +648,7 @@ public class PortfolioEndpointsTests
     }
 
     [Fact]
-    public async Task Should_ReturnValidationProblem_When_ReplaceTransactionIfMatchIsNotOneEntityTag()
+    public async Task Should_ReturnValidationProblem_When_ReplaceTransactionIfMatchIsNotAListOfEntityTags()
     {
         var result = await PortfolioEndpoints.ReplaceTransactionAsync(
             7, 12, ValidTransaction(), "4", _service, new DefaultHttpContext().Response, CancellationToken.None);
@@ -635,7 +682,7 @@ public class PortfolioEndpointsTests
         var ok = result.Should().BeOfType<Ok<PortfolioView>>().Subject;
         ok.Value.Should().BeEquivalentTo(view);
         _service.CapturedRemoveTransactionCommand.Should().BeEquivalentTo(
-            new RemoveTransactionCommand { PortfolioId = 7, TransactionId = 12, ExpectedVersion = 5 });
+            new RemoveTransactionCommand { PortfolioId = 7, TransactionId = 12, ExpectedVersions = [5] });
     }
 
     [Fact]
@@ -662,12 +709,54 @@ public class PortfolioEndpointsTests
     }
 
     [Fact]
-    public async Task Should_ReturnValidationProblem_When_RemoveTransactionIfMatchIsNotOneEntityTag()
+    public async Task Should_ReturnValidationProblem_When_RemoveTransactionIfMatchIsNotAListOfEntityTags()
     {
-        var result = await PortfolioEndpoints.RemoveTransactionAsync(7, 12, "\"5\", \"6\"", _service, new DefaultHttpContext().Response, CancellationToken.None);
+        var result = await PortfolioEndpoints.RemoveTransactionAsync(7, 12, "\"5\" \"6\"", _service, new DefaultHttpContext().Response, CancellationToken.None);
 
         var problem = result.Should().BeOfType<ValidationProblem>().Subject;
         problem.ProblemDetails.Errors.Should().ContainKey("If-Match");
+        _service.CallCount.Should().Be(0);
+    }
+
+    // The transaction's URI is the one its PUT and DELETE take, so it carries
+    // the portfolio's ETag for their If-Match.
+    [Fact]
+    public async Task Should_ReturnOkWithTheTransactionAndThePortfolioETag_When_GetTransactionFindsIt()
+    {
+        _service.GetResult = ServiceResult<PortfolioView>.Success(View(version: 4) with { Transactions = [TransactionView(4), TransactionView(12)] });
+        var response = new DefaultHttpContext().Response;
+
+        var result = await PortfolioEndpoints.GetTransactionAsync(7, 12, _service, response, CancellationToken.None);
+
+        var ok = result.Should().BeOfType<Ok<PortfolioTransactionView>>().Subject;
+        ok.Value.Should().BeEquivalentTo(TransactionView(12));
+        response.Headers.ETag.ToString().Should().Be("\"4\"");
+        _service.CapturedId.Should().Be(7);
+    }
+
+    [Fact]
+    public async Task Should_ReturnNotFoundNamingTheTransactionWithoutETag_When_GetTransactionIdIsNotInThePortfolio()
+    {
+        _service.GetResult = ServiceResult<PortfolioView>.Success(View(version: 4) with { Transactions = [TransactionView(4)] });
+        var response = new DefaultHttpContext().Response;
+
+        var result = await PortfolioEndpoints.GetTransactionAsync(7, 12, _service, response, CancellationToken.None);
+
+        var problem = result.Should().BeOfType<ProblemHttpResult>().Subject;
+        problem.StatusCode.Should().Be(StatusCodes.Status404NotFound);
+        problem.ProblemDetails.Detail.Should().Be("Portfolio 7 has no transaction with id 12.");
+        response.Headers.ETag.Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData(0, 12, "id")]
+    [InlineData(7, -1, "txId")]
+    public async Task Should_ReturnValidationProblem_When_GetTransactionIdNotPositive(int id, int txId, string field)
+    {
+        var result = await PortfolioEndpoints.GetTransactionAsync(id, txId, _service, new DefaultHttpContext().Response, CancellationToken.None);
+
+        var problem = result.Should().BeOfType<ValidationProblem>().Subject;
+        problem.ProblemDetails.Errors.Should().ContainKey(field).WhoseValue.Should().Equal($"{field} must be a positive whole number.");
         _service.CallCount.Should().Be(0);
     }
 
@@ -767,6 +856,7 @@ public class PortfolioEndpointsTests
         PortfolioRoute.ReplaceTransaction => PortfolioEndpoints.ReplaceTransactionAsync(
             7, 12, ValidTransaction(), "\"3\"", _service, response, cancellationToken),
         PortfolioRoute.RemoveTransaction => PortfolioEndpoints.RemoveTransactionAsync(7, 12, "\"3\"", _service, response, cancellationToken),
+        PortfolioRoute.GetTransaction => PortfolioEndpoints.GetTransactionAsync(7, 12, _service, response, cancellationToken),
         PortfolioRoute.Valuation => PortfolioEndpoints.GetValuationAsync(7, _service, cancellationToken),
         _ => throw new ArgumentOutOfRangeException(nameof(route), route, null),
     };

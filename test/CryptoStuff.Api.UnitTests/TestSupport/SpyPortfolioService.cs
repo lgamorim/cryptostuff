@@ -35,7 +35,7 @@ internal sealed class SpyPortfolioService : IPortfolioService
 
     public int? CapturedId { get; private set; }
 
-    public int? CapturedDeleteExpectedVersion { get; private set; }
+    public IReadOnlyCollection<int>? CapturedDeleteExpectedVersions { get; private set; }
 
     public CreatePortfolioCommand? CapturedCreateCommand { get; private set; }
 
@@ -111,11 +111,11 @@ internal sealed class SpyPortfolioService : IPortfolioService
         return Task.FromResult(UpdateResult);
     }
 
-    public Task<ServiceResult> DeleteAsync(int id, int? expectedVersion, CancellationToken cancellationToken)
+    public Task<ServiceResult> DeleteAsync(int id, IReadOnlyCollection<int>? expectedVersions, CancellationToken cancellationToken)
     {
         Record(cancellationToken);
         CapturedId = id;
-        CapturedDeleteExpectedVersion = expectedVersion;
+        CapturedDeleteExpectedVersions = expectedVersions;
         return Task.FromResult(DeleteResult);
     }
 

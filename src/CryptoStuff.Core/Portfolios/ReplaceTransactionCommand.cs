@@ -13,9 +13,9 @@ public sealed record ReplaceTransactionCommand
     public required TransactionDetails Transaction { get; init; }
 
     /// <summary>
-    /// The version the caller last read, or null to write unconditionally.
-    /// When given and the stored portfolio is at another version, the write
-    /// is a <see cref="ServiceErrorCode.PreconditionFailed"/>.
+    /// The versions the caller accepts, such as the one it last read, or null
+    /// to write unconditionally. When given and the stored portfolio is at
+    /// none of them, the write is a <see cref="ServiceErrorCode.PreconditionFailed"/>.
     /// </summary>
-    public int? ExpectedVersion { get; init; }
+    public IReadOnlyCollection<int>? ExpectedVersions { get; init; }
 }

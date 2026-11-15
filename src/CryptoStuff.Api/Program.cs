@@ -31,6 +31,12 @@ builder.Services.AddOpenApi();
 
 var app = builder.Build();
 
+// A reverse proxy serving the API under a path (`/api`), forwarding requests
+// with that prefix still on, is met by setting PathBase to it: routes then
+// match beneath it, and every Location header names it. Left empty, as by
+// default, UsePathBase adds nothing.
+app.UsePathBase(app.Configuration["PathBase"]);
+
 // Gives framework-generated error responses (e.g. an unmatched route's 404) a
 // ProblemDetails body via the AddProblemDetails() service above; without this,
 // that registration has no effect, since TypedResults.Problem/ValidationProblem

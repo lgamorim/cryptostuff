@@ -17,36 +17,43 @@ internal static class PortfolioETag
     public static string Format(int version) => $"\"{version.ToString(CultureInfo.InvariantCulture)}\"";
 
     /// <summary>
-    /// Reads the version an <c>If-Match</c> header expects: null when the
-    /// header is absent or <c>*</c>, which any current version matches; the
-    /// tagged version for a tag <see cref="Format"/> issued; a version no
-    /// portfolio is at for any other entity tag; and a <c>400</c> validation
-    /// problem when the value is not one entity tag.
+    /// Reads the versions an <c>If-Match</c> header accepts: null when the
+    /// header is absent or <c>*</c>, which any current version matches;
+    /// otherwise every version a listed tag <see cref="Format"/> issued names,
+    /// or a version no portfolio is at when none does; and a <c>400</c>
+    /// validation problem when the value is neither <c>*</c> nor a list of
+    /// entity tags.
     /// </summary>
-    public static (int? ExpectedVersion, IResult? Problem) ParseIfMatch(string? raw)
+    public static (IReadOnlyCollection<int>? ExpectedVersions, IResult? Problem) ParseIfMatch(string? raw)
     {
         if (string.IsNullOrEmpty(raw))
         {
             return (null, null);
         }
 
-        if (!EntityTagHeaderValue.TryParse(raw, out var tag))
+        // RFC 9110 allows * alone or a list of entity tags, never both.
+        if (!EntityTagHeaderValue.TryParseStrictList([raw], out var tags)
+            || (tags.Count > 1 && tags.Any(tag => tag.Equals(EntityTagHeaderValue.Any))))
         {
-            return (null, RequestValidation.ValidationProblem(HeaderNames.IfMatch, "If-Match must be * or one entity tag, such as \"3\"."));
+            return (null, RequestValidation.ValidationProblem(
+                HeaderNames.IfMatch, "If-Match must be * or a list of entity tags, such as \"3\" or \"3\", \"4\"."));
         }
 
-        if (tag.Equals(EntityTagHeaderValue.Any))
+        if (tags[0].Equals(EntityTagHeaderValue.Any))
         {
             return (null, null);
         }
 
-        // If-Match compares strongly: only the exact tag Format issued for a
-        // version matches it, never a weak tag or one this API never issues.
-        var opaque = tag.Tag.AsSpan()[1..^1];
-        return !tag.IsWeak
-            && int.TryParse(opaque, NumberStyles.None, CultureInfo.InvariantCulture, out var version)
-            && tag.Tag == Format(version)
-                ? (version, null)
-                : (UnmatchableVersion, null);
+        var versions = tags.Select(TaggedVersion).OfType<int>().Distinct().ToList();
+        return (versions.Count > 0 ? versions : [UnmatchableVersion], null);
     }
+
+    // If-Match compares strongly: only the exact tag Format issued for a
+    // version names it, never a weak tag or one this API never issues.
+    private static int? TaggedVersion(EntityTagHeaderValue tag) =>
+        !tag.IsWeak
+        && int.TryParse(tag.Tag.AsSpan()[1..^1], NumberStyles.None, CultureInfo.InvariantCulture, out var version)
+        && tag.Tag == Format(version)
+            ? version
+            : null;
 }
