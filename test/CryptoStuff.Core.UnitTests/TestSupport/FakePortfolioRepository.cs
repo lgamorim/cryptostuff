@@ -13,6 +13,8 @@ internal sealed class FakePortfolioRepository : IPortfolioRepository
     private readonly List<Portfolio> _saved = [];
     private readonly List<Portfolio> _pendingAdds = [];
     private readonly List<Portfolio> _pendingRemoves = [];
+    private readonly List<Portfolio> _discarded = [];
+    private int? _deleteConcurrentlyOnSave;
     private int _lastPortfolioId;
     private int _lastTransactionId;
 
@@ -24,6 +26,15 @@ internal sealed class FakePortfolioRepository : IPortfolioRepository
     public Exception? SaveChangesException { get; set; }
 
     public IReadOnlyList<Portfolio> Saved => _saved;
+
+    /// <summary>The portfolios passed to <see cref="Discard"/>, in order.</summary>
+    public IReadOnlyList<Portfolio> Discarded => _discarded;
+
+    /// <summary>
+    /// Makes another writer delete the portfolio with the given id just before
+    /// the next save, which then conflicts and saves nothing.
+    /// </summary>
+    public void DeleteConcurrentlyOnSave(int id) => _deleteConcurrentlyOnSave = id;
 
     /// <summary>
     /// Stores <paramref name="portfolio"/> as already saved, assigning it the
@@ -55,14 +66,31 @@ internal sealed class FakePortfolioRepository : IPortfolioRepository
         return Task.FromResult(_saved.Any(p => p.Id != excludingId && string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase)));
     }
 
+    public Task<bool> ExistsAsync(int id, CancellationToken cancellationToken)
+    {
+        CapturedCancellationTokens.Add(cancellationToken);
+        return Task.FromResult(_saved.Any(p => p.Id == id));
+    }
+
     public void Add(Portfolio portfolio) => _pendingAdds.Add(portfolio);
 
     public void Remove(Portfolio portfolio) => _pendingRemoves.Add(portfolio);
+
+    public void Discard(Portfolio portfolio) => _discarded.Add(portfolio);
 
     public Task SaveChangesAsync(CancellationToken cancellationToken)
     {
         SaveChangesCallCount++;
         CapturedCancellationTokens.Add(cancellationToken);
+        if (_deleteConcurrentlyOnSave is { } deletedId)
+        {
+            _deleteConcurrentlyOnSave = null;
+            _saved.RemoveAll(saved => saved.Id == deletedId);
+            _pendingAdds.Clear();
+            _pendingRemoves.Clear();
+            throw new PersistenceConflictException("The portfolio was deleted by another writer.");
+        }
+
         if (SaveChangesException is not null)
         {
             _pendingAdds.Clear();

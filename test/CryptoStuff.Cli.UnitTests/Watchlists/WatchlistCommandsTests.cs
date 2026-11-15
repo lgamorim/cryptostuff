@@ -457,6 +457,22 @@ public class WatchlistCommandsTests
 
     [Theory]
     [MemberData(nameof(Subcommands))]
+    public async Task Should_ReturnOneAndWriteTheReason_When_TheDatabaseIsBusy(string[] subcommand)
+    {
+        // Arrange
+        _watchlists.ExceptionToThrow = new PersistenceBusyException("The database is busy with another write; try again shortly.");
+
+        // Act
+        var exitCode = await _runner.RunAsync(["watchlist", .. subcommand], CancellationToken.None);
+
+        // Assert
+        exitCode.Should().Be(1);
+        _output.ToString().Should().BeEmpty();
+        _error.ToString().Should().Be("Error: The database is busy with another write; try again shortly.\n");
+    }
+
+    [Theory]
+    [MemberData(nameof(Subcommands))]
     public async Task Should_Return130AndPassToken_When_SubcommandIsCanceled(string[] subcommand)
     {
         // Arrange

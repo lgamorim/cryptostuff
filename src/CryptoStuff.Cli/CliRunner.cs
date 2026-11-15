@@ -51,8 +51,8 @@ public sealed class CliRunner
     /// <summary>
     /// Parses and executes <paramref name="args"/>, returning the process
     /// exit code: <c>0</c> on success, <c>1</c> on a usage, validation, or
-    /// service failure, and <c>130</c> if <paramref name="cancellationToken"/>
-    /// is canceled mid-request.
+    /// service failure, or a database another writer kept locked, and
+    /// <c>130</c> if <paramref name="cancellationToken"/> is canceled mid-request.
     /// </summary>
     public async Task<int> RunAsync(string[] args, CancellationToken cancellationToken)
     {
@@ -82,6 +82,14 @@ public sealed class CliRunner
         catch (OperationCanceledException)
         {
             return 130;
+        }
+
+        // Another writer (the API, its background evaluation, or another CLI
+        // run) held the database's lock past the provider's wait. Nothing was
+        // written, so running the command again can succeed.
+        catch (PersistenceBusyException exception)
+        {
+            return _writer.WriteError($"Error: {exception.Message}");
         }
     }
 

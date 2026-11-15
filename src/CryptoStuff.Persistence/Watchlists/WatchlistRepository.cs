@@ -23,10 +23,17 @@ public sealed class WatchlistRepository(CryptoStuffDbContext context) : IWatchli
             cancellationToken);
 
     /// <inheritdoc />
+    public Task<bool> ExistsAsync(int id, CancellationToken cancellationToken) =>
+        context.Watchlists.AnyAsync(w => w.Id == id, cancellationToken);
+
+    /// <inheritdoc />
     public void Add(Watchlist watchlist) => context.Watchlists.Add(watchlist);
 
     /// <inheritdoc />
     public void Remove(Watchlist watchlist) => context.Watchlists.Remove(watchlist);
+
+    /// <inheritdoc />
+    public void Discard(Watchlist watchlist) => context.Entry(watchlist).State = EntityState.Detached;
 
     /// <inheritdoc />
     public async Task SaveChangesAsync(CancellationToken cancellationToken)
@@ -38,6 +45,10 @@ public sealed class WatchlistRepository(CryptoStuffDbContext context) : IWatchli
         catch (DbUpdateException exception) when (SqliteConflict.IsConflict(exception))
         {
             throw new PersistenceConflictException("The watchlist change conflicts with stored state.", exception);
+        }
+        catch (Exception exception) when (SqliteBusy.IsBusy(exception))
+        {
+            throw SqliteBusy.ToPersistenceBusy(exception);
         }
     }
 }

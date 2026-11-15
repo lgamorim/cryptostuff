@@ -19,9 +19,13 @@ internal sealed class InterleavingPortfolioRepository(IPortfolioRepository inner
     public Task<bool> NameExistsAsync(string name, int? excludingId, CancellationToken cancellationToken) =>
         inner.NameExistsAsync(name, excludingId, cancellationToken);
 
+    public Task<bool> ExistsAsync(int id, CancellationToken cancellationToken) => inner.ExistsAsync(id, cancellationToken);
+
     public void Add(Portfolio portfolio) => inner.Add(portfolio);
 
     public void Remove(Portfolio portfolio) => inner.Remove(portfolio);
+
+    public void Discard(Portfolio portfolio) => inner.Discard(portfolio);
 
     public async Task SaveChangesAsync(CancellationToken cancellationToken)
     {

@@ -55,6 +55,21 @@ public class AlertCommandsTests
     }
 
     [Fact]
+    public async Task Should_ReturnOneAndWriteTheReason_When_CheckFindsTheDatabaseBusy()
+    {
+        // Arrange
+        _evaluator.ExceptionToThrow = new PersistenceBusyException("The database is busy with another write; try again shortly.");
+
+        // Act
+        var exitCode = await _runner.RunAsync(["alert", "check"], CancellationToken.None);
+
+        // Assert
+        exitCode.Should().Be(1);
+        _output.ToString().Should().BeEmpty();
+        _error.ToString().Should().Be("Error: The database is busy with another write; try again shortly.\n");
+    }
+
+    [Fact]
     public async Task Should_PrintPlaceholder_When_ListIsEmpty()
     {
         // Arrange

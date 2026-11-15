@@ -533,4 +533,104 @@ public class AlertServiceTests
 
         repository.CapturedCancellationTokens.Should().ContainSingle().Which.Should().Be(cts.Token);
     }
+
+    // Saves that lose a race.
+
+    [Fact]
+    public async Task Should_ReturnNotFound_When_UpdatedAlertWasDeletedConcurrently()
+    {
+        var (repository, _, service) = CreateSut();
+        var alert = SeedAlert(repository);
+        repository.DeleteConcurrentlyOnSave(alert.Id);
+
+        var result = await service.UpdateAsync(
+            new UpdateAlertCommand { AlertId = alert.Id, Direction = AlertDirection.Below, Threshold = 90m },
+            CancellationToken.None);
+
+        result.ErrorCode.Should().Be(ServiceErrorCode.NotFound);
+        result.ErrorDetail.Should().Be($"No alert has id {alert.Id}.");
+    }
+
+    [Fact]
+    public async Task Should_ForwardCancellationTokenToTheExistenceCheck_When_UpdatedAlertWasDeletedConcurrently()
+    {
+        var (repository, _, service) = CreateSut();
+        var alert = SeedAlert(repository);
+        repository.DeleteConcurrentlyOnSave(alert.Id);
+        using var cts = new CancellationTokenSource();
+
+        await service.UpdateAsync(
+            new UpdateAlertCommand { AlertId = alert.Id, Direction = AlertDirection.Below, Threshold = 90m },
+            cts.Token);
+
+        repository.CapturedCancellationTokens.Should().HaveCount(3).And.OnlyContain(token => token == cts.Token);
+    }
+
+    [Fact]
+    public async Task Should_ReturnNotFound_When_DeletedAlertWasDeletedConcurrently()
+    {
+        var (repository, _, service) = CreateSut();
+        var alert = SeedAlert(repository);
+        repository.DeleteConcurrentlyOnSave(alert.Id);
+
+        var result = await service.DeleteAsync(alert.Id, expectedVersion: null, CancellationToken.None);
+
+        result.ErrorCode.Should().Be(ServiceErrorCode.NotFound);
+        result.ErrorDetail.Should().Be($"No alert has id {alert.Id}.");
+    }
+
+    [Fact]
+    public async Task Should_ReturnNotFound_When_RearmedAlertWasDeletedConcurrently()
+    {
+        var (repository, _, service) = CreateSut();
+        var alert = PriceAlert.Create("bitcoin", "usd", AlertDirection.Above, 100m);
+        alert.Trigger(120m, Now);
+        repository.Seed(alert);
+        repository.DeleteConcurrentlyOnSave(alert.Id);
+
+        var result = await service.RearmAsync(alert.Id, expectedVersion: null, CancellationToken.None);
+
+        result.ErrorCode.Should().Be(ServiceErrorCode.NotFound);
+        result.ErrorDetail.Should().Be($"No alert has id {alert.Id}.");
+    }
+
+    [Fact]
+    public async Task Should_DiscardTheStaleChange_When_UpdateSaveConflicts()
+    {
+        var (repository, _, service) = CreateSut();
+        var alert = SeedAlert(repository);
+        repository.SaveChangesException = new PersistenceConflictException();
+
+        await service.UpdateAsync(
+            new UpdateAlertCommand { AlertId = alert.Id, Direction = AlertDirection.Below, Threshold = 90m },
+            CancellationToken.None);
+
+        repository.Discarded.Should().ContainSingle().Which.Should().BeSameAs(alert);
+    }
+
+    [Fact]
+    public async Task Should_DiscardTheUnsavedAlert_When_CreateSaveConflicts()
+    {
+        var (repository, upstream, service) = CreateSut();
+        upstream.PricesResult = PricedIn("bitcoin", "usd");
+        repository.SaveChangesException = new PersistenceConflictException();
+
+        await service.CreateAsync(NewAlertCommand(), CancellationToken.None);
+
+        repository.Discarded.Should().ContainSingle().Which.CoinId.Should().Be("bitcoin");
+    }
+
+    [Fact]
+    public async Task Should_PropagatePersistenceBusyException_When_SaveFindsTheDatabaseBusy()
+    {
+        var (repository, _, service) = CreateSut();
+        var alert = SeedAlert(repository);
+        repository.SaveChangesException = new PersistenceBusyException();
+
+        var act = () => service.UpdateAsync(
+            new UpdateAlertCommand { AlertId = alert.Id, Direction = AlertDirection.Below, Threshold = 90m },
+            CancellationToken.None);
+
+        await act.Should().ThrowAsync<PersistenceBusyException>();
+    }
 }

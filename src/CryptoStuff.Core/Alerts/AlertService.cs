@@ -35,7 +35,7 @@ public sealed class AlertService(
         }
 
         repository.Add(alert);
-        return await TrySaveChangesAsync(cancellationToken)
+        return await SaveAsync(alert, cancellationToken) == SaveOutcome.Saved
             ? Success(alert)
             : ServiceResult<AlertView>.Failure(ServiceErrorCode.Conflict, "The alert could not be saved because another operation changed the stored alerts; try again.");
     }
@@ -73,9 +73,12 @@ public sealed class AlertService(
         }
 
         repository.Remove(alert);
-        return await TrySaveChangesAsync(cancellationToken)
-            ? ServiceResult.Success()
-            : ServiceResult.Failure(ServiceErrorCode.Conflict, ChangedConcurrentlyDetail(id));
+        return await SaveAsync(alert, cancellationToken) switch
+        {
+            SaveOutcome.Saved => ServiceResult.Success(),
+            SaveOutcome.Deleted => ServiceResult.Failure(ServiceErrorCode.NotFound, NotFoundDetail(id)),
+            _ => ServiceResult.Failure(ServiceErrorCode.Conflict, ChangedConcurrentlyDetail(id)),
+        };
     }
 
     /// <inheritdoc />
@@ -127,12 +130,16 @@ public sealed class AlertService(
 
     /// <summary>
     /// Saves the change just made to <paramref name="alert"/>, or reports a
-    /// lost race as a <see cref="ServiceErrorCode.Conflict"/>.
+    /// lost race as a <see cref="ServiceErrorCode.Conflict"/>, or as
+    /// <see cref="ServiceErrorCode.NotFound"/> when another writer deleted it.
     /// </summary>
     private async Task<ServiceResult<AlertView>> SaveChangeAsync(PriceAlert alert, CancellationToken cancellationToken) =>
-        await TrySaveChangesAsync(cancellationToken)
-            ? Success(alert)
-            : ServiceResult<AlertView>.Failure(ServiceErrorCode.Conflict, ChangedConcurrentlyDetail(alert.Id));
+        await SaveAsync(alert, cancellationToken) switch
+        {
+            SaveOutcome.Saved => Success(alert),
+            SaveOutcome.Deleted => NotFound(alert.Id),
+            _ => ServiceResult<AlertView>.Failure(ServiceErrorCode.Conflict, ChangedConcurrentlyDetail(alert.Id)),
+        };
 
     /// <summary>
     /// Returns the detail to report when the caller expected
@@ -148,20 +155,27 @@ public sealed class AlertService(
         $"Alert {id} was changed by another operation; reload it and try again.";
 
     /// <summary>
-    /// Saves pending changes, returning false when the repository reports a
-    /// <see cref="PersistenceConflictException"/>. Any other exception,
-    /// including cancellation, propagates.
+    /// Saves the pending change to <paramref name="alert"/>. On a
+    /// <see cref="PersistenceConflictException"/> it discards that change, so
+    /// nothing stale stays pending, and tells an alert another writer deleted
+    /// from any other conflict. Any other exception, including cancellation and
+    /// <see cref="PersistenceBusyException"/>, propagates.
     /// </summary>
-    private async Task<bool> TrySaveChangesAsync(CancellationToken cancellationToken)
+    private async Task<SaveOutcome> SaveAsync(PriceAlert alert, CancellationToken cancellationToken)
     {
         try
         {
             await repository.SaveChangesAsync(cancellationToken);
-            return true;
+            return SaveOutcome.Saved;
         }
         catch (PersistenceConflictException)
         {
-            return false;
+            repository.Discard(alert);
+
+            // An id of zero is an alert never saved, which no one can have deleted.
+            return alert.Id != 0 && !await repository.ExistsAsync(alert.Id, cancellationToken)
+                ? SaveOutcome.Deleted
+                : SaveOutcome.Conflicted;
         }
     }
 

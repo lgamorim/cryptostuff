@@ -25,7 +25,7 @@ public static class CliDatabaseStartup
     /// Runs <paramref name="migrate"/>, returning the exit code to stop with:
     /// <c>0</c> when it succeeded and the command may run, <c>1</c> after
     /// writing an error to <paramref name="error"/> when the database could not
-    /// be opened or migrated, and <c>130</c> if
+    /// be opened or migrated or holds data this version cannot read, and <c>130</c> if
     /// <paramref name="cancellationToken"/> was canceled. Any other exception
     /// is a defect rather than an environment problem, and propagates.
     /// </summary>
@@ -46,6 +46,15 @@ public static class CliDatabaseStartup
         catch (Exception exception) when (exception is SqliteException or IOException or UnauthorizedAccessException)
         {
             error.Write($"Error: the database could not be opened or migrated. {exception.Message}");
+            error.Write('\n');
+            return 1;
+        }
+
+        // A stored token this version does not know, as a newer version may
+        // write; the message names the table, column and value.
+        catch (InvalidDataException exception)
+        {
+            error.Write($"Error: the database holds data this version cannot read. {exception.Message}");
             error.Write('\n');
             return 1;
         }

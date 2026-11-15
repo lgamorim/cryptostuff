@@ -967,6 +967,23 @@ public class PortfolioApiTests
         reloaded.Should().BeEquivalentTo(created with { Name = "renamed elsewhere", Version = 2 });
     }
 
+    [Fact]
+    public async Task Should_ReturnNotFound_When_AnotherWriterDeletesThePortfolioBetweenTransactionReadAndSave()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        using var factory = new CryptoStuffApiFactory();
+        factory.CoinGeckoClient.PriceMatrixResponse = BitcoinPricedInUsd();
+        var competingWrite = new CompetingWrite();
+        using var client = WithCompetingWrite(factory, competingWrite).CreateClient();
+        var created = await CreateAsync(client, "main", cancellationToken);
+        competingWrite.Arm(token => DeleteDirectlyAsync(factory, created.Id, token));
+
+        var response = await client.PostAsJsonAsync($"/portfolios/{created.Id}/transactions", Buy(0.5m), cancellationToken);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        (await ReadProblemAsync(response, cancellationToken)).Detail.Should().Be($"No portfolio has id {created.Id}.");
+    }
+
     // The API host with its portfolio repository wrapped, so a test can arm a
     // competing write that lands just before the next save.
     private static WebApplicationFactory<Program> WithCompetingWrite(CryptoStuffApiFactory factory, CompetingWrite competingWrite) =>
@@ -982,6 +999,16 @@ public class PortfolioApiTests
         // `!` is safe: the test created this portfolio and nothing deletes it.
         var portfolio = (await context.Portfolios.FindAsync([portfolioId], cancellationToken))!;
         portfolio.Update(name, portfolio.CostBasisMethod);
+        await context.SaveChangesAsync(cancellationToken);
+    }
+
+    // Another writer deleting the portfolio: its own context and connection, committing at once.
+    private static async Task DeleteDirectlyAsync(CryptoStuffApiFactory factory, int portfolioId, CancellationToken cancellationToken)
+    {
+        await using var context = factory.CreateContext();
+
+        // `!` is safe: the test created this portfolio and nothing else deletes it.
+        context.Portfolios.Remove((await context.Portfolios.FindAsync([portfolioId], cancellationToken))!);
         await context.SaveChangesAsync(cancellationToken);
     }
 

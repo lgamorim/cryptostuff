@@ -670,4 +670,106 @@ public class WatchlistServiceTests
 
         await act.Should().ThrowAsync<OperationCanceledException>();
     }
+
+    // Saves that lose a race.
+
+    [Fact]
+    public async Task Should_ReturnNotFound_When_RenamedWatchlistWasDeletedConcurrently()
+    {
+        var (repository, _, service) = CreateSut();
+        var watchlist = SeedWatchlist(repository, "Majors");
+        repository.DeleteConcurrentlyOnSave(watchlist.Id);
+
+        var result = await service.RenameAsync(new RenameWatchlistCommand { WatchlistId = watchlist.Id, Name = "Large caps" }, CancellationToken.None);
+
+        result.ErrorCode.Should().Be(ServiceErrorCode.NotFound);
+        result.ErrorDetail.Should().Be($"No watchlist has id {watchlist.Id}.");
+    }
+
+    [Fact]
+    public async Task Should_ForwardCancellationTokenToTheExistenceCheck_When_RenamedWatchlistWasDeletedConcurrently()
+    {
+        var (repository, _, service) = CreateSut();
+        var watchlist = SeedWatchlist(repository, "Majors");
+        repository.DeleteConcurrentlyOnSave(watchlist.Id);
+        using var cts = new CancellationTokenSource();
+
+        await service.RenameAsync(new RenameWatchlistCommand { WatchlistId = watchlist.Id, Name = "Large caps" }, cts.Token);
+
+        repository.CapturedCancellationTokens.Should().HaveCount(4).And.OnlyContain(token => token == cts.Token);
+    }
+
+    [Fact]
+    public async Task Should_ReturnNotFound_When_DeletedWatchlistWasDeletedConcurrently()
+    {
+        var (repository, _, service) = CreateSut();
+        var watchlist = SeedWatchlist(repository, "Majors");
+        repository.DeleteConcurrentlyOnSave(watchlist.Id);
+
+        var result = await service.DeleteAsync(watchlist.Id, CancellationToken.None);
+
+        result.ErrorCode.Should().Be(ServiceErrorCode.NotFound);
+        result.ErrorDetail.Should().Be($"No watchlist has id {watchlist.Id}.");
+    }
+
+    [Fact]
+    public async Task Should_ReturnNotFound_When_WatchlistGainingACoinWasDeletedConcurrently()
+    {
+        var (repository, _, service) = CreateSut();
+        var watchlist = SeedWatchlist(repository, "Majors");
+        repository.DeleteConcurrentlyOnSave(watchlist.Id);
+
+        var result = await service.AddCoinAsync(new WatchlistCoinCommand { WatchlistId = watchlist.Id, CoinId = "bitcoin" }, CancellationToken.None);
+
+        result.ErrorCode.Should().Be(ServiceErrorCode.NotFound);
+        result.ErrorDetail.Should().Be($"No watchlist has id {watchlist.Id}.");
+    }
+
+    [Fact]
+    public async Task Should_ReturnNotFound_When_WatchlistLosingACoinWasDeletedConcurrently()
+    {
+        var (repository, _, service) = CreateSut();
+        var watchlist = SeedWatchlist(repository, "Majors", "bitcoin");
+        repository.DeleteConcurrentlyOnSave(watchlist.Id);
+
+        var result = await service.RemoveCoinAsync(new WatchlistCoinCommand { WatchlistId = watchlist.Id, CoinId = "bitcoin" }, CancellationToken.None);
+
+        result.ErrorCode.Should().Be(ServiceErrorCode.NotFound);
+        result.ErrorDetail.Should().Be($"No watchlist has id {watchlist.Id}.");
+    }
+
+    [Fact]
+    public async Task Should_DiscardTheStaleChange_When_RenameSaveConflicts()
+    {
+        var (repository, _, service) = CreateSut();
+        var watchlist = SeedWatchlist(repository, "Majors");
+        repository.SaveChangesException = new PersistenceConflictException();
+
+        await service.RenameAsync(new RenameWatchlistCommand { WatchlistId = watchlist.Id, Name = "Large caps" }, CancellationToken.None);
+
+        repository.Discarded.Should().ContainSingle().Which.Should().BeSameAs(watchlist);
+    }
+
+    [Fact]
+    public async Task Should_DiscardTheUnsavedWatchlist_When_CreateSaveConflicts()
+    {
+        var (repository, _, service) = CreateSut();
+        repository.SaveChangesException = new PersistenceConflictException();
+
+        await service.CreateAsync(new CreateWatchlistCommand { Name = "Majors" }, CancellationToken.None);
+
+        repository.Discarded.Should().ContainSingle().Which.Name.Should().Be("Majors");
+    }
+
+    [Fact]
+    public async Task Should_PropagatePersistenceBusyException_When_SaveFindsTheDatabaseBusy()
+    {
+        var (repository, _, service) = CreateSut();
+        var watchlist = SeedWatchlist(repository, "Majors");
+        repository.SaveChangesException = new PersistenceBusyException();
+
+        var act = () => service.RenameAsync(new RenameWatchlistCommand { WatchlistId = watchlist.Id, Name = "Large caps" }, CancellationToken.None);
+
+        await act.Should().ThrowAsync<PersistenceBusyException>();
+    }
 }

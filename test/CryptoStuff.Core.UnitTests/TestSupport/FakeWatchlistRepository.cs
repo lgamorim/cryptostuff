@@ -13,6 +13,8 @@ internal sealed class FakeWatchlistRepository : IWatchlistRepository
     private readonly List<Watchlist> _saved = [];
     private readonly List<Watchlist> _pendingAdds = [];
     private readonly List<Watchlist> _pendingRemoves = [];
+    private readonly List<Watchlist> _discarded = [];
+    private int? _deleteConcurrentlyOnSave;
     private int _lastId;
 
     public int SaveChangesCallCount { get; private set; }
@@ -23,6 +25,15 @@ internal sealed class FakeWatchlistRepository : IWatchlistRepository
     public Exception? SaveChangesException { get; set; }
 
     public IReadOnlyList<Watchlist> Saved => _saved;
+
+    /// <summary>The watchlists passed to <see cref="Discard"/>, in order.</summary>
+    public IReadOnlyList<Watchlist> Discarded => _discarded;
+
+    /// <summary>
+    /// Makes another writer delete the watchlist with the given id just before
+    /// the next save, which then conflicts and saves nothing.
+    /// </summary>
+    public void DeleteConcurrentlyOnSave(int id) => _deleteConcurrentlyOnSave = id;
 
     /// <summary>Stores <paramref name="watchlist"/> as already saved, assigning it the next id.</summary>
     public Watchlist Seed(Watchlist watchlist)
@@ -50,14 +61,31 @@ internal sealed class FakeWatchlistRepository : IWatchlistRepository
         return Task.FromResult(_saved.Any(w => w.Id != excludingId && string.Equals(w.Name, name, StringComparison.OrdinalIgnoreCase)));
     }
 
+    public Task<bool> ExistsAsync(int id, CancellationToken cancellationToken)
+    {
+        CapturedCancellationTokens.Add(cancellationToken);
+        return Task.FromResult(_saved.Any(w => w.Id == id));
+    }
+
     public void Add(Watchlist watchlist) => _pendingAdds.Add(watchlist);
 
     public void Remove(Watchlist watchlist) => _pendingRemoves.Add(watchlist);
+
+    public void Discard(Watchlist watchlist) => _discarded.Add(watchlist);
 
     public Task SaveChangesAsync(CancellationToken cancellationToken)
     {
         SaveChangesCallCount++;
         CapturedCancellationTokens.Add(cancellationToken);
+        if (_deleteConcurrentlyOnSave is { } deletedId)
+        {
+            _deleteConcurrentlyOnSave = null;
+            _saved.RemoveAll(saved => saved.Id == deletedId);
+            _pendingAdds.Clear();
+            _pendingRemoves.Clear();
+            throw new PersistenceConflictException("The watchlist was deleted by another writer.");
+        }
+
         if (SaveChangesException is not null)
         {
             _pendingAdds.Clear();

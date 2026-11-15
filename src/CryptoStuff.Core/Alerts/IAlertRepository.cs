@@ -19,6 +19,13 @@ public interface IAlertRepository
     /// <summary>Gets the alert with the given id, or null when none has it.</summary>
     Task<PriceAlert?> FindAsync(int id, CancellationToken cancellationToken);
 
+    /// <summary>
+    /// Whether an alert with the given id is stored, read from the database
+    /// rather than from the alerts this repository has already returned, so
+    /// it notices an alert another writer deleted since it was read.
+    /// </summary>
+    Task<bool> ExistsAsync(int id, CancellationToken cancellationToken);
+
     /// <summary>Marks a new alert to be inserted on the next save, which assigns its id.</summary>
     void Add(PriceAlert alert);
 
@@ -39,6 +46,10 @@ public interface IAlertRepository
     /// The write lost a race with a concurrent write, detected through
     /// <see cref="PriceAlert.Version"/>, or the alert it changes or removes was
     /// deleted since it was read.
+    /// </exception>
+    /// <exception cref="PersistenceBusyException">
+    /// The database stayed locked by another writer longer than the provider
+    /// waits; nothing was written.
     /// </exception>
     Task SaveChangesAsync(CancellationToken cancellationToken);
 }

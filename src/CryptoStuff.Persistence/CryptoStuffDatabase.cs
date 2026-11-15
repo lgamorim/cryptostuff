@@ -9,10 +9,15 @@ public static class CryptoStuffDatabase
     private const string InMemoryDataSource = ":memory:";
 
     /// <summary>
-    /// Applies every pending migration to <paramref name="context"/>'s database.
-    /// For a file database, first creates the file's directory when it is
-    /// missing, since SQLite creates the file but not the folders above it.
+    /// Applies every pending migration to <paramref name="context"/>'s database,
+    /// then checks that every stored enumeration token is one this version
+    /// can read. For a file database, first creates the file's directory when
+    /// it is missing, since SQLite creates the file but not the folders above it.
     /// </summary>
+    /// <exception cref="InvalidDataException">
+    /// A row holds a token this version does not know, as one written by a
+    /// newer version would; the message names the table, column and value.
+    /// </exception>
     public static async Task MigrateAsync(CryptoStuffDbContext context, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(context);
@@ -24,7 +29,29 @@ public static class CryptoStuffDatabase
             Directory.CreateDirectory(directory);
         }
 
-        await context.Database.MigrateAsync(cancellationToken);
+        // A database with no file (in-memory or temporary) lives only as long
+        // as its connection, so both steps share one; the check would
+        // otherwise open a fresh, empty database. A file database is never
+        // opened ahead of the migration: SQLite would create the file empty,
+        // and EF then skips the create step that puts a new file in WAL mode.
+        var holdConnection = directory is null;
+        if (holdConnection)
+        {
+            await context.Database.OpenConnectionAsync(cancellationToken);
+        }
+
+        try
+        {
+            await context.Database.MigrateAsync(cancellationToken);
+            await StoredTokens.EnsureReadableAsync(context, cancellationToken);
+        }
+        finally
+        {
+            if (holdConnection)
+            {
+                await context.Database.CloseConnectionAsync();
+            }
+        }
     }
 
     // A null connection string parses to an empty data source, which, like an

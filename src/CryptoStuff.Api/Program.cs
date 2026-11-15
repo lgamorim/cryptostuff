@@ -36,6 +36,7 @@ var app = builder.Build();
 // that registration has no effect, since TypedResults.Problem/ValidationProblem
 // write their own bodies and never consult IProblemDetailsService.
 app.UseStatusCodePages();
+app.UsePersistenceBusyResponses();
 
 app.MapCryptoStuffEndpoints();
 app.MapWatchlistEndpoints();

@@ -280,6 +280,29 @@ not a SQLite database), the CLI prints
 `Error: the database could not be opened or migrated. …` and exits with code
 `1`, and the API fails to start with the underlying exception.
 
+After migrating, both hosts also check that every stored token (an alert's
+direction and state, a portfolio's cost-basis method, a transaction's kind) is
+one this version knows. A row written by a newer version could hold one it
+does not, and reading that row would fail every list and every alert
+evaluation that touched it, so the check refuses to go on instead: the CLI
+prints `Error: the database holds data this version cannot read. …`, naming
+the table, column and value, and exits with code `1`, and the API fails to
+start with the same message.
+
+The CLI, the API and the API's background evaluation can all write to the
+file at once. SQLite lets one write through at a time, and a writer waits up to
+30 seconds for the lock. If another writer holds it longer than that, nothing
+is written: the CLI prints `Error: The database is busy with another write; try
+again shortly.` and exits with code `1`, the API answers
+[`503`](#rest-api) with a `Retry-After` header, and the background evaluation
+logs the failure and tries again on its next tick.
+
+A write also notices when another writer deleted the record it is changing
+after reading it: an update, a delete, a coin or transaction change, or a
+re-arm of a record that is gone by the time it saves fails as not found, the
+same way it would had the record been gone when it was read, rather than as a
+conflict.
+
 ## Cost basis
 
 A portfolio's cost-basis method decides what the units a sell takes had
@@ -650,7 +673,7 @@ another offset comes back converted to UTC.
 | Code | Meaning |
 |---|---|
 | `0` | The command completed successfully. |
-| `1` | No command or an unrecognized command, the wrong number of arguments, an input validation failure, a CoinGecko service failure (see [Error codes](#error-codes)), a startup configuration error (a missing or invalid `CoinGecko:ApiKey`/`CoinGecko:CacheSeconds`, see [Registration](#registration), or an unresolvable database connection string, see [Data storage](#data-storage)), or, for a command that uses the database, a database that could not be opened or migrated (see [Data storage](#data-storage)). |
+| `1` | No command or an unrecognized command, the wrong number of arguments, an input validation failure, a CoinGecko service failure (see [Error codes](#error-codes)), a startup configuration error (a missing or invalid `CoinGecko:ApiKey`/`CoinGecko:CacheSeconds`, see [Registration](#registration), or an unresolvable database connection string, see [Data storage](#data-storage)), or, for a command that uses the database, a database that could not be opened or migrated, that holds data this version cannot read, or that another writer kept locked (see [Data storage](#data-storage)). |
 | `130` | The command was canceled (Ctrl+C) before it completed. |
 
 Usage and validation errors, CoinGecko service failures, and database
@@ -730,6 +753,12 @@ when it has one, and fixed text for the code otherwise:
 | `412` | `PreconditionFailed` |
 | `500` | *(defensive fallback only — every `ServiceErrorCode` value maps above)* |
 
+A write that finds the [database](#data-storage) locked by another writer for
+longer than SQLite waits returns `503` with a `ProblemDetails` body, `detail`
+`The database is busy with another write; try again shortly.`, and a
+`Retry-After: 5` header. Nothing was written, so the same request can be
+retried as it is.
+
 ### Watchlist routes
 
 The `/watchlists` routes drive the same watchlists as the CLI's
@@ -772,7 +801,7 @@ Failures use the [ProblemDetails](#rest-api) contract above:
 | Status | When |
 |---|---|
 | `400` | A blank or over-long `name`, a missing body or malformed JSON, a blank `coin` or `currency`, or an `id` of zero or below |
-| `404` | No watchlist has that `id`, or the `id` is not a whole number (no route matches it) |
+| `404` | No watchlist has that `id`, another writer deleted it while the request was saving, or the `id` is not a whole number (no route matches it) |
 | `409` | The name is taken by another watchlist (ignoring case), or a concurrent change won the race |
 | `422` | Adding a coin that CoinGecko does not know; the `detail` names it |
 | `429`, `502`, `504` | CoinGecko failed while checking a coin to add or while pricing |
@@ -868,7 +897,7 @@ Failures use the [ProblemDetails](#rest-api) contract above:
 | Status | When |
 |---|---|
 | `400` | A missing body or malformed JSON; a blank or over-long `name`; a blank `vsCurrency` or `coinId`; a `costBasisMethod` or `kind` that is not one of its tokens; a missing or out-of-range `quantity`, `unitPrice` or `fee`; an `occurredAt` that is not an ISO 8601 timestamp with an offset; an `id` or `txId` of zero or below; an `If-Match` that is not one entity tag |
-| `404` | No portfolio has that `id`, the portfolio has no transaction with that `txId`, or either is not a whole number (no route matches it) |
+| `404` | No portfolio has that `id`, another writer deleted it while the request was saving, the portfolio has no transaction with that `txId`, or either is not a whole number (no route matches it) |
 | `409` | The name is taken by another portfolio (ignoring case), or a concurrent write won the race |
 | `412` | `If-Match` does not match the portfolio's current `ETag` |
 | `422` | The ledger would oversell (the `detail` names the coin and date of the sell), a coin's amounts would be [too large to compute](#cost-basis) (the `detail` names the coin), the transaction is dated in the future, or CoinGecko does not know a coin new to the portfolio or has no price for it in the portfolio's vs_currency; valuing a portfolio whose valuation has an amount too large to compute |
@@ -953,7 +982,7 @@ Failures use the [ProblemDetails](#rest-api) contract above:
 | Status | When |
 |---|---|
 | `400` | A missing body or malformed JSON; a blank `coinId` or `vsCurrency`; a `direction` that is not `above` or `below`; a missing `threshold`, or one of zero or below; an `id` of zero or below |
-| `404` | No alert has that `id`, or the `id` is not a whole number (no route matches it) |
+| `404` | No alert has that `id`, another writer deleted it while the request was saving, or the `id` is not a whole number (no route matches it) |
 | `409` | Re-arming an alert that is already armed (`Alert 1 is already armed.`), or a concurrent write won the race |
 | `422` | Creating an alert on a coin CoinGecko does not know, or that has no price in that vs_currency; the `detail` names it |
 | `429`, `502`, `504` | CoinGecko failed while checking a new alert's coin or while evaluating |

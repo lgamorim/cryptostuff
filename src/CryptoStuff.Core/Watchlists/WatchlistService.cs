@@ -31,7 +31,7 @@ public sealed class WatchlistService(IWatchlistRepository repository, ICryptocur
         }
 
         repository.Add(watchlist);
-        return await TrySaveChangesAsync(cancellationToken) ? Success(watchlist) : NameTaken(command.Name);
+        return await SaveAsync(watchlist, cancellationToken) == SaveOutcome.Saved ? Success(watchlist) : NameTaken(command.Name);
     }
 
     /// <inheritdoc />
@@ -50,13 +50,17 @@ public sealed class WatchlistService(IWatchlistRepository repository, ICryptocur
 
         watchlist.Rename(command.Name);
 
-        // Either race can lose this save: another watchlist taking the name
-        // since the check above, or another write moving the version on.
-        return await TrySaveChangesAsync(cancellationToken)
-            ? Success(watchlist)
-            : ServiceResult<WatchlistView>.Failure(
+        // Any race can lose this save: another watchlist taking the name since
+        // the check above, another write moving the version on, or another
+        // writer deleting the watchlist.
+        return await SaveAsync(watchlist, cancellationToken) switch
+        {
+            SaveOutcome.Saved => Success(watchlist),
+            SaveOutcome.Deleted => NotFound<WatchlistView>(watchlist.Id),
+            _ => ServiceResult<WatchlistView>.Failure(
                 ServiceErrorCode.Conflict,
-                $"Watchlist {watchlist.Id} could not be saved: another watchlist may have taken the name '{command.Name}', or another operation changed it; reload it and try again.");
+                $"Watchlist {watchlist.Id} could not be saved: another watchlist may have taken the name '{command.Name}', or another operation changed it; reload it and try again."),
+        };
     }
 
     /// <inheritdoc />
@@ -69,9 +73,12 @@ public sealed class WatchlistService(IWatchlistRepository repository, ICryptocur
         }
 
         repository.Remove(watchlist);
-        return await TrySaveChangesAsync(cancellationToken)
-            ? ServiceResult.Success()
-            : ServiceResult.Failure(ServiceErrorCode.Conflict, ChangedConcurrentlyDetail(id));
+        return await SaveAsync(watchlist, cancellationToken) switch
+        {
+            SaveOutcome.Saved => ServiceResult.Success(),
+            SaveOutcome.Deleted => ServiceResult.Failure(ServiceErrorCode.NotFound, NotFoundDetail(id)),
+            _ => ServiceResult.Failure(ServiceErrorCode.Conflict, ChangedConcurrentlyDetail(id)),
+        };
     }
 
     /// <inheritdoc />
@@ -134,25 +141,35 @@ public sealed class WatchlistService(IWatchlistRepository repository, ICryptocur
     }
 
     private async Task<ServiceResult<WatchlistView>> SaveCoinChangeAsync(Watchlist watchlist, CancellationToken cancellationToken) =>
-        await TrySaveChangesAsync(cancellationToken)
-            ? Success(watchlist)
-            : ServiceResult<WatchlistView>.Failure(ServiceErrorCode.Conflict, ChangedConcurrentlyDetail(watchlist.Id));
+        await SaveAsync(watchlist, cancellationToken) switch
+        {
+            SaveOutcome.Saved => Success(watchlist),
+            SaveOutcome.Deleted => NotFound<WatchlistView>(watchlist.Id),
+            _ => ServiceResult<WatchlistView>.Failure(ServiceErrorCode.Conflict, ChangedConcurrentlyDetail(watchlist.Id)),
+        };
 
     /// <summary>
-    /// Saves pending changes, returning false when the repository reports a
-    /// <see cref="PersistenceConflictException"/>. Any other exception,
-    /// including cancellation, propagates.
+    /// Saves the pending change to <paramref name="watchlist"/>. On a
+    /// <see cref="PersistenceConflictException"/> it discards that change, so
+    /// nothing stale stays pending, and tells a watchlist another writer deleted
+    /// from any other conflict. Any other exception, including cancellation and
+    /// <see cref="PersistenceBusyException"/>, propagates.
     /// </summary>
-    private async Task<bool> TrySaveChangesAsync(CancellationToken cancellationToken)
+    private async Task<SaveOutcome> SaveAsync(Watchlist watchlist, CancellationToken cancellationToken)
     {
         try
         {
             await repository.SaveChangesAsync(cancellationToken);
-            return true;
+            return SaveOutcome.Saved;
         }
         catch (PersistenceConflictException)
         {
-            return false;
+            repository.Discard(watchlist);
+
+            // An id of zero is a watchlist never saved, which no one can have deleted.
+            return watchlist.Id != 0 && !await repository.ExistsAsync(watchlist.Id, cancellationToken)
+                ? SaveOutcome.Deleted
+                : SaveOutcome.Conflicted;
         }
     }
 

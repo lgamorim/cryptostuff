@@ -1,5 +1,8 @@
+using CryptoStuff.Core.Alerts;
+using CryptoStuff.Core.Portfolios;
 using CryptoStuff.Core.Watchlists;
 using CryptoStuff.Persistence.IntegrationTests.TestSupport;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
@@ -56,6 +59,20 @@ public class CryptoStuffDatabaseTests
                 Directory.Delete(testRoot, recursive: true);
             }
         }
+    }
+
+    [Fact]
+    public async Task Should_CreateTheFileInWalMode_When_MigratingANewFileDatabase()
+    {
+        using var database = await TestDatabase.CreateMigratedAsync();
+        await using var connection = new SqliteConnection(database.ConnectionString);
+        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = "PRAGMA journal_mode";
+
+        var journalMode = await command.ExecuteScalarAsync(TestContext.Current.CancellationToken);
+
+        journalMode.Should().Be("wal", "readers must not wait on a writer, so only saves can meet a busy database");
     }
 
     [Fact]
@@ -333,4 +350,57 @@ public class CryptoStuffDatabaseTests
 
     private static CryptoStuffDbContext CreateContext(string connectionString) =>
         new(new DbContextOptionsBuilder<CryptoStuffDbContext>().UseSqlite(connectionString).Options);
+
+    // Stored tokens this version cannot read.
+
+    [Theory]
+    [InlineData("PriceAlerts", "Direction", "sideways")]
+    [InlineData("PriceAlerts", "State", "snoozed")]
+    [InlineData("Portfolios", "CostBasisMethod", "lifo")]
+    [InlineData("PortfolioTransactions", "Kind", "transfer")]
+    public async Task Should_RefuseNamingTheColumnAndValue_When_AStoredTokenIsUnknown(string table, string column, string token)
+    {
+        using var database = await TestDatabase.CreateMigratedAsync();
+        await SeedAlertAndPortfolioAsync(database);
+        var sql = string.Concat("UPDATE ", table, " SET ", column, " = '", token, "'");
+        await using (var writer = database.CreateContext())
+        {
+            await writer.Database.ExecuteSqlRawAsync(sql, TestContext.Current.CancellationToken);
+        }
+
+        await using var context = database.CreateContext();
+
+        var act = () => CryptoStuffDatabase.MigrateAsync(context, TestContext.Current.CancellationToken);
+
+        (await act.Should().ThrowAsync<InvalidDataException>()).WithMessage($"{table}.{column} holds '{token}'*newer version*");
+    }
+
+    [Fact]
+    public async Task Should_Succeed_When_EveryStoredTokenIsKnown()
+    {
+        using var database = await TestDatabase.CreateMigratedAsync();
+        await SeedAlertAndPortfolioAsync(database);
+        await using var context = database.CreateContext();
+
+        var act = () => CryptoStuffDatabase.MigrateAsync(context, TestContext.Current.CancellationToken);
+
+        await act.Should().NotThrowAsync();
+    }
+
+    private static async Task SeedAlertAndPortfolioAsync(TestDatabase database)
+    {
+        await using var context = database.CreateContext();
+        context.Alerts.Add(PriceAlert.Create("bitcoin", "usd", AlertDirection.Above, 100m));
+        var portfolio = Portfolio.Create("Long term", "usd", CostBasisMethod.Fifo);
+        portfolio.AddTransaction(new TransactionDetails
+        {
+            Kind = TransactionKind.Buy,
+            CoinId = "bitcoin",
+            Quantity = 1m,
+            UnitPrice = 100m,
+            OccurredAt = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero),
+        }).IsValid.Should().BeTrue();
+        context.Portfolios.Add(portfolio);
+        await context.SaveChangesAsync(TestContext.Current.CancellationToken);
+    }
 }

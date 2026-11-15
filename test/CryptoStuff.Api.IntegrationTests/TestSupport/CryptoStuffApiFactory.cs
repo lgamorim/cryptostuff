@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -35,14 +36,24 @@ internal sealed class CryptoStuffApiFactory : WebApplicationFactory<Program>
     private static readonly string DatabaseRoot = Path.Combine(Path.GetTempPath(), "cryptostuff-tests");
 
     private readonly bool _hostAlertEvaluation;
+    private readonly IInterceptor? _interceptor;
 
     /// <param name="hostAlertEvaluation">
     /// Keeps the background alert evaluation registered, for tests about the
     /// host's own registrations; every other test leaves it out.
     /// </param>
-    public CryptoStuffApiFactory(bool hostAlertEvaluation = false)
+    /// <param name="busyTimeoutSeconds">
+    /// How long the host waits for another writer's lock before failing as
+    /// busy; the driver's own default, thirty seconds, when null.
+    /// </param>
+    /// <param name="interceptor">
+    /// Added to the host's database context, for tests that watch or steer
+    /// the commands it sends.
+    /// </param>
+    public CryptoStuffApiFactory(bool hostAlertEvaluation = false, int? busyTimeoutSeconds = null, IInterceptor? interceptor = null)
     {
         _hostAlertEvaluation = hostAlertEvaluation;
+        _interceptor = interceptor;
 
         // AddCryptoStuff reads CoinGecko:ApiKey synchronously in Program.cs,
         // before the host builds - i.e. before WebApplicationFactory's own
@@ -54,7 +65,13 @@ internal sealed class CryptoStuffApiFactory : WebApplicationFactory<Program>
         Environment.SetEnvironmentVariable("CoinGecko__ApiKey", "integration-test-key");
 
         DatabaseFilePath = Path.Combine(DatabaseRoot, $"{Guid.NewGuid():N}.db");
-        ConnectionString = new SqliteConnectionStringBuilder { DataSource = DatabaseFilePath, Pooling = false }.ToString();
+        var connectionString = new SqliteConnectionStringBuilder { DataSource = DatabaseFilePath, Pooling = false };
+        if (busyTimeoutSeconds is { } seconds)
+        {
+            connectionString.DefaultTimeout = seconds;
+        }
+
+        ConnectionString = connectionString.ToString();
     }
 
     /// <summary>The fake substituted for the real CoinGecko client. Configure its response before issuing a request.</summary>
@@ -91,7 +108,14 @@ internal sealed class CryptoStuffApiFactory : WebApplicationFactory<Program>
             // UseSqlite would otherwise still run beside this one.
             services.RemoveAll<IDbContextOptionsConfiguration<CryptoStuffDbContext>>();
             services.RemoveAll<DbContextOptions<CryptoStuffDbContext>>();
-            services.AddDbContext<CryptoStuffDbContext>(options => options.UseSqlite(ConnectionString));
+            services.AddDbContext<CryptoStuffDbContext>(options =>
+            {
+                options.UseSqlite(ConnectionString);
+                if (_interceptor is not null)
+                {
+                    options.AddInterceptors(_interceptor);
+                }
+            });
 
             if (!_hostAlertEvaluation)
             {

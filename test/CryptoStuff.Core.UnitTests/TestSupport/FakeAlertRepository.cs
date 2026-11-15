@@ -16,6 +16,8 @@ internal sealed class FakeAlertRepository : IAlertRepository
     private readonly Dictionary<PriceAlert, int> _trackedVersions = [];
     private readonly Dictionary<int, AlertState> _persistedStates = [];
     private readonly HashSet<int> _changedConcurrently = [];
+    private readonly List<PriceAlert> _discarded = [];
+    private int? _deleteConcurrentlyOnSave;
     private int _lastId;
 
     public int SaveChangesCallCount { get; private set; }
@@ -32,6 +34,15 @@ internal sealed class FakeAlertRepository : IAlertRepository
     public bool ListArmedIncludesTriggeredAlerts { get; set; }
 
     public IReadOnlyList<PriceAlert> Saved => _saved;
+
+    /// <summary>The alerts passed to <see cref="Discard"/>, in order.</summary>
+    public IReadOnlyList<PriceAlert> Discarded => _discarded;
+
+    /// <summary>
+    /// Makes another writer delete the alert with the given id just before
+    /// the next save, which then conflicts and saves nothing.
+    /// </summary>
+    public void DeleteConcurrentlyOnSave(int id) => _deleteConcurrentlyOnSave = id;
 
     /// <summary>
     /// Makes another writer win the race for the alert with the given id: any
@@ -69,17 +80,36 @@ internal sealed class FakeAlertRepository : IAlertRepository
         return Task.FromResult(_saved.SingleOrDefault(a => a.Id == id) is { } alert ? Track(alert) : null);
     }
 
+    public Task<bool> ExistsAsync(int id, CancellationToken cancellationToken)
+    {
+        CapturedCancellationTokens.Add(cancellationToken);
+        return Task.FromResult(_saved.Any(a => a.Id == id));
+    }
+
     public void Add(PriceAlert alert) => _pendingAdds.Add(alert);
 
     public void Remove(PriceAlert alert) => _pendingRemoves.Add(alert);
 
     /// <summary>Stops tracking <paramref name="alert"/>, so a save no longer writes its changes.</summary>
-    public void Discard(PriceAlert alert) => _trackedVersions.Remove(alert);
+    public void Discard(PriceAlert alert)
+    {
+        _trackedVersions.Remove(alert);
+        _discarded.Add(alert);
+    }
 
     public Task SaveChangesAsync(CancellationToken cancellationToken)
     {
         SaveChangesCallCount++;
         CapturedCancellationTokens.Add(cancellationToken);
+        if (_deleteConcurrentlyOnSave is { } deletedId)
+        {
+            _deleteConcurrentlyOnSave = null;
+            _saved.RemoveAll(saved => saved.Id == deletedId);
+            _pendingAdds.Clear();
+            _pendingRemoves.Clear();
+            throw new PersistenceConflictException("The alert was deleted by another writer.");
+        }
+
         if (SaveChangesException is not null)
         {
             _pendingAdds.Clear();

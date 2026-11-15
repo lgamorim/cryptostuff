@@ -468,6 +468,95 @@ public sealed class WatchlistRepositoryTests : IAsyncLifetime
         await act.Should().ThrowAsync<OperationCanceledException>();
     }
 
+    [Fact]
+    public async Task Should_ThrowOperationCanceledException_When_ExistenceCheckCanceled()
+    {
+        await using var context = _database.CreateContext();
+        var repository = new WatchlistRepository(context);
+
+        var act = () => repository.ExistsAsync(1, new CancellationToken(canceled: true));
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    // Existence, read past the change tracker.
+
+    [Fact]
+    public async Task Should_ReportExists_When_WatchlistSaved()
+    {
+        var saved = await SaveNewAsync("Majors");
+        await using var context = _database.CreateContext();
+
+        var exists = await new WatchlistRepository(context).ExistsAsync(saved.Id, Token);
+
+        exists.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Should_ReportAbsent_When_NoWatchlistHasTheId()
+    {
+        await using var context = _database.CreateContext();
+
+        var exists = await new WatchlistRepository(context).ExistsAsync(42, Token);
+
+        exists.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Should_ReportAbsent_When_WatchlistDeletedByAnotherContextAfterItWasRead()
+    {
+        var saved = await SaveNewAsync("Majors");
+        await using var context = _database.CreateContext();
+        var repository = new WatchlistRepository(context);
+        await FindSavedAsync(repository, saved.Id);
+        await DeleteFreshAsync(saved.Id);
+
+        var exists = await repository.ExistsAsync(saved.Id, Token);
+
+        exists.Should().BeFalse();
+    }
+
+    // Discarding a stale change.
+
+    [Fact]
+    public async Task Should_SaveNothingFurther_When_StaleChangeDiscardedAfterConflict()
+    {
+        var saved = await SaveNewAsync("Majors");
+        await using var context = _database.CreateContext();
+        var repository = new WatchlistRepository(context);
+        var watchlist = await FindSavedAsync(repository, saved.Id);
+        await AddCoinFreshAsync(saved.Id, "dogecoin");
+        watchlist.Rename("Large caps");
+        var conflictingSave = () => repository.SaveChangesAsync(Token);
+        await conflictingSave.Should().ThrowAsync<PersistenceConflictException>();
+
+        repository.Discard(watchlist);
+        await repository.SaveChangesAsync(Token);
+
+        var stored = await FindFreshAsync(saved.Id);
+        stored.Name.Should().Be("Majors");
+        stored.CoinIds.Should().Equal("dogecoin");
+    }
+
+    // The database busy with another writer.
+
+    [Fact]
+    public async Task Should_ThrowPersistenceBusyException_When_AnotherConnectionHoldsTheWriteLock()
+    {
+        var saved = await SaveNewAsync("Majors");
+        await using var context = _database.CreateImpatientContext();
+        var repository = new WatchlistRepository(context);
+        (await FindSavedAsync(repository, saved.Id)).Rename("Large caps");
+        await using var writeLock = await WriteLock.HoldAsync(_database.ConnectionString, Token);
+
+        var act = () => repository.SaveChangesAsync(Token);
+
+        // SQLITE_BUSY: https://www.sqlite.org/rescode.html#busy
+        (await act.Should().ThrowAsync<PersistenceBusyException>())
+            .Which.GetBaseException().Should().BeOfType<SqliteException>()
+            .Which.SqliteErrorCode.Should().Be(5);
+    }
+
     // Helpers: each runs in its own context, so the arrange and verify steps
     // never share a change tracker with the step under test.
 

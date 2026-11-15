@@ -27,6 +27,10 @@ public sealed class AlertRepository(CryptoStuffDbContext context) : IAlertReposi
         await context.Alerts.FindAsync([id], cancellationToken);
 
     /// <inheritdoc />
+    public Task<bool> ExistsAsync(int id, CancellationToken cancellationToken) =>
+        context.Alerts.AnyAsync(a => a.Id == id, cancellationToken);
+
+    /// <inheritdoc />
     public void Add(PriceAlert alert) => context.Alerts.Add(alert);
 
     /// <inheritdoc />
@@ -50,6 +54,10 @@ public sealed class AlertRepository(CryptoStuffDbContext context) : IAlertReposi
         catch (DbUpdateException exception) when (SqliteConflict.IsConflict(exception))
         {
             throw new PersistenceConflictException("The alert change conflicts with stored state.", exception);
+        }
+        catch (Exception exception) when (SqliteBusy.IsBusy(exception))
+        {
+            throw SqliteBusy.ToPersistenceBusy(exception);
         }
     }
 }

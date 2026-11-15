@@ -945,4 +945,127 @@ public class PortfolioServiceTests
         portfolio.Transactions.Should().BeEmpty();
         repository.SaveChangesCallCount.Should().Be(0);
     }
+
+    // Saves that lose a race.
+
+    [Fact]
+    public async Task Should_ReturnNotFound_When_UpdatedPortfolioWasDeletedConcurrently()
+    {
+        var (repository, _, service) = CreateSut();
+        var portfolio = SeedPortfolio(repository, "Long term");
+        repository.DeleteConcurrentlyOnSave(portfolio.Id);
+
+        var result = await service.UpdateAsync(
+            new UpdatePortfolioCommand { PortfolioId = portfolio.Id, Name = "Retirement", CostBasisMethod = CostBasisMethod.AverageCost },
+            CancellationToken.None);
+
+        result.ErrorCode.Should().Be(ServiceErrorCode.NotFound);
+        result.ErrorDetail.Should().Be($"No portfolio has id {portfolio.Id}.");
+    }
+
+    [Fact]
+    public async Task Should_ForwardCancellationTokenToTheExistenceCheck_When_UpdatedPortfolioWasDeletedConcurrently()
+    {
+        var (repository, _, service) = CreateSut();
+        var portfolio = SeedPortfolio(repository, "Long term");
+        repository.DeleteConcurrentlyOnSave(portfolio.Id);
+        using var cts = new CancellationTokenSource();
+
+        await service.UpdateAsync(
+            new UpdatePortfolioCommand { PortfolioId = portfolio.Id, Name = "Retirement", CostBasisMethod = CostBasisMethod.AverageCost },
+            cts.Token);
+
+        repository.CapturedCancellationTokens.Should().HaveCount(4).And.OnlyContain(token => token == cts.Token);
+    }
+
+    [Fact]
+    public async Task Should_ReturnNotFound_When_DeletedPortfolioWasDeletedConcurrently()
+    {
+        var (repository, _, service) = CreateSut();
+        var portfolio = SeedPortfolio(repository, "Long term");
+        repository.DeleteConcurrentlyOnSave(portfolio.Id);
+
+        var result = await service.DeleteAsync(portfolio.Id, expectedVersion: null, CancellationToken.None);
+
+        result.ErrorCode.Should().Be(ServiceErrorCode.NotFound);
+        result.ErrorDetail.Should().Be($"No portfolio has id {portfolio.Id}.");
+    }
+
+    [Fact]
+    public async Task Should_ReturnNotFound_When_PortfolioGainingATransactionWasDeletedConcurrently()
+    {
+        var (repository, _, service) = CreateSut();
+        var portfolio = SeedPortfolioWith(repository, Buy("bitcoin", 1m, Day(1)));
+        repository.DeleteConcurrentlyOnSave(portfolio.Id);
+
+        var result = await service.AddTransactionAsync(AddCommand(portfolio, Buy("bitcoin", 1m, Day(2))), CancellationToken.None);
+
+        result.ErrorCode.Should().Be(ServiceErrorCode.NotFound);
+        result.ErrorDetail.Should().Be($"No portfolio has id {portfolio.Id}.");
+    }
+
+    [Fact]
+    public async Task Should_ReturnNotFound_When_PortfolioReplacingATransactionWasDeletedConcurrently()
+    {
+        var (repository, _, service) = CreateSut();
+        var portfolio = SeedPortfolioWith(repository, Buy("bitcoin", 1m, Day(1)));
+        repository.DeleteConcurrentlyOnSave(portfolio.Id);
+
+        var result = await service.ReplaceTransactionAsync(
+            new ReplaceTransactionCommand { PortfolioId = portfolio.Id, TransactionId = portfolio.Transactions[0].Id, Transaction = Buy("bitcoin", 2m, Day(1)) },
+            CancellationToken.None);
+
+        result.ErrorCode.Should().Be(ServiceErrorCode.NotFound);
+        result.ErrorDetail.Should().Be($"No portfolio has id {portfolio.Id}.");
+    }
+
+    [Fact]
+    public async Task Should_ReturnNotFound_When_PortfolioRemovingATransactionWasDeletedConcurrently()
+    {
+        var (repository, _, service) = CreateSut();
+        var portfolio = SeedPortfolioWith(repository, Buy("bitcoin", 1m, Day(1)), Buy("bitcoin", 1m, Day(2)));
+        repository.DeleteConcurrentlyOnSave(portfolio.Id);
+
+        var result = await service.RemoveTransactionAsync(
+            new RemoveTransactionCommand { PortfolioId = portfolio.Id, TransactionId = portfolio.Transactions[1].Id },
+            CancellationToken.None);
+
+        result.ErrorCode.Should().Be(ServiceErrorCode.NotFound);
+        result.ErrorDetail.Should().Be($"No portfolio has id {portfolio.Id}.");
+    }
+
+    [Fact]
+    public async Task Should_DiscardTheStaleChange_When_LedgerSaveConflicts()
+    {
+        var (repository, _, service) = CreateSut();
+        var portfolio = SeedPortfolioWith(repository, Buy("bitcoin", 1m, Day(1)));
+        repository.SaveChangesException = new PersistenceConflictException();
+
+        await service.AddTransactionAsync(AddCommand(portfolio, Buy("bitcoin", 1m, Day(2))), CancellationToken.None);
+
+        repository.Discarded.Should().ContainSingle().Which.Should().BeSameAs(portfolio);
+    }
+
+    [Fact]
+    public async Task Should_DiscardTheUnsavedPortfolio_When_CreateSaveConflicts()
+    {
+        var (repository, _, service) = CreateSut();
+        repository.SaveChangesException = new PersistenceConflictException();
+
+        await service.CreateAsync(NewPortfolioCommand("Long term"), CancellationToken.None);
+
+        repository.Discarded.Should().ContainSingle().Which.Name.Should().Be("Long term");
+    }
+
+    [Fact]
+    public async Task Should_PropagatePersistenceBusyException_When_SaveFindsTheDatabaseBusy()
+    {
+        var (repository, _, service) = CreateSut();
+        var portfolio = SeedPortfolioWith(repository, Buy("bitcoin", 1m, Day(1)));
+        repository.SaveChangesException = new PersistenceBusyException();
+
+        var act = () => service.AddTransactionAsync(AddCommand(portfolio, Buy("bitcoin", 1m, Day(2))), CancellationToken.None);
+
+        await act.Should().ThrowAsync<PersistenceBusyException>();
+    }
 }

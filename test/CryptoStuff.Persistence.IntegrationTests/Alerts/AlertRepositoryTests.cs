@@ -3,6 +3,7 @@ using CryptoStuff.Core;
 using CryptoStuff.Core.Alerts;
 using CryptoStuff.Persistence.Alerts;
 using CryptoStuff.Persistence.IntegrationTests.TestSupport;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 
 namespace CryptoStuff.Persistence.IntegrationTests.Alerts;
@@ -342,6 +343,17 @@ public sealed class AlertRepositoryTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Should_ThrowOperationCanceledException_When_ExistenceCheckCanceled()
+    {
+        await using var context = _database.CreateContext();
+        var repository = new AlertRepository(context);
+
+        var act = () => repository.ExistsAsync(1, new CancellationToken(canceled: true));
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    [Fact]
     public async Task Should_ThrowOperationCanceledException_When_ListCanceled()
     {
         await using var context = _database.CreateContext();
@@ -398,6 +410,62 @@ public sealed class AlertRepositoryTests : IAsyncLifetime
         var act = () => repository.FindAsync(saved.Id, Token);
 
         (await act.Should().ThrowAsync<InvalidDataException>()).WithMessage("*'snoozed'*alert state*");
+    }
+
+    // Existence, read past the change tracker.
+
+    [Fact]
+    public async Task Should_ReportAbsent_When_NoAlertHasTheId()
+    {
+        await using var context = _database.CreateContext();
+
+        var exists = await new AlertRepository(context).ExistsAsync(42, Token);
+
+        exists.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Should_ReportAbsent_When_AlertDeletedByAnotherContextAfterItWasRead()
+    {
+        var saved = await SaveNewAsync("bitcoin");
+        await using var context = _database.CreateContext();
+        var repository = new AlertRepository(context);
+        await FindSavedAsync(repository, saved.Id);
+        await DeleteFreshAsync(saved.Id);
+
+        var exists = await repository.ExistsAsync(saved.Id, Token);
+
+        exists.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Should_ReportExists_When_AlertSaved()
+    {
+        var saved = await SaveNewAsync("bitcoin");
+        await using var context = _database.CreateContext();
+
+        var exists = await new AlertRepository(context).ExistsAsync(saved.Id, Token);
+
+        exists.Should().BeTrue();
+    }
+
+    // The database busy with another writer.
+
+    [Fact]
+    public async Task Should_ThrowPersistenceBusyException_When_AnotherConnectionHoldsTheWriteLock()
+    {
+        var saved = await SaveNewAsync("bitcoin");
+        await using var context = _database.CreateImpatientContext();
+        var repository = new AlertRepository(context);
+        (await FindSavedAsync(repository, saved.Id)).Update(AlertDirection.Below, 90m);
+        await using var writeLock = await WriteLock.HoldAsync(_database.ConnectionString, Token);
+
+        var act = () => repository.SaveChangesAsync(Token);
+
+        // SQLITE_BUSY: https://www.sqlite.org/rescode.html#busy
+        (await act.Should().ThrowAsync<PersistenceBusyException>())
+            .Which.GetBaseException().Should().BeOfType<SqliteException>()
+            .Which.SqliteErrorCode.Should().Be(5);
     }
 
     // Helpers: each runs in its own context, so the arrange and verify steps

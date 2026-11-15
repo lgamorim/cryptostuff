@@ -37,7 +37,7 @@ public sealed class PortfolioService(
         }
 
         repository.Add(portfolio);
-        return await TrySaveChangesAsync(cancellationToken) ? Success(portfolio) : NameTaken(command.Name);
+        return await SaveAsync(portfolio, cancellationToken) == SaveOutcome.Saved ? Success(portfolio) : NameTaken(command.Name);
     }
 
     /// <inheritdoc />
@@ -61,13 +61,17 @@ public sealed class PortfolioService(
 
         portfolio.Update(command.Name, command.CostBasisMethod);
 
-        // Either race can lose this save: another portfolio taking the name
-        // since the check above, or another write moving the version on.
-        return await TrySaveChangesAsync(cancellationToken)
-            ? Success(portfolio)
-            : ServiceResult<PortfolioView>.Failure(
+        // Any race can lose this save: another portfolio taking the name since
+        // the check above, another write moving the version on, or another
+        // writer deleting the portfolio.
+        return await SaveAsync(portfolio, cancellationToken) switch
+        {
+            SaveOutcome.Saved => Success(portfolio),
+            SaveOutcome.Deleted => NotFound(portfolio.Id),
+            _ => ServiceResult<PortfolioView>.Failure(
                 ServiceErrorCode.Conflict,
-                $"Portfolio {portfolio.Id} could not be saved: another portfolio may have taken the name '{command.Name}', or another operation changed it; reload it and try again.");
+                $"Portfolio {portfolio.Id} could not be saved: another portfolio may have taken the name '{command.Name}', or another operation changed it; reload it and try again."),
+        };
     }
 
     /// <inheritdoc />
@@ -85,9 +89,12 @@ public sealed class PortfolioService(
         }
 
         repository.Remove(portfolio);
-        return await TrySaveChangesAsync(cancellationToken)
-            ? ServiceResult.Success()
-            : ServiceResult.Failure(ServiceErrorCode.Conflict, ChangedConcurrentlyDetail(id));
+        return await SaveAsync(portfolio, cancellationToken) switch
+        {
+            SaveOutcome.Saved => ServiceResult.Success(),
+            SaveOutcome.Deleted => ServiceResult.Failure(ServiceErrorCode.NotFound, NotFoundDetail(id)),
+            _ => ServiceResult.Failure(ServiceErrorCode.Conflict, ChangedConcurrentlyDetail(id)),
+        };
     }
 
     /// <inheritdoc />
@@ -319,9 +326,12 @@ public sealed class PortfolioService(
             return ServiceResult<PortfolioView>.Failure(ServiceErrorCode.RuleViolated, outcome.ErrorMessage);
         }
 
-        return await TrySaveChangesAsync(cancellationToken)
-            ? Success(portfolio)
-            : ServiceResult<PortfolioView>.Failure(ServiceErrorCode.Conflict, ChangedConcurrentlyDetail(portfolio.Id));
+        return await SaveAsync(portfolio, cancellationToken) switch
+        {
+            SaveOutcome.Saved => Success(portfolio),
+            SaveOutcome.Deleted => NotFound(portfolio.Id),
+            _ => ServiceResult<PortfolioView>.Failure(ServiceErrorCode.Conflict, ChangedConcurrentlyDetail(portfolio.Id)),
+        };
     }
 
     /// <summary>
@@ -369,20 +379,27 @@ public sealed class PortfolioService(
     }
 
     /// <summary>
-    /// Saves pending changes, returning false when the repository reports a
-    /// <see cref="PersistenceConflictException"/>. Any other exception,
-    /// including cancellation, propagates.
+    /// Saves the pending change to <paramref name="portfolio"/>. On a
+    /// <see cref="PersistenceConflictException"/> it discards that change, so
+    /// nothing stale stays pending, and tells a portfolio another writer deleted
+    /// from any other conflict. Any other exception, including cancellation and
+    /// <see cref="PersistenceBusyException"/>, propagates.
     /// </summary>
-    private async Task<bool> TrySaveChangesAsync(CancellationToken cancellationToken)
+    private async Task<SaveOutcome> SaveAsync(Portfolio portfolio, CancellationToken cancellationToken)
     {
         try
         {
             await repository.SaveChangesAsync(cancellationToken);
-            return true;
+            return SaveOutcome.Saved;
         }
         catch (PersistenceConflictException)
         {
-            return false;
+            repository.Discard(portfolio);
+
+            // An id of zero is a portfolio never saved, which no one can have deleted.
+            return portfolio.Id != 0 && !await repository.ExistsAsync(portfolio.Id, cancellationToken)
+                ? SaveOutcome.Deleted
+                : SaveOutcome.Conflicted;
         }
     }
 

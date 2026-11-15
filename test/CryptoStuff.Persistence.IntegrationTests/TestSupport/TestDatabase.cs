@@ -54,6 +54,15 @@ internal sealed class TestDatabase : IDisposable
     /// <summary>A new context over this database, with an empty change tracker.</summary>
     public CryptoStuffDbContext CreateContext() => CreateContextFor(FilePath);
 
+    /// <summary>
+    /// A new context over this database that waits one second for another
+    /// writer's lock, rather than the driver's thirty, before failing as busy.
+    /// </summary>
+    public CryptoStuffDbContext CreateImpatientContext() =>
+        new(new DbContextOptionsBuilder<CryptoStuffDbContext>()
+            .UseSqlite(new SqliteConnectionStringBuilder(ConnectionString) { DefaultTimeout = 1 }.ToString())
+            .Options);
+
     public void Dispose() => File.Delete(FilePath);
 
     // Removes what a crashed run left behind. Entries younger than a day are

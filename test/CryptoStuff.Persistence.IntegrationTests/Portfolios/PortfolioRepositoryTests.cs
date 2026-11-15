@@ -494,6 +494,17 @@ public sealed class PortfolioRepositoryTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Should_ThrowOperationCanceledException_When_ExistenceCheckCanceled()
+    {
+        await using var context = _database.CreateContext();
+        var repository = new PortfolioRepository(context);
+
+        var act = () => repository.ExistsAsync(1, new CancellationToken(canceled: true));
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    [Fact]
     public async Task Should_ThrowOperationCanceledException_When_ListCanceled()
     {
         await using var context = _database.CreateContext();
@@ -550,6 +561,107 @@ public sealed class PortfolioRepositoryTests : IAsyncLifetime
         var act = () => repository.FindAsync(saved.Id, Token);
 
         (await act.Should().ThrowAsync<InvalidDataException>()).WithMessage("*'transfer'*transaction kind*");
+    }
+
+    // Existence, read past the change tracker.
+
+    [Fact]
+    public async Task Should_ReportAbsent_When_NoPortfolioHasTheId()
+    {
+        await using var context = _database.CreateContext();
+
+        var exists = await new PortfolioRepository(context).ExistsAsync(42, Token);
+
+        exists.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Should_ReportAbsent_When_PortfolioDeletedByAnotherContextAfterItWasRead()
+    {
+        var saved = await SaveNewAsync("Long term");
+        await using var context = _database.CreateContext();
+        var repository = new PortfolioRepository(context);
+        await FindSavedAsync(repository, saved.Id);
+        await DeleteFreshAsync(saved.Id);
+
+        var exists = await repository.ExistsAsync(saved.Id, Token);
+
+        exists.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Should_ReportExists_When_PortfolioSaved()
+    {
+        var saved = await SaveNewAsync("Long term");
+        await using var context = _database.CreateContext();
+
+        var exists = await new PortfolioRepository(context).ExistsAsync(saved.Id, Token);
+
+        exists.Should().BeTrue();
+    }
+
+    // Discarding a stale change.
+
+    [Fact]
+    public async Task Should_DiscardTheStaleLedgerAndSaveNothingFurther_When_DiscardedAfterConflict()
+    {
+        var saved = await SaveNewAsync("Long term", "usd", CostBasisMethod.AverageCost, Buy("bitcoin"));
+        await using var context = _database.CreateContext();
+        var repository = new PortfolioRepository(context);
+        var portfolio = await FindSavedAsync(repository, saved.Id);
+        await AddBuyFreshAsync(saved.Id);
+        portfolio.AddTransaction(Buy("ethereum")).IsValid.Should().BeTrue();
+        portfolio.RemoveTransaction(portfolio.Transactions[0]).IsValid.Should().BeTrue();
+        var conflictingSave = () => repository.SaveChangesAsync(Token);
+        await conflictingSave.Should().ThrowAsync<PersistenceConflictException>();
+
+        repository.Discard(portfolio);
+        await repository.SaveChangesAsync(Token);
+        var reread = await FindSavedAsync(repository, saved.Id);
+
+        // Read through the same context: none of the stale transactions is
+        // still tracked to be reused in place of the stored rows.
+        reread.Should().NotBeSameAs(portfolio);
+        reread.Transactions.Select(t => t.CoinId).Should().Equal("bitcoin", "bitcoin");
+        (await FindFreshAsync(saved.Id)).Transactions.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public async Task Should_DiscardTheUnsavedPortfolioWithItsTransactions_When_DiscardedAfterConflict()
+    {
+        await SaveNewAsync("Long term");
+        await using var context = _database.CreateContext();
+        var repository = new PortfolioRepository(context);
+        var duplicate = Portfolio.Create("Long term", "usd", CostBasisMethod.Fifo);
+        duplicate.AddTransaction(Buy("bitcoin")).IsValid.Should().BeTrue();
+        repository.Add(duplicate);
+        var conflictingSave = () => repository.SaveChangesAsync(Token);
+        await conflictingSave.Should().ThrowAsync<PersistenceConflictException>();
+
+        repository.Discard(duplicate);
+
+        // Nothing of it stays tracked, so the next save does not retry the insert.
+        context.ChangeTracker.Entries().Should().BeEmpty();
+        await repository.SaveChangesAsync(Token);
+    }
+
+    // The database busy with another writer.
+
+    [Fact]
+    public async Task Should_ThrowPersistenceBusyException_When_AnotherConnectionHoldsTheWriteLockOverALedgerChange()
+    {
+        var saved = await SaveNewAsync("Long term", "usd", CostBasisMethod.AverageCost, Buy("bitcoin"));
+        await using var context = _database.CreateImpatientContext();
+        var repository = new PortfolioRepository(context);
+        (await FindSavedAsync(repository, saved.Id)).AddTransaction(Buy("bitcoin")).IsValid.Should().BeTrue();
+        await using var writeLock = await WriteLock.HoldAsync(_database.ConnectionString, Token);
+
+        var act = () => repository.SaveChangesAsync(Token);
+
+        // SQLITE_BUSY: https://www.sqlite.org/rescode.html#busy
+        (await act.Should().ThrowAsync<PersistenceBusyException>())
+            .Which.GetBaseException().Should().BeOfType<SqliteException>()
+            .Which.SqliteErrorCode.Should().Be(5);
     }
 
     // Helpers: each runs in its own context, so the arrange and verify steps

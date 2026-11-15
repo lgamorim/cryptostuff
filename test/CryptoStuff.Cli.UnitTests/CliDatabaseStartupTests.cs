@@ -78,6 +78,17 @@ public class CliDatabaseStartupTests
     }
 
     [Fact]
+    public async Task Should_ReturnOneAndWriteErrorLine_When_TheDatabaseHoldsDataThisVersionCannotRead()
+    {
+        var failure = new InvalidDataException("PriceAlerts.State holds 'snoozed', which is not an alert state this version knows.");
+
+        var exitCode = await CliDatabaseStartup.MigrateAsync(_ => Task.FromException(failure), _error, CancellationToken.None);
+
+        exitCode.Should().Be(1);
+        _error.ToString().Should().Be($"Error: the database holds data this version cannot read. {failure.Message}\n");
+    }
+
+    [Fact]
     public async Task Should_PropagateException_When_FailureIsNotADatabaseFailure()
     {
         var act = () => CliDatabaseStartup.MigrateAsync(

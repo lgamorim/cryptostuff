@@ -12,6 +12,9 @@ namespace CryptoStuff.Persistence.Portfolios;
 /// </summary>
 public sealed class PortfolioRepository(CryptoStuffDbContext context) : IPortfolioRepository
 {
+    // The shadow foreign key each owned transaction row holds to its portfolio.
+    private const string OwnerKey = "PortfolioId";
+
     /// <inheritdoc />
     public async Task<IReadOnlyList<Portfolio>> ListAsync(CancellationToken cancellationToken) =>
         await context.Portfolios.OrderBy(p => p.Id).ToListAsync(cancellationToken);
@@ -28,10 +31,37 @@ public sealed class PortfolioRepository(CryptoStuffDbContext context) : IPortfol
             cancellationToken);
 
     /// <inheritdoc />
+    public Task<bool> ExistsAsync(int id, CancellationToken cancellationToken) =>
+        context.Portfolios.AnyAsync(p => p.Id == id, cancellationToken);
+
+    /// <inheritdoc />
     public void Add(Portfolio portfolio) => context.Portfolios.Add(portfolio);
 
     /// <inheritdoc />
     public void Remove(Portfolio portfolio) => context.Portfolios.Remove(portfolio);
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// Detaches the portfolio and every transaction tracked as its own.
+    /// Detaching the portfolio also detaches the transactions still in its
+    /// ledger, but not the ones removed from it, which stay tracked for
+    /// deletion: a later read through this context would put those stale
+    /// copies back in place of the stored rows, so they are found by their
+    /// foreign key and detached first. Only a saved portfolio can have removed
+    /// transactions, so its own <see cref="Portfolio.Id"/> is the key to match.
+    /// </remarks>
+    public void Discard(Portfolio portfolio)
+    {
+        var removedTransactions = context.ChangeTracker.Entries<PortfolioTransaction>()
+            .Where(entry => Equals(entry.Property(OwnerKey).CurrentValue, portfolio.Id))
+            .ToList();
+        foreach (var transaction in removedTransactions)
+        {
+            transaction.State = EntityState.Detached;
+        }
+
+        context.Entry(portfolio).State = EntityState.Detached;
+    }
 
     /// <inheritdoc />
     public async Task SaveChangesAsync(CancellationToken cancellationToken)
@@ -43,6 +73,10 @@ public sealed class PortfolioRepository(CryptoStuffDbContext context) : IPortfol
         catch (DbUpdateException exception) when (SqliteConflict.IsConflict(exception) || IsOwnerDeletedConcurrently(exception))
         {
             throw new PersistenceConflictException("The portfolio change conflicts with stored state.", exception);
+        }
+        catch (Exception exception) when (SqliteBusy.IsBusy(exception))
+        {
+            throw SqliteBusy.ToPersistenceBusy(exception);
         }
     }
 
