@@ -20,7 +20,9 @@ public sealed class PortfolioTransaction
     /// <summary>
     /// The transaction's position in the order its portfolio recorded it,
     /// counting from 1. It orders transactions that happened at the same
-    /// instant, and never changes when the transaction is replaced.
+    /// instant, never changes when the transaction is replaced, and is never
+    /// given to another of the portfolio's transactions, even once this one
+    /// is removed.
     /// </summary>
     public int Sequence { get; private set; }
 

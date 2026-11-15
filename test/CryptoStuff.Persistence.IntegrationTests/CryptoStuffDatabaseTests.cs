@@ -379,6 +379,89 @@ public class CryptoStuffDatabaseTests
         }
     }
 
+    // A portfolio stored before the upgrade has no record of a removed
+    // newest transaction, so its next sequence follows the highest it still
+    // holds: here sequence 2 was removed, and 3 is the newest left.
+    [Fact]
+    public async Task Should_NumberNextTransactionAfterTheHighestStoredSequence_When_UpgradingFromUnicodeCaseInsensitiveNamesToAddPortfolioLastSequence()
+    {
+        var filePath = Path.Combine(TestDatabase.Root, $"{Guid.NewGuid():N}.db");
+        try
+        {
+            await StoreAtUnicodeCaseInsensitiveNamesAsync(
+                filePath,
+                """INSERT INTO "Portfolios" ("Name", "VsCurrency", "CostBasisMethod", "Version") VALUES ('Long term', 'usd', 'fifo', 4), ('Empty', 'usd', 'fifo', 1)""",
+                """
+                INSERT INTO "PortfolioTransactions" ("Sequence", "Kind", "CoinId", "Quantity", "UnitPrice", "Fee", "OccurredAt", "PortfolioId")
+                VALUES (1, 'buy', 'bitcoin', '1', '40000', '0', '2026-01-05 12:30:15', 1),
+                       (3, 'buy', 'bitcoin', '1', '41000', '0', '2026-01-07 12:30:15', 1)
+                """);
+
+            await UpgradeAsync(filePath);
+
+            await using (var adding = TestDatabase.CreateContextFor(filePath))
+            {
+                foreach (var portfolio in await adding.Portfolios.ToListAsync(TestContext.Current.CancellationToken))
+                {
+                    portfolio.AddTransaction(new TransactionDetails
+                    {
+                        Kind = TransactionKind.Buy,
+                        CoinId = "ethereum",
+                        Quantity = 1m,
+                        UnitPrice = 1m,
+                        OccurredAt = new DateTimeOffset(2026, 1, 9, 0, 0, 0, TimeSpan.Zero),
+                    }).IsValid.Should().BeTrue();
+                }
+
+                await adding.SaveChangesAsync(TestContext.Current.CancellationToken);
+            }
+
+            await using var verification = TestDatabase.CreateContextFor(filePath);
+            var portfolios = await verification.Portfolios.ToListAsync(TestContext.Current.CancellationToken);
+            portfolios.Single(p => p.Name == "Long term").Transactions.Select(t => t.Sequence).Should().Equal(1, 3, 4);
+            portfolios.Single(p => p.Name == "Empty").Transactions.Should().ContainSingle().Which.Sequence.Should().Be(1);
+        }
+        finally
+        {
+            File.Delete(filePath);
+        }
+    }
+
+    // No release ever stored two transactions of one portfolio with the same
+    // sequence, since the portfolio's version serialises its writers, but a
+    // file edited by another tool could hold them.
+    [Fact]
+    public async Task Should_RefuseTheUpgradeAndLeaveTheDatabaseAsItWas_When_TwoStoredTransactionsOfOnePortfolioShareASequence()
+    {
+        var filePath = Path.Combine(TestDatabase.Root, $"{Guid.NewGuid():N}.db");
+        try
+        {
+            await StoreAtUnicodeCaseInsensitiveNamesAsync(
+                filePath,
+                """INSERT INTO "Portfolios" ("Name", "VsCurrency", "CostBasisMethod", "Version") VALUES ('Long term', 'usd', 'fifo', 3)""",
+                """
+                INSERT INTO "PortfolioTransactions" ("Sequence", "Kind", "CoinId", "Quantity", "UnitPrice", "Fee", "OccurredAt", "PortfolioId")
+                VALUES (1, 'buy', 'bitcoin', '1', '40000', '0', '2026-01-05 12:30:15', 1),
+                       (1, 'buy', 'ethereum', '1', '3000', '0', '2026-01-06 12:30:15', 1)
+                """);
+            var schemaBefore = await ReadSchemaAsync(filePath);
+
+            var act = () => UpgradeAsync(filePath);
+
+            (await act.Should().ThrowAsync<SqliteException>()).Which.SqliteExtendedErrorCode.Should().Be(2067, "SQLITE_CONSTRAINT_UNIQUE");
+            (await ReadSchemaAsync(filePath)).Should().Equal(
+                schemaBefore,
+                "the earlier release must still open the database, so the user can delete one of the two with it");
+            await using var verification = TestDatabase.CreateContextFor(filePath);
+            (await verification.Database.GetAppliedMigrationsAsync(TestContext.Current.CancellationToken))
+                .Last().Should().EndWith("UnicodeCaseInsensitiveNames");
+        }
+        finally
+        {
+            File.Delete(filePath);
+        }
+    }
+
     [Fact]
     public async Task Should_ThrowOperationCanceledException_When_MigrationCanceled()
     {
@@ -415,6 +498,19 @@ public class CryptoStuffDatabaseTests
         await using var before = TestDatabase.CreateContextFor(filePath);
         Directory.CreateDirectory(TestDatabase.Root);
         await before.GetService<IMigrator>().MigrateAsync("AddAlertAwaitingReset", TestContext.Current.CancellationToken);
+        foreach (var statement in statements)
+        {
+            await before.Database.ExecuteSqlRawAsync(statement, TestContext.Current.CancellationToken);
+        }
+    }
+
+    // Stops at the schema the Unicode-name release shipped and runs each
+    // statement against it.
+    private static async Task StoreAtUnicodeCaseInsensitiveNamesAsync(string filePath, params string[] statements)
+    {
+        await using var before = TestDatabase.CreateContextFor(filePath);
+        Directory.CreateDirectory(TestDatabase.Root);
+        await before.GetService<IMigrator>().MigrateAsync("UnicodeCaseInsensitiveNames", TestContext.Current.CancellationToken);
         foreach (var statement in statements)
         {
             await before.Database.ExecuteSqlRawAsync(statement, TestContext.Current.CancellationToken);

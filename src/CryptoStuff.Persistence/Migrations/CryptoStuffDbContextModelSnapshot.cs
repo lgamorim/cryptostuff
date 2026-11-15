@@ -83,6 +83,10 @@ namespace CryptoStuff.Persistence.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT");
 
+                    b.Property<int>("_lastSequence")
+                        .HasColumnType("INTEGER")
+                        .HasColumnName("LastSequence");
+
                     b.HasKey("Id");
 
                     b.HasIndex("Name")
@@ -155,7 +159,8 @@ namespace CryptoStuff.Persistence.Migrations
 
                             b1.HasKey("Id");
 
-                            b1.HasIndex("PortfolioId");
+                            b1.HasIndex("PortfolioId", "Sequence")
+                                .IsUnique();
 
                             b1.ToTable("PortfolioTransactions", (string)null);
 

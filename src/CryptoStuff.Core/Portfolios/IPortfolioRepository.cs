@@ -45,7 +45,9 @@ public interface IPortfolioRepository
     /// <summary>Writes every pending change, assigning ids to new portfolios and new transactions.</summary>
     /// <exception cref="PersistenceConflictException">
     /// The write broke the unique-name rule or lost a race with a concurrent
-    /// write, detected through <see cref="Portfolio.Version"/>.
+    /// write, detected through <see cref="Portfolio.Version"/> or, when both
+    /// writes added a transaction, through the two taking the same
+    /// <see cref="PortfolioTransaction.Sequence"/>.
     /// </exception>
     /// <exception cref="PersistenceBusyException">
     /// The database stayed locked by another writer longer than the provider

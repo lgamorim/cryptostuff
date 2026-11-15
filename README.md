@@ -293,8 +293,17 @@ A portfolio and its transactions live in two tables, `Portfolios` and
 `PortfolioTransactions`, and deleting a portfolio deletes its transactions.
 Decimal amounts are stored as exact text and timestamps as UTC, so nothing is
 rounded on the way to the file, and ids are never reused after a delete.
-Upgrading from a release that stored only watchlists adds the two tables and
-leaves the watchlists as they were.
+Neither are sequences: a portfolio remembers the highest sequence it has
+handed out, so removing its newest transaction does not free that number for
+the next one, and a unique index on the portfolio and sequence holds every
+writer to the same rule. An earlier release writing to an upgraded file does
+not keep that record, so a newest transaction it removes can have its number
+handed out once more, but the next transaction still always follows every one
+the portfolio holds. Upgrading from a release that stored only watchlists
+adds the two tables and leaves the watchlists as they were. Upgrading from a
+release before sequences were remembered numbers each portfolio's next
+transaction after the highest sequence it holds; a newest transaction removed
+before the upgrade left no trace, so its number can still be handed out once.
 
 A price alert lives in one table, `PriceAlerts`. Its direction and state are
 stored as the same lowercase text tokens the hosts use (`above`, `below`,
@@ -982,7 +991,10 @@ routes. Recording or replacing a transaction takes this body:
 
 Every route that returns a portfolio returns it whole, as above, with its
 transactions in ledger order, each shaped like the body plus its `id` and
-`sequence`, so one can be edited and sent back to `PUT`.
+`sequence`, so one can be edited and sent back to `PUT`. The `sequence` is the
+transaction's place in the order its portfolio recorded it, counting from 1;
+it breaks ties between transactions at the same instant, and the portfolio
+never gives it to another transaction, even after this one is deleted.
 
 | Route | Success | Notes |
 |---|---|---|

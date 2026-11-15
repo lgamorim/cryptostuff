@@ -9,6 +9,9 @@ internal sealed class PortfolioConfiguration : IEntityTypeConfiguration<Portfoli
     // The backing field behind Portfolio.Transactions, which is a read-only copy.
     private const string TransactionsField = "_transactions";
 
+    // The portfolio's highest sequence ever handed out, which only the domain reads.
+    private const string LastSequenceField = "_lastSequence";
+
     public void Configure(EntityTypeBuilder<Portfolio> builder)
     {
         builder.ToTable("Portfolios");
@@ -29,6 +32,10 @@ internal sealed class PortfolioConfiguration : IEntityTypeConfiguration<Portfoli
 
         // A get-only property is mapped only when named, then through its backing field.
         builder.Property(p => p.VsCurrency);
+
+        // Stored so that a removed newest transaction's sequence stays spent
+        // across loads, not just within one unit of work.
+        builder.Property<int>(LastSequenceField).HasColumnName("LastSequence");
 
         builder.Property(p => p.CostBasisMethod)
             .HasConversion(method => PortfolioTokens.ToToken(method), token => PortfolioTokens.ToCostBasisMethod(token));
@@ -58,6 +65,11 @@ internal sealed class PortfolioConfiguration : IEntityTypeConfiguration<Portfoli
 
             transactions.Property(t => t.Kind)
                 .HasConversion(kind => PortfolioTokens.ToToken(kind), token => PortfolioTokens.ToTransactionKind(token));
+
+            // The domain never hands a portfolio's sequence out twice; the index
+            // holds any other writer to the same rule. It leads with the foreign
+            // key, so it also serves the lookups that key's own index did.
+            transactions.HasIndex("PortfolioId", nameof(PortfolioTransaction.Sequence)).IsUnique();
         });
     }
 }

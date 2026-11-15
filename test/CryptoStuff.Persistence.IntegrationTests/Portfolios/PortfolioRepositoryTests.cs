@@ -218,6 +218,9 @@ public sealed class PortfolioRepositoryTests : IAsyncLifetime
         (await FindFreshAsync(saved.Id)).Name.Should().Be("Renamed first");
     }
 
+    // Both adds take sequence 1, and EF inserts the new transaction before it
+    // checks the portfolio's version, so the unique (PortfolioId, Sequence)
+    // index catches the lost race first; it is still the same conflict.
     [Fact]
     public async Task Should_ThrowPersistenceConflictException_When_TransactionAddedToPortfolioChangedSinceItWasRead()
     {
@@ -231,8 +234,90 @@ public sealed class PortfolioRepositoryTests : IAsyncLifetime
         var act = () => repository.SaveChangesAsync(Token);
 
         (await act.Should().ThrowAsync<PersistenceConflictException>())
-            .WithInnerException<DbUpdateConcurrencyException>();
+            .WithInnerException<DbUpdateException>()
+            .WithInnerException<SqliteException>()
+            .Which.SqliteExtendedErrorCode.Should().Be(UniqueViolation);
         (await FindFreshAsync(saved.Id)).Transactions.Should().ContainSingle().Which.CoinId.Should().Be("bitcoin");
+    }
+
+    // Here the stale add's sequence collides with nothing, so the version
+    // check is what finds the portfolio changed, and the inserted row goes
+    // back with the rest of the save.
+    [Fact]
+    public async Task Should_ThrowPersistenceConflictExceptionAndStoreNoTransaction_When_TransactionAddedToPortfolioRenamedSinceItWasRead()
+    {
+        var saved = await SaveNewAsync("Long term");
+        await using var context = _database.CreateContext();
+        var repository = new PortfolioRepository(context);
+        var stale = await FindSavedAsync(repository, saved.Id);
+        await RenameFreshAsync(saved.Id, "Renamed");
+        stale.AddTransaction(Buy("ethereum")).IsValid.Should().BeTrue();
+
+        var act = () => repository.SaveChangesAsync(Token);
+
+        (await act.Should().ThrowAsync<PersistenceConflictException>())
+            .WithInnerException<DbUpdateConcurrencyException>();
+        var found = await FindFreshAsync(saved.Id);
+        found.Name.Should().Be("Renamed");
+        found.Transactions.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Should_NotReuseTheRemovedTransactionsSequence_When_AddedInALaterUnitOfWork()
+    {
+        var saved = await SaveNewAsync("Long term", "usd", CostBasisMethod.AverageCost, Buy("bitcoin"), Buy("ethereum"));
+        await using (var context = _database.CreateContext())
+        {
+            var repository = new PortfolioRepository(context);
+            var portfolio = await FindSavedAsync(repository, saved.Id);
+            portfolio.RemoveTransaction(portfolio.Transactions.Single(t => t.Sequence == 2)).IsValid.Should().BeTrue();
+            await repository.SaveChangesAsync(Token);
+        }
+
+        await AddBuyFreshAsync(saved.Id);
+
+        (await FindFreshAsync(saved.Id)).Transactions.Select(t => t.Sequence).Should().Equal(1, 3);
+    }
+
+    // A writer that does not keep the stored mark, such as a release from
+    // before it existed opening an upgraded file, numbers by the highest
+    // sequence held and leaves the mark behind. The next add must still get
+    // a free number rather than collide with that row on every attempt.
+    [Fact]
+    public async Task Should_NumberAfterTheHighestHeldSequence_When_ATransactionWasStoredPastTheMark()
+    {
+        var saved = await SaveNewAsync("Long term", "usd", CostBasisMethod.AverageCost, Buy("bitcoin"));
+        await ExecuteAsync($"""
+            INSERT INTO "PortfolioTransactions" ("Sequence", "Kind", "CoinId", "Quantity", "UnitPrice", "Fee", "OccurredAt", "PortfolioId")
+            VALUES (2, 'buy', 'ethereum', '1', '1', '0', '2026-01-05 00:00:00', {saved.Id})
+            """);
+
+        await AddBuyFreshAsync(saved.Id);
+
+        (await FindFreshAsync(saved.Id)).Transactions.Select(t => t.Sequence).Should().Equal(1, 2, 3);
+    }
+
+    [Fact]
+    public async Task Should_RejectTheRow_When_ASecondTransactionInThePortfolioHasTheSameSequence()
+    {
+        var saved = await SaveNewAsync("Long term", "usd", CostBasisMethod.AverageCost, Buy("bitcoin"));
+
+        var act = () => ExecuteAsync($"""
+            INSERT INTO "PortfolioTransactions" ("Sequence", "Kind", "CoinId", "Quantity", "UnitPrice", "Fee", "OccurredAt", "PortfolioId")
+            VALUES (1, 'buy', 'ethereum', '1', '1', '0', '2026-01-05 00:00:00', {saved.Id})
+            """);
+
+        (await act.Should().ThrowAsync<SqliteException>()).Which.SqliteExtendedErrorCode.Should().Be(UniqueViolation);
+    }
+
+    [Fact]
+    public async Task Should_NumberEachPortfolioFromOne_When_TwoPortfoliosRecordTransactions()
+    {
+        var first = await SaveNewAsync("Long term", "usd", CostBasisMethod.AverageCost, Buy("bitcoin"));
+        var second = await SaveNewAsync("Trading", "usd", CostBasisMethod.AverageCost, Buy("ethereum"));
+
+        (await FindFreshAsync(first.Id)).Transactions.Should().ContainSingle().Which.Sequence.Should().Be(1);
+        (await FindFreshAsync(second.Id)).Transactions.Should().ContainSingle().Which.Sequence.Should().Be(1);
     }
 
     [Fact]

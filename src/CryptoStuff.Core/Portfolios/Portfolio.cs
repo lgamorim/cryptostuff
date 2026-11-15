@@ -20,6 +20,13 @@ public sealed class Portfolio
 {
     private readonly List<PortfolioTransaction> _transactions = [];
 
+    // The highest sequence this portfolio has ever handed out, kept apart from
+    // the transactions so that removing the newest one never frees its number
+    // for the next add. A writer that does not keep it, such as an earlier
+    // release opening an upgraded file, can leave it below a sequence the
+    // portfolio holds, so the next number also follows every held one.
+    private int _lastSequence;
+
     // Takes only the scalar properties so the persistence layer can construct
     // the entity through this constructor, binding each parameter to its
     // property, without a public parameterless constructor that would bypass
@@ -91,16 +98,24 @@ public sealed class Portfolio
 
     /// <summary>
     /// Records a new transaction, numbered after every transaction the
-    /// portfolio holds. A failed outcome names the coin and date of the sell
-    /// that would oversell, or the coin whose amounts would be too large to
-    /// compute, and leaves the portfolio unchanged.
+    /// portfolio has ever recorded, removed ones included, so no sequence is
+    /// ever handed out twice. A failed outcome names the coin and date of the
+    /// sell that would oversell, or the coin whose amounts would be too large
+    /// to compute, and leaves the portfolio unchanged, its next sequence
+    /// included.
     /// </summary>
     /// <exception cref="ArgumentException"><paramref name="details"/> breaks a rule <see cref="TransactionDetails"/> documents.</exception>
     public ValidationOutcome AddTransaction(TransactionDetails details)
     {
-        var nextSequence = _transactions.Count == 0 ? 1 : _transactions.Max(t => t.Sequence) + 1;
-        var transaction = PortfolioTransaction.Create(nextSequence, details);
-        return ApplyIfLedgerHolds([.. _transactions, transaction], () => _transactions.Add(transaction));
+        var highestHeld = _transactions.Count == 0 ? 0 : _transactions.Max(t => t.Sequence);
+        var transaction = PortfolioTransaction.Create(Math.Max(_lastSequence, highestHeld) + 1, details);
+        return ApplyIfLedgerHolds(
+            [.. _transactions, transaction],
+            () =>
+            {
+                _transactions.Add(transaction);
+                _lastSequence = transaction.Sequence;
+            });
     }
 
     /// <summary>

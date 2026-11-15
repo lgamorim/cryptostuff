@@ -471,6 +471,45 @@ public class PortfolioLedgerTests
         portfolio.Transactions.Select(t => t.Sequence).Should().Equal(2, 3);
     }
 
+    [Fact]
+    public void Should_NotReuseTheRemovedTransactionsSequence_When_NewestTransactionWasRemoved()
+    {
+        var portfolio = NewPortfolio();
+        portfolio.AddTransaction(Buy("bitcoin", 1m, Day(1)));
+        portfolio.AddTransaction(Buy("bitcoin", 1m, Day(2)));
+        portfolio.RemoveTransaction(portfolio.Transactions.Last());
+
+        portfolio.AddTransaction(Buy("bitcoin", 1m, Day(3)));
+
+        portfolio.Transactions.Select(t => t.Sequence).Should().Equal(1, 3);
+    }
+
+    [Fact]
+    public void Should_NumberNewTransactionAfterEveryOneEverRecorded_When_AllWereRemoved()
+    {
+        var portfolio = NewPortfolio();
+        portfolio.AddTransaction(Buy("bitcoin", 1m, Day(1)));
+        portfolio.AddTransaction(Buy("ethereum", 1m, Day(2)));
+        portfolio.RemoveTransaction(portfolio.Transactions.Last());
+        portfolio.RemoveTransaction(portfolio.Transactions.Single());
+
+        portfolio.AddTransaction(Buy("solana", 1m, Day(3)));
+
+        portfolio.Transactions.Should().ContainSingle().Which.Sequence.Should().Be(3);
+    }
+
+    [Fact]
+    public void Should_NotSpendASequence_When_AddWasRejected()
+    {
+        var portfolio = NewPortfolio();
+        portfolio.AddTransaction(Buy("bitcoin", 1m, Day(1)));
+        portfolio.AddTransaction(Sell("bitcoin", 2m, Day(2))).IsValid.Should().BeFalse();
+
+        portfolio.AddTransaction(Buy("bitcoin", 1m, Day(3)));
+
+        portfolio.Transactions.Select(t => t.Sequence).Should().Equal(1, 2);
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

@@ -28,7 +28,10 @@ public sealed record PortfolioTransactionView
     /// <summary>The transaction's id.</summary>
     public required int Id { get; init; }
 
-    /// <summary>The transaction's position in the order its portfolio recorded it, counting from 1.</summary>
+    /// <summary>
+    /// The transaction's position in the order its portfolio recorded it,
+    /// counting from 1; the portfolio never gives it to another transaction.
+    /// </summary>
     public required int Sequence { get; init; }
 
     /// <summary>Whether the transaction buys or sells.</summary>
