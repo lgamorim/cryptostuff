@@ -289,7 +289,7 @@ public sealed class AlertRepositoryTests : IAsyncLifetime
         await using (var context = _database.CreateContext())
         {
             var repository = new AlertRepository(context);
-            (await FindSavedAsync(repository, saved.Id)).Rearm().IsValid.Should().BeTrue();
+            (await FindSavedAsync(repository, saved.Id)).Rearm().Should().BeTrue();
             await repository.SaveChangesAsync(Token);
         }
 

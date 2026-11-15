@@ -42,10 +42,11 @@ public static class CliUsage
           alert update <id> <above|below> <threshold> Replace an alert's direction and threshold, which re-arms it
           alert delete <id>                           Delete an alert
           alert rearm <id>                            Re-arm a triggered alert; it can trigger again only after its price has moved back past the threshold
-          alert check                                 Evaluate the armed alerts once and print what triggered and what could not be priced
+          alert check [--exit-code]                   Evaluate the armed alerts once and print what triggered and what could not be priced
 
         Options:
           --json         Output as JSON instead of human-readable text
           --fee <fee>    Fee of a portfolio transaction, in the portfolio's currency (default 0)
+          --exit-code    Make alert check exit 2 when it triggered an alert (default: 0 either way)
         """;
 }

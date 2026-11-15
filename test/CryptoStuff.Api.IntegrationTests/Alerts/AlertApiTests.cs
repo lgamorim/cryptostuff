@@ -261,7 +261,7 @@ public class AlertApiTests
     }
 
     [Fact]
-    public async Task Should_ReturnConflictAndChangeNothing_When_ArmedAlertRearmed()
+    public async Task Should_ReturnTheUnchangedAlert_When_ArmedAlertRearmed()
     {
         var cancellationToken = TestContext.Current.CancellationToken;
         using var factory = new CryptoStuffApiFactory();
@@ -271,10 +271,29 @@ public class AlertApiTests
 
         var response = await client.PostAsync($"/alerts/{created.Id}/rearm", content: null, cancellationToken);
 
-        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
-        (await ReadProblemAsync(response, cancellationToken)).Detail.Should().Be($"Alert {created.Id} is already armed.");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await response.Content.ReadFromJsonAsync<AlertView>(JsonOptions, cancellationToken)).Should().BeEquivalentTo(created);
         var reloaded = await client.GetFromJsonAsync<AlertView>($"/alerts/{created.Id}", JsonOptions, cancellationToken);
         reloaded.Should().BeEquivalentTo(created);
+    }
+
+    [Fact]
+    public async Task Should_ReturnTheSameAlertAgain_When_RearmIsRetriedAfterItSucceeded()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        using var factory = new CryptoStuffApiFactory();
+        factory.CoinGeckoClient.PriceMatrixResponse = BitcoinPricedInUsd(43000m);
+        using var client = WithClock(factory).CreateClient();
+        var created = await CreateAsync(client, cancellationToken, "above", 50000m);
+        factory.CoinGeckoClient.PriceMatrixResponse = BitcoinPricedInUsd(52000m);
+        (await client.PostAsync("/alerts/check", content: null, cancellationToken)).StatusCode.Should().Be(HttpStatusCode.OK);
+        (await client.PostAsync($"/alerts/{created.Id}/rearm", content: null, cancellationToken)).StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var retried = await client.PostAsync($"/alerts/{created.Id}/rearm", content: null, cancellationToken);
+
+        retried.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await retried.Content.ReadFromJsonAsync<AlertView>(JsonOptions, cancellationToken))
+            .Should().BeEquivalentTo(created with { AwaitingReset = true, Version = 3 });
     }
 
     [Theory]

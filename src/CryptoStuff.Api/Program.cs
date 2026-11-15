@@ -16,6 +16,7 @@ builder.Services.AddCryptoStuff(builder.Configuration);
 // command, so it evaluates only on `alert check`.
 builder.Services.AddAlertEvaluationSchedule(builder.Configuration);
 builder.Services.AddHostedService<AlertEvaluationBackgroundService>();
+builder.Services.AddAlertCheckRateLimit(builder.Configuration);
 builder.Services.AddProblemDetails();
 
 // Enumerations travel as the same lowercase tokens the CLI prints and Core's
@@ -43,6 +44,7 @@ app.UsePathBase(app.Configuration["PathBase"]);
 // write their own bodies and never consult IProblemDetailsService.
 app.UseStatusCodePages();
 app.UsePersistenceBusyResponses();
+app.UseRateLimiter();
 
 app.MapCryptoStuffEndpoints();
 app.MapWatchlistEndpoints();

@@ -106,6 +106,37 @@ public class CliArgumentParserTests
         result.Arguments.Should().Equal("tx", "add", "--fee");
     }
 
+    [Theory]
+    [InlineData("alert", "check", "--exit-code")]
+    [InlineData("--exit-code", "alert", "check")]
+    [InlineData("alert", "--exit-code", "check")]
+    public void Should_SetExitCodeOnTriggerAndRemoveTheFlag_When_ExitCodeFlagAppearsAnywhere(params string[] args)
+    {
+        var result = CliArgumentParser.Parse(args);
+
+        result.ExitCodeOnTrigger.Should().BeTrue();
+        result.Command.Should().Be("alert");
+        result.Arguments.Should().Equal("check");
+    }
+
+    [Fact]
+    public void Should_LeaveExitCodeOnTriggerFalse_When_ExitCodeFlagAbsent()
+    {
+        var result = CliArgumentParser.Parse(["alert", "check"]);
+
+        result.ExitCodeOnTrigger.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Should_TreatExitCodeAsFlagNotFeeValue_When_ExitCodeFollowsFeeOption()
+    {
+        var result = CliArgumentParser.Parse(["portfolio", "tx", "add", "--fee", "--exit-code"]);
+
+        result.Fee.Should().BeNull();
+        result.ExitCodeOnTrigger.Should().BeTrue();
+        result.Arguments.Should().Equal("tx", "add", "--fee");
+    }
+
     [Fact]
     public void Should_KeepNegativeFeeValueVerbatim_When_FeeIsNegative()
     {

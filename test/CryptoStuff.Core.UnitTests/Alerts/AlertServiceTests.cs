@@ -372,18 +372,32 @@ public class AlertServiceTests
     }
 
     [Fact]
-    public async Task Should_ReturnConflictNamingIdWithoutSaving_When_RearmAsyncAlertIsAlreadyArmed()
+    public async Task Should_ReturnTheUnchangedAlertWithoutSaving_When_RearmAsyncAlertIsAlreadyArmed()
     {
         var (repository, _, service) = CreateSut();
         var alert = SeedAlert(repository);
 
         var result = await service.RearmAsync(alert.Id, expectedVersion: null, CancellationToken.None);
 
-        result.IsSuccess.Should().BeFalse();
-        result.ErrorCode.Should().Be(ServiceErrorCode.Conflict);
-        result.ErrorDetail.Should().Contain("armed");
+        SucceededValue(result).Should().BeEquivalentTo(AlertMapper.ToView(alert));
+        SucceededValue(result).Version.Should().Be(1);
+        SucceededValue(result).AwaitingReset.Should().BeFalse();
         repository.SaveChangesCallCount.Should().Be(0);
-        alert.Version.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task Should_ReturnTheSameAlertWithoutSavingAgain_When_RearmAsyncRetriedAfterItSucceeded()
+    {
+        var (repository, _, service) = CreateSut();
+        var alert = SeedAlert(repository);
+        alert.Trigger(105m, Now);
+        var first = await service.RearmAsync(alert.Id, expectedVersion: null, CancellationToken.None);
+
+        var retried = await service.RearmAsync(alert.Id, expectedVersion: null, CancellationToken.None);
+
+        SucceededValue(retried).Should().BeEquivalentTo(SucceededValue(first));
+        SucceededValue(retried).AwaitingReset.Should().BeTrue();
+        repository.SaveChangesCallCount.Should().Be(1);
     }
 
     [Fact]
@@ -606,6 +620,19 @@ public class AlertServiceTests
             CancellationToken.None);
 
         repository.Discarded.Should().ContainSingle().Which.Should().BeSameAs(alert);
+    }
+
+    [Fact]
+    public async Task Should_ReturnConflictSayingItClashedWithAStoredAlert_When_CreateSaveConflicts()
+    {
+        var (repository, upstream, service) = CreateSut();
+        upstream.PricesResult = PricedIn("bitcoin", "usd");
+        repository.SaveChangesException = new PersistenceConflictException();
+
+        var result = await service.CreateAsync(NewAlertCommand(), CancellationToken.None);
+
+        result.ErrorCode.Should().Be(ServiceErrorCode.Conflict);
+        result.ErrorDetail.Should().Be("The alert could not be saved because it clashed with an alert stored at the same time; try again.");
     }
 
     [Fact]

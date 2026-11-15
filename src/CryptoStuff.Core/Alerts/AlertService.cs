@@ -37,7 +37,9 @@ public sealed class AlertService(
         repository.Add(alert);
         return await SaveAsync(alert, cancellationToken) == SaveOutcome.Saved
             ? Success(alert)
-            : ServiceResult<AlertView>.Failure(ServiceErrorCode.Conflict, "The alert could not be saved because another operation changed the stored alerts; try again.");
+            // Alerts share no unique column, so the only conflict an insert
+            // can meet is another alert stored with the same id at the same time.
+            : ServiceResult<AlertView>.Failure(ServiceErrorCode.Conflict, "The alert could not be saved because it clashed with an alert stored at the same time; try again.");
     }
 
     /// <inheritdoc />
@@ -95,10 +97,11 @@ public sealed class AlertService(
             return ServiceResult<AlertView>.Failure(ServiceErrorCode.PreconditionFailed, staleVersion);
         }
 
-        var outcome = alert.Rearm();
-        return outcome.IsValid
+        // An alert that is already armed has nothing to save, so a retried
+        // re-arm returns the alert the first one left.
+        return alert.Rearm()
             ? await SaveChangeAsync(alert, cancellationToken)
-            : ServiceResult<AlertView>.Failure(ServiceErrorCode.Conflict, outcome.ErrorMessage);
+            : Success(alert);
     }
 
     /// <summary>

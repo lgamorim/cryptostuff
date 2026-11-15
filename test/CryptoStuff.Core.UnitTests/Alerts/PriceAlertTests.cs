@@ -186,9 +186,9 @@ public class PriceAlertTests
         var alert = PriceAlert.Create("bitcoin", "usd", AlertDirection.Above, 100m);
         alert.Trigger(105m, TriggerTime);
 
-        var outcome = alert.Rearm();
+        var changed = alert.Rearm();
 
-        outcome.IsValid.Should().BeTrue();
+        changed.Should().BeTrue();
         alert.State.Should().Be(AlertState.Armed);
         alert.TriggeredAt.Should().BeNull();
         alert.TriggeredPrice.Should().BeNull();
@@ -206,16 +206,31 @@ public class PriceAlertTests
     }
 
     [Fact]
-    public void Should_RejectAndLeaveAlertUnchanged_When_RearmCalledOnArmedAlert()
+    public void Should_ReturnFalseAndLeaveAlertUnchanged_When_RearmCalledOnArmedAlert()
     {
         var alert = PriceAlert.Create("bitcoin", "usd", AlertDirection.Above, 100m);
 
-        var outcome = alert.Rearm();
+        var changed = alert.Rearm();
 
-        outcome.IsValid.Should().BeFalse();
-        outcome.ErrorMessage.Should().Contain("armed");
+        changed.Should().BeFalse();
         alert.State.Should().Be(AlertState.Armed);
+        alert.AwaitingReset.Should().BeFalse();
         alert.Version.Should().Be(1);
+    }
+
+    [Fact]
+    public void Should_ReturnFalseAndKeepAwaitingReset_When_RearmCalledAgainOnRearmedAlert()
+    {
+        var alert = PriceAlert.Create("bitcoin", "usd", AlertDirection.Above, 100m);
+        alert.Trigger(105m, TriggerTime);
+        alert.Rearm();
+
+        var changed = alert.Rearm();
+
+        changed.Should().BeFalse();
+        alert.State.Should().Be(AlertState.Armed);
+        alert.AwaitingReset.Should().BeTrue();
+        alert.Version.Should().Be(3);
     }
 
     [Fact]

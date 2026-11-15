@@ -379,7 +379,7 @@ public class AlertEvaluatorTests
     {
         var alert = PriceAlert.Create(coinId, "usd", AlertDirection.Above, 100m);
         alert.Trigger(120m, Now.AddHours(-1)).IsValid.Should().BeTrue();
-        alert.Rearm().IsValid.Should().BeTrue();
+        alert.Rearm().Should().BeTrue();
         return repository.Seed(alert);
     }
 }

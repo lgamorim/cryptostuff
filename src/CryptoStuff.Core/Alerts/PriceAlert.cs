@@ -122,19 +122,20 @@ public sealed class PriceAlert
     /// Moves a triggered alert back to armed and forgets when and at what
     /// price it triggered. The price that triggered it is assumed to still
     /// meet it, so the alert is left <see cref="AwaitingReset"/> until a price
-    /// shows otherwise. A failed outcome, for an alert that is already armed,
-    /// leaves the alert unchanged.
+    /// shows otherwise. Returns whether the alert changed: one that is already
+    /// armed, awaiting its reset or not, is left as it is, so re-arming twice
+    /// does no more than re-arming once.
     /// </summary>
-    public ValidationOutcome Rearm()
+    public bool Rearm()
     {
         if (State == AlertState.Armed)
         {
-            return ValidationOutcome.Failure($"Alert {Id} is already armed.");
+            return false;
         }
 
         ResetToArmed();
         AwaitingReset = true;
-        return ValidationOutcome.Success();
+        return true;
     }
 
     /// <summary>

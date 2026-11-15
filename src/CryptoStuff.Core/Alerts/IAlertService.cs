@@ -3,8 +3,7 @@ namespace CryptoStuff.Core.Alerts;
 /// <summary>
 /// The price-alert workflow both hosts drive. An unknown alert id is
 /// <see cref="ServiceErrorCode.NotFound"/>; a write that conflicts with stored
-/// state, or a re-arm of an alert that is already armed, is
-/// <see cref="ServiceErrorCode.Conflict"/>; a coin or currency CoinGecko
+/// state is <see cref="ServiceErrorCode.Conflict"/>; a coin or currency CoinGecko
 /// doesn't know is <see cref="ServiceErrorCode.RuleViolated"/> with a detail
 /// explaining it. A write that carries the version its caller last read is a
 /// <see cref="ServiceErrorCode.PreconditionFailed"/> when the stored alert is
@@ -50,8 +49,10 @@ public interface IAlertService
     /// Moves a triggered alert back to armed, awaiting its reset: it triggers
     /// again only after an evaluation has seen its price move back past the
     /// threshold (see <see cref="PriceAlert.AwaitingReset"/>). Re-arming an
-    /// alert that is already armed is a <see cref="ServiceErrorCode.Conflict"/>,
-    /// as is losing a race with another write to the same alert. When
+    /// alert that is already armed succeeds without saving anything and
+    /// returns it as it is, so a retried re-arm gets the alert the first one
+    /// left. Losing a race with another write to the same alert is a
+    /// <see cref="ServiceErrorCode.Conflict"/>. When
     /// <paramref name="expectedVersion"/> is given and the stored alert is at
     /// another version, it is a <see cref="ServiceErrorCode.PreconditionFailed"/>,
     /// whatever the alert's state.

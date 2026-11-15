@@ -457,7 +457,7 @@ API behave identically:
 | Trigger | When it runs |
 |---|---|
 | `alert check` (CLI) | Once, when the command is run. The CLI exits after each command, so it never evaluates in the background |
-| `POST /alerts/check` (API) | Once per request |
+| `POST /alerts/check` (API) | Once per request, at most `Alerts:ChecksPerMinute` requests a minute (6 by default); see [Check rate limit](#check-rate-limit) |
 | The API's background evaluation | Periodically for as long as the API host is running, every `Alerts:EvaluationSeconds` seconds (60 by default), each tick on its own |
 
 Nothing is notified outwardly: a triggered alert is
@@ -572,6 +572,39 @@ change.
 Stopping the host cancels an evaluation in progress, and that is not logged as
 a failure.
 
+### Check rate limit
+
+Each `POST /alerts/check` asks CoinGecko for prices, and the API key's rate
+limit is shared with the background evaluation, the other price routes and the
+CLI. So the API allows at most `Alerts:ChecksPerMinute` checks a minute,
+counted for every caller together in one fixed window that opens anew each
+minute. A check over the limit asks CoinGecko nothing and is answered `429`
+with a ProblemDetails body and a `Retry-After: 60` header: the window's whole
+length, however much of it is left, so a client that waits that long always
+finds a new window open:
+
+```json
+{ "status": 429, "title": "Too Many Requests", "detail": "Alert checks are limited to 6 per minute; try again after the wait given in Retry-After." }
+```
+
+The limit covers that route alone: the background evaluation, which does not go
+through it, and every other route are never held back by it. It is set in
+`appsettings.json`, or as the `Alerts__ChecksPerMinute` environment variable:
+
+```json
+{ "Alerts": { "ChecksPerMinute": 6 } }
+```
+
+It must be a whole number from `1` to `2147483647`; absent or blank, it is `6`.
+Anything else stops the API at start-up with a message naming the value, such
+as:
+
+```
+Alerts:ChecksPerMinute is set to '0', which is not a whole number from 1 to 2147483647. Set it to how many POST /alerts/check requests a minute to allow, or remove it to allow 6.
+```
+
+The CLI's `alert check` is not limited: it runs once per command.
+
 ## Command-line interface
 
 `CryptoStuff.Cli` is a console front end over the same five operations as
@@ -612,8 +645,8 @@ dotnet run --project src/CryptoStuff.Cli -- price bitcoin usd
 | `alert show` | `<id>` — an alert's id, coin, currency, direction, threshold, state, when and at what price it triggered, and version | `cryptostuff alert show 1` |
 | `alert update` | `<id> <direction> <threshold>` — replaces the alert's direction and threshold, which re-arms it whether or not it had triggered | `cryptostuff alert update 1 below 42000` |
 | `alert delete` | `<id>` — deletes an alert | `cryptostuff alert delete 1` |
-| `alert rearm` | `<id>` — moves a triggered alert back to armed, where it waits for its price to move back past the threshold before it can trigger again; re-arming an armed alert is refused | `cryptostuff alert rearm 1` |
-| `alert check` | — evaluates the armed alerts once and prints the ones that triggered, or `Nothing triggered.`, then any it could not price; see [Alert evaluation](#alert-evaluation) | `cryptostuff alert check` |
+| `alert rearm` | `<id>` — moves a triggered alert back to armed, where it waits for its price to move back past the threshold before it can trigger again; re-arming an alert that is already armed leaves it as it is | `cryptostuff alert rearm 1` |
+| `alert check` | `[--exit-code]` — evaluates the armed alerts once and prints the ones that triggered, or `Nothing triggered.`, then any it could not price; with `--exit-code` it exits `2` when it triggered an alert; see [Alert evaluation](#alert-evaluation) | `cryptostuff alert check --exit-code` |
 
 Each command applies the applicable [input validation](#input-validation)
 rules above to its arguments before calling CoinGecko, and reports the first
@@ -660,9 +693,11 @@ decimal mark, an optional exponent, and no thousands separators: `0.5` and
 `1.5e3` are accepted, `0,5` is not) and must be greater than zero, so `0` and `-1` are rejected as
 `Threshold must be greater than zero.` Core refuses a coin or currency
 CoinGecko doesn't know, or that has no price in that currency, when the alert is
-created, and refuses to re-arm an alert that is already armed, in a message
-printed as `Error: …` with exit `1`. Like every stored write, the CLI sends no
-expected version, so an `update`, `delete` or `rearm` never fails on a stale one.
+created, in a message printed as `Error: …` with exit `1`. `rearm` on an alert
+that is already armed changes nothing and prints it as it is, waiting for its
+price to move back or not, so running it twice does no more than running it
+once. Like every stored write, the CLI sends no expected version, so an
+`update`, `delete` or `rearm` never fails on a stale one.
 
 `alert check` runs the one [evaluator](#alert-evaluation) once and prints each
 alert it triggered, one line apiece (id, coin, direction, threshold, the price
@@ -670,16 +705,20 @@ that met it, and when), under a count. Any alert it could not price follows,
 one line apiece (id, coin and currency) under `Could not price N alerts, left
 armed:`. With `--json` it prints `{"Triggered": [...], "Unpriced": [...]}`,
 each an empty list when there is nothing to report. Nothing triggering, and an
-alert that could not be priced, are not failures, so `check` exits `0` then;
-only an evaluation that failed, such as a CoinGecko error, exits `1` and changes
-no alert. **Continuous evaluation
+alert that could not be priced, are not failures, so `check` exits `0` then,
+and by default it exits `0` when alerts triggered too. With `--exit-code` it
+exits `2` when it triggered at least one alert, after printing them, so a
+script can act on a trigger without reading the output; it still exits `0`
+when nothing triggered. Only an evaluation that failed, such as a CoinGecko
+error, exits `1`, with or without the flag, and changes no alert. **Continuous evaluation
 happens only in the API host**: the CLI exits after each command, so alerts are
 evaluated only when `alert check` is run, while a running API host evaluates them
 on its own timer.
 
-Arguments stay positional; the one option besides `--json` is `--fee`, which
+Arguments stay positional; the options besides `--json` are `--fee`, which
 only `tx add` and `tx edit` take (anywhere on the command line, followed by its
-value) and which defaults to `0`. Numbers are read the same way on every
+value) and which defaults to `0`, and `--exit-code`, which only `alert check`
+takes. Either one given to any other command prints the usage and exits `1`. Numbers are read the same way on every
 machine, whatever its regional settings: a decimal with a point for the
 decimal mark, an optional exponent as a JSON number allows (`5e-1`, `1.5E+3`),
 and no thousands separators. `0.5` and `5e-1` are accepted; `0,5` and `1,000`
@@ -714,6 +753,7 @@ another offset comes back converted to UTC.
 |---|---|
 | `0` | The command completed successfully. |
 | `1` | No command or an unrecognized command, the wrong number of arguments, an input validation failure, a CoinGecko service failure (see [Error codes](#error-codes)), a startup configuration error (a missing or invalid `CoinGecko:ApiKey`/`CoinGecko:CacheSeconds`, see [Registration](#registration), or an unresolvable database connection string, see [Data storage](#data-storage)), or, for a command that uses the database, a database that could not be opened or migrated, that holds data this version cannot read, or that another writer kept locked (see [Data storage](#data-storage)). |
+| `2` | `alert check --exit-code` triggered at least one alert. Without `--exit-code`, `alert check` exits `0` whether or not anything triggered. |
 | `130` | The command was canceled (Ctrl+C) before it completed. |
 
 Usage and validation errors, CoinGecko service failures, and database
@@ -1026,8 +1066,8 @@ to `false` and the version one higher (see
 | `GET /alerts/{id}` | `200` | |
 | `PUT /alerts/{id}` | `200` | The updated, armed alert |
 | `DELETE /alerts/{id}` | `204` | No body |
-| `POST /alerts/{id}/rearm` | `200` | The armed alert, awaiting its reset |
-| `POST /alerts/check` | `200` | The alerts this evaluation triggered, and the ones it could not price |
+| `POST /alerts/{id}/rearm` | `200` | The armed alert, awaiting its reset; an alert that was already armed comes back as it was, so a retried re-arm gets the same alert |
+| `POST /alerts/check` | `200` | The alerts this evaluation triggered, and the ones it could not price; at most `Alerts:ChecksPerMinute` a minute (see [Check rate limit](#check-rate-limit)) |
 
 Alerts carry a `version`, but no `ETag`: as with the CLI, every alert write is
 unconditional, and the entity-tag contract above belongs to the portfolio
@@ -1040,9 +1080,10 @@ Failures use the [ProblemDetails](#rest-api) contract above:
 |---|---|
 | `400` | A missing body or malformed JSON; a blank `coinId` or `vsCurrency`; a `direction` that is not `above` or `below`; a missing `threshold`, or one of zero or below; an `id` of zero or below |
 | `404` | No alert has that `id`, another writer deleted it while the request was saving, or the `id` is not a whole number (no route matches it) |
-| `409` | Re-arming an alert that is already armed (`Alert 1 is already armed.`), or a concurrent write won the race |
+| `409` | A concurrent write won the race |
 | `422` | Creating an alert on a coin CoinGecko does not know, or that has no price in that vs_currency; the `detail` names it |
-| `429`, `502`, `504` | CoinGecko failed while checking a new alert's coin or while evaluating |
+| `429` | `POST /alerts/check` went over `Alerts:ChecksPerMinute`, with a `Retry-After` header, or CoinGecko's rate limit was hit while checking a new alert's coin or while evaluating |
+| `502`, `504` | CoinGecko failed while checking a new alert's coin or while evaluating |
 
 ### Health, OpenAPI, and Scalar
 

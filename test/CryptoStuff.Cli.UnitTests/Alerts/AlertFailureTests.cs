@@ -94,17 +94,17 @@ public class AlertFailureTests
     }
 
     [Fact]
-    public async Task Should_ReturnOneAndConflictMessage_When_RearmingAnArmedAlert()
+    public async Task Should_ReturnOneAndConflictMessage_When_RearmLosesARace()
     {
         // Arrange
-        _alerts.RearmResult = ServiceResult<AlertView>.Failure(ServiceErrorCode.Conflict, "Alert 1 is already armed.");
+        _alerts.RearmResult = ServiceResult<AlertView>.Failure(ServiceErrorCode.Conflict, "Alert 1 was changed by another operation; reload it and try again.");
 
         // Act
         var exitCode = await _runner.RunAsync(["alert", "rearm", "1"], CancellationToken.None);
 
         // Assert
         exitCode.Should().Be(1);
-        _error.ToString().Should().Be("Error: Alert 1 is already armed.\n");
+        _error.ToString().Should().Be("Error: Alert 1 was changed by another operation; reload it and try again.\n");
         _output.ToString().Should().BeEmpty();
     }
 

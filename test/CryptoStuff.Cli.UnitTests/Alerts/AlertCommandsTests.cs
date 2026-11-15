@@ -696,6 +696,107 @@ public class AlertCommandsTests
         _output.ToString().Should().NotContain("Nothing triggered");
     }
 
+    [Fact]
+    public async Task Should_ReturnTwoAndPrintTheTriggeredAlert_When_CheckWithExitCodeTriggersOne()
+    {
+        // Arrange
+        _evaluator.Result = ServiceResult<AlertEvaluationView>.Success(new AlertEvaluationView
+        {
+            Triggered = [TriggeredAlert(id: 2, "ethereum", "eur", AlertDirection.Below, 1500.5m, price: 1490.25m)],
+            Unpriced = [],
+        });
+
+        // Act
+        var exitCode = await _runner.RunAsync(["alert", "check", "--exit-code"], CancellationToken.None);
+
+        // Assert
+        exitCode.Should().Be(2);
+        _output.ToString().Should().Be(
+            "Triggered 1 alert:\n  2: ethereum below 1500.5 eur, price 1490.25 eur, at 2024-03-01T12:00:00Z\n");
+        _error.ToString().Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Should_ReturnTwoAndPrintJson_When_CheckWithExitCodeAndJsonTriggersOne()
+    {
+        // Arrange
+        _evaluator.Result = ServiceResult<AlertEvaluationView>.Success(new AlertEvaluationView
+        {
+            Triggered = [TriggeredAlert(id: 2, "ethereum", "eur", AlertDirection.Below, 1500.5m, price: 1490.25m)],
+            Unpriced = [],
+        });
+
+        // Act
+        var exitCode = await _runner.RunAsync(["alert", "check", "--json", "--exit-code"], CancellationToken.None);
+
+        // Assert
+        exitCode.Should().Be(2);
+        _output.ToString().Should().Contain("\"Triggered\": [").And.Contain("\"Price\": 1490.25");
+    }
+
+    [Fact]
+    public async Task Should_ReturnZero_When_CheckWithExitCodeTriggersNothing()
+    {
+        // Act
+        var exitCode = await _runner.RunAsync(["alert", "check", "--exit-code"], CancellationToken.None);
+
+        // Assert
+        exitCode.Should().Be(0);
+        _output.ToString().Should().Be("Nothing triggered.\n");
+    }
+
+    [Fact]
+    public async Task Should_ReturnZero_When_CheckWithExitCodeOnlyLeavesAlertsUnpriced()
+    {
+        // Arrange
+        _evaluator.Result = ServiceResult<AlertEvaluationView>.Success(new AlertEvaluationView
+        {
+            Triggered = [],
+            Unpriced = [new UnpricedAlertView { Id = 7, CoinId = "ghostcoin", VsCurrency = "usd" }],
+        });
+
+        // Act
+        var exitCode = await _runner.RunAsync(["alert", "check", "--exit-code"], CancellationToken.None);
+
+        // Assert
+        exitCode.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Should_ReturnOne_When_CheckWithExitCodeFails()
+    {
+        // Arrange
+        _evaluator.Result = ServiceResult<AlertEvaluationView>.Failure(ServiceErrorCode.RateLimited);
+
+        // Act
+        var exitCode = await _runner.RunAsync(["alert", "check", "--exit-code"], CancellationToken.None);
+
+        // Assert
+        exitCode.Should().Be(1);
+        _output.ToString().Should().BeEmpty();
+        _error.ToString().Should().StartWith("Error: ");
+    }
+
+    [Theory]
+    [InlineData("list")]
+    [InlineData("create", "bitcoin", "usd", "above", "50000")]
+    [InlineData("show", "1")]
+    [InlineData("update", "1", "above", "50000")]
+    [InlineData("delete", "1")]
+    [InlineData("rearm", "1")]
+    public async Task Should_ReturnOneAndUsageWithoutCallingService_When_SubcommandOtherThanCheckIsGivenExitCode(params string[] subcommand)
+    {
+        // Act
+        var exitCode = await _runner.RunAsync(["alert", .. subcommand, "--exit-code"], CancellationToken.None);
+
+        // Assert
+        exitCode.Should().Be(1);
+        _error.ToString().Should().Contain("Usage:");
+        _output.ToString().Should().BeEmpty();
+        _alerts.CallCount.Should().Be(0);
+        _evaluator.CallCount.Should().Be(0);
+    }
+
     private static TriggeredAlertView TriggeredAlert(int id, string coin, string currency, AlertDirection direction, decimal threshold, decimal price) => new()
     {
         Id = id,

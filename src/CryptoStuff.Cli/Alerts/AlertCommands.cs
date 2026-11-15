@@ -8,6 +8,10 @@ public sealed class AlertCommands
     /// <summary>The command noun this family handles.</summary>
     public const string Name = "alert";
 
+    // What check exits with when --exit-code is given and an alert triggered:
+    // not 1, which is a failure, and not 0, so a script can tell the two apart.
+    private const int TriggeredExitCode = 2;
+
     private readonly IAlertService _service;
     private readonly IAlertEvaluator _evaluator;
     private readonly CliResultWriter _writer;
@@ -27,6 +31,9 @@ public sealed class AlertCommands
     public Task<int> ExecuteAsync(CliArguments parsed, CancellationToken cancellationToken) =>
         parsed.Arguments switch
         {
+            ["check"] => CheckAsync(parsed, cancellationToken),
+            // Only check above takes --exit-code.
+            _ when parsed.ExitCodeOnTrigger => Task.FromResult(_writer.WriteUsage()),
             ["list"] => ListAsync(parsed, cancellationToken),
             ["create", var coin, var currency, var rawDirection, var rawThreshold] =>
                 CreateAsync(coin, currency, rawDirection, rawThreshold, parsed, cancellationToken),
@@ -35,7 +42,6 @@ public sealed class AlertCommands
                 UpdateAsync(rawId, rawDirection, rawThreshold, parsed, cancellationToken),
             ["delete", var rawId] => DeleteAsync(rawId, parsed, cancellationToken),
             ["rearm", var rawId] => RearmAsync(rawId, parsed, cancellationToken),
-            ["check"] => CheckAsync(parsed, cancellationToken),
             _ => Task.FromResult(_writer.WriteUsage()),
         };
 
@@ -118,12 +124,14 @@ public sealed class AlertCommands
         return _writer.WriteServiceResult(result, parsed.JsonOutput, AlertOutputFormatter.Format);
     }
 
-    // Triggering is not a failure, so an evaluation that triggered nothing still exits 0;
+    // Triggering is not a failure, so an evaluation exits 0 whatever it
+    // triggered, unless --exit-code asks for 2 when it triggered anything;
     // only a failed evaluation, such as an upstream error, exits 1.
     private async Task<int> CheckAsync(CliArguments parsed, CancellationToken cancellationToken)
     {
         var result = await _evaluator.EvaluateAsync(cancellationToken);
-        return _writer.WriteServiceResult(result, parsed.JsonOutput, AlertOutputFormatter.Format);
+        var exitCode = _writer.WriteServiceResult(result, parsed.JsonOutput, AlertOutputFormatter.Format);
+        return parsed.ExitCodeOnTrigger && result.Value is { Triggered.Count: > 0 } ? TriggeredExitCode : exitCode;
     }
 
     // The direction and threshold a create and an update both take.

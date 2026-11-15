@@ -46,8 +46,11 @@ public static class AlertEndpoints
             .WithProblemMetadata<AlertView>(
                 StatusCodes.Status200OK, StatusCodes.Status400BadRequest, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict);
 
-        // Evaluating asks CoinGecko for every armed alert's price; that is its only way to fail.
+        // Evaluating asks CoinGecko for every armed alert's price; that is its
+        // only way to fail, besides the throttle that keeps it from spending
+        // CoinGecko's rate limit, which answers 429 too.
         group.MapPost("/check", CheckAsync)
+            .RequireRateLimiting(AlertCheckRateLimit.PolicyName)
             .WithProblemMetadata<AlertEvaluationView>(
                 StatusCodes.Status200OK,
                 StatusCodes.Status429TooManyRequests,

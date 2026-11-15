@@ -103,7 +103,7 @@ public class AlertPreconditionTests
     }
 
     [Fact]
-    public async Task Should_ReturnPreconditionFailedRatherThanConflict_When_RearmAsyncAlertIsArmedAndExpectedVersionIsStale()
+    public async Task Should_ReturnPreconditionFailedRatherThanTheAlert_When_RearmAsyncAlertIsArmedAndExpectedVersionIsStale()
     {
         var (repository, service) = CreateSut();
         var alert = SeedAlert(repository);

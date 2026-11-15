@@ -51,7 +51,8 @@ public sealed class CliRunner
     /// <summary>
     /// Parses and executes <paramref name="args"/>, returning the process
     /// exit code: <c>0</c> on success, <c>1</c> on a usage, validation, or
-    /// service failure, or a database another writer kept locked, and
+    /// service failure, or a database another writer kept locked, <c>2</c>
+    /// when <c>alert check --exit-code</c> triggered an alert, and
     /// <c>130</c> if <paramref name="cancellationToken"/> is canceled mid-request.
     /// </summary>
     public async Task<int> RunAsync(string[] args, CancellationToken cancellationToken)
@@ -65,6 +66,8 @@ public sealed class CliRunner
                 // Only portfolio transactions take --fee; swallowing it silently
                 // elsewhere would hide a mistyped invocation.
                 _ when parsed.Fee is not null && parsed.Command != PortfolioCommands.Name => _writer.WriteUsage(),
+                // Likewise only alert check takes --exit-code.
+                _ when parsed.ExitCodeOnTrigger && parsed.Command != AlertCommands.Name => _writer.WriteUsage(),
                 "price" => await ExecutePriceAsync(parsed, cancellationToken),
                 "token" => await ExecuteTokenAsync(parsed, cancellationToken),
                 "history" => await ExecuteHistoryAsync(parsed, cancellationToken),
