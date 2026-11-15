@@ -11,6 +11,9 @@ public class CliDatabaseStartupTests
         new SqliteException("SQLite Error 14: 'unable to open database file'.", 14),
         new IOException("The file exists."),
         new UnauthorizedAccessException("Access to the path is denied."),
+
+        // Any other failure, such as one of EF Core's own, is reported the same way.
+        new InvalidOperationException("The model for context 'CryptoStuffDbContext' has pending changes."),
     };
 
     [Fact]
@@ -86,17 +89,6 @@ public class CliDatabaseStartupTests
 
         exitCode.Should().Be(1);
         _error.ToString().Should().Be($"Error: the database holds data this version cannot read. {failure.Message}\n");
-    }
-
-    [Fact]
-    public async Task Should_PropagateException_When_FailureIsNotADatabaseFailure()
-    {
-        var act = () => CliDatabaseStartup.MigrateAsync(
-            _ => Task.FromException(new InvalidOperationException("A bug, not a database problem.")),
-            _error,
-            CancellationToken.None);
-
-        await act.Should().ThrowAsync<InvalidOperationException>();
     }
 
     [Theory]

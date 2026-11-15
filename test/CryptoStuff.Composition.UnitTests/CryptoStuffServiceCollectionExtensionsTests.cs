@@ -8,6 +8,7 @@ using CryptoStuff.Persistence;
 using CryptoStuff.Persistence.Alerts;
 using CryptoStuff.Persistence.Portfolios;
 using CryptoStuff.Persistence.Watchlists;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -19,8 +20,12 @@ public class CryptoStuffServiceCollectionExtensionsTests
     private const string ValidApiKey = "test-api-key";
 
     // Registration and resolution never open the connection, so the file named
-    // here is never created.
-    private const string ConfiguredConnectionString = "Data Source=registration-test.db";
+    // here is never created. Absolute, as the setting must be, on every OS the
+    // tests run on.
+    private static readonly string ConfiguredConnectionString = new SqliteConnectionStringBuilder
+    {
+        DataSource = Path.Combine(Path.GetTempPath(), "registration-test.db"),
+    }.ToString();
 
     private static IConfiguration BuildConfiguration(Dictionary<string, string?>? values = null) =>
         new ConfigurationBuilder().AddInMemoryCollection(values ?? []).Build();

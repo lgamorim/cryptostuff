@@ -43,7 +43,7 @@ The AI workflow is the experiment.
 | `CryptoStuff.Persistence` | EF Core over SQLite: `CryptoStuffDbContext`, the watchlist mapping (`WatchlistConfiguration`) and `WatchlistRepository`, the portfolio mapping (`PortfolioConfiguration`, which owns the portfolio's transactions) and `PortfolioRepository`, the alert mapping (`AlertConfiguration`) and `AlertRepository`, which also lists the armed alerts and can discard an alert whose save conflicted, translation of unique-constraint and concurrency failures (and, for portfolios, a portfolio deleted under a pending save) into `PersistenceConflictException`, `CryptoStuffDatabase.MigrateAsync` (creates a file database's directory, then migrates), the design-time context factory, and the checked-in migrations (`Migrations/`) |
 | `CryptoStuff.Composition` | Registration and HTTP pipeline wiring: `AddCryptoStuff`, `AddAlertEvaluationSchedule` (the API's [background evaluation](#background-evaluation) interval, as an `AlertEvaluationSchedule`), `DatabaseConnectionString` (locates the shared database), and `MigrateCryptoStuffDatabaseAsync` (the start-up migration both hosts run) |
 | `CryptoStuff.Cli` | Console host |
-| `CryptoStuff.Api` | Minimal REST host, including `AlertEvaluationBackgroundService`, the [background alert evaluation](#background-evaluation) |
+| `CryptoStuff.Api` | Minimal REST host, including `AlertEvaluationBackgroundService`, the [background alert evaluation](#background-evaluation), and `StartupDatabaseMigration`, which runs the start-up migration as the host's first step |
 | `CryptoStuff.CoinGecko.UnitTests` | Unit tests for `CryptoStuff.CoinGecko` |
 | `CryptoStuff.Core.UnitTests` | Unit tests for `CryptoStuff.Core` |
 | `CryptoStuff.Composition.UnitTests` | Unit tests for `CryptoStuff.Composition` |
@@ -252,19 +252,41 @@ SQLite connection string — as a user secret locally, or as the
 `ConnectionStrings__CryptoStuff` environment variable in deployment:
 
 ```bash
-dotnet user-secrets set ConnectionStrings:CryptoStuff "Data Source=/path/to/cryptostuff.db"
+dotnet user-secrets set ConnectionStrings:CryptoStuff "Data Source=C:\data\cryptostuff.db"
 ```
+
+```bash
+dotnet user-secrets set ConnectionStrings:CryptoStuff "Data Source=/var/lib/cryptostuff/cryptostuff.db"
+```
+
+The first is for Windows, the second for macOS and Linux.
 
 User secrets belong to one host project, so set the override for both
 `CryptoStuff.Cli` and `CryptoStuff.Api` — or use the environment variable —
-if they are to keep sharing a file. A value that is not a valid SQLite
-connection string stops either host before it does anything, with
-`ConnectionStrings:CryptoStuff is not a valid SQLite connection string: …`.
+if they are to keep sharing a file.
+
+The data source must be an absolute file path, so the two hosts open the same
+file wherever they are launched from. On Windows that means one with a drive
+(`C:\data\cryptostuff.db`) or a UNC share (`\\server\share\cryptostuff.db`);
+a path starting at a single `\` or `/` is relative to the current drive, so it
+is refused too. A relative path would resolve against
+each host's working directory, and an in-memory or temporary database is gone
+with its connection, so these are refused, as are `file:` URIs and
+`|DataDirectory|`. A value that is not a valid SQLite connection string, or
+that names no absolute file, stops either host before it does anything, with
+one of:
+
+```
+ConnectionStrings:CryptoStuff is not a valid SQLite connection string. Check that every keyword is one SQLite knows, that each value suits its keyword, and that any value holding ';' or '=' is quoted.
+ConnectionStrings:CryptoStuff must name the database file by an absolute path, such as 'Data Source=C:\data\cryptostuff.db' on Windows or 'Data Source=/var/lib/cryptostuff/cryptostuff.db' elsewhere, so the CLI and the API open the same file wherever they are launched from. Relative paths, in-memory and temporary databases, file: URIs and |DataDirectory| are not supported.
+```
+
+Neither message repeats any part of the value, which may hold a password.
 If the setting is absent and the OS reports no local application-data folder
 at all, both hosts stop with:
 
 ```
-No per-user local application-data folder is available for the default database file. Set the ConnectionStrings:CryptoStuff setting (the ConnectionStrings__CryptoStuff environment variable in deployment) to a SQLite connection string, e.g. 'Data Source=/path/to/cryptostuff.db'.
+No per-user local application-data folder is available for the default database file. Set the ConnectionStrings:CryptoStuff setting (the ConnectionStrings__CryptoStuff environment variable in deployment) to a SQLite connection string naming an absolute file, such as 'Data Source=C:\data\cryptostuff.db' on Windows or 'Data Source=/var/lib/cryptostuff/cryptostuff.db' elsewhere.
 ```
 
 A portfolio and its transactions live in two tables, `Portfolios` and
@@ -290,10 +312,13 @@ uses the database (the `watchlist`, `portfolio` and `alert` commands) — so whi
 after an upgrade brings the schema up to date. The CLI's CoinGecko-only
 commands (`price`, `token`, `history`, `coin`, `developer`) never open the
 database, so they skip migration and start as fast as they always did. If the
-database cannot be opened or migrated (an unwritable folder, or a file that is
-not a SQLite database), the CLI prints
-`Error: the database could not be opened or migrated. …` and exits with code
-`1`, and the API fails to start with the underlying exception.
+database cannot be opened or migrated for any reason (an unwritable folder, a
+file that is not a SQLite database, or a migration that cannot be applied),
+the CLI prints `Error: the database could not be opened or migrated. …` and
+exits with code `1`, never a stack trace, and the API fails to start with the
+underlying exception. The API migrates as the first step of its own start-up,
+so Ctrl+C while it is still migrating cancels the migration, and the API
+stops without serving anything; the CLI exits with code `130` the same way.
 
 After migrating, both hosts also check that every stored token (an alert's
 direction and state, a portfolio's cost-basis method, a transaction's kind) is

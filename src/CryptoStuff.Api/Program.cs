@@ -12,6 +12,10 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddCryptoStuff(builder.Configuration);
 
+// The host's first start-up step, before the server listens, so no request
+// ever meets a missing or outdated schema; see StartupDatabaseMigration.
+builder.Services.AddHostedService(services => new StartupDatabaseMigration(services.MigrateCryptoStuffDatabaseAsync));
+
 // Only this host evaluates alerts continuously; the CLI exits after each
 // command, so it evaluates only on `alert check`.
 builder.Services.AddAlertEvaluationSchedule(builder.Configuration);
@@ -58,13 +62,21 @@ if (app.Environment.IsDevelopment())
     app.MapScalarApiReference();
 }
 
-// Before the host starts listening, so no request ever meets a missing or
-// outdated schema. A failure here ends start-up with the exception, as a
-// missing API key does above. No token to pass: the host only handles Ctrl+C
-// once it runs, so until then Ctrl+C ends the process outright.
-await app.Services.MigrateCryptoStuffDatabaseAsync(CancellationToken.None);
+// Taken before running: once RunAsync fails it has disposed the host, and
+// reading app.Lifetime then throws inside the filter below, which fails it.
+var stopping = app.Lifetime.ApplicationStopping;
+try
+{
+    await app.RunAsync();
+}
 
-await app.RunAsync();
+// Once a stop has been requested, a cancellation escaping RunAsync is that
+// stop, not a crash. It is most often Ctrl+C while the start-up migration was
+// still running: the host has logged that it failed to start and served
+// nothing. Either way the process ends as it would after any requested stop.
+catch (OperationCanceledException) when (stopping.IsCancellationRequested)
+{
+}
 
 /// <summary>Exposes the entry point to <c>WebApplicationFactory&lt;Program&gt;</c> for integration testing.</summary>
 public partial class Program;
