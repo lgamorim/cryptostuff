@@ -140,7 +140,8 @@ public class AverageCostMethodTests
 
         var act = () => _method.CalculatePosition(transactions);
 
-        act.Should().Throw<ArgumentException>().WithParameterName("transactions").WithMessage("*below zero*");
+        // Named as a ledger names an oversell it refuses: by the sell's date too.
+        act.Should().Throw<ArgumentException>().WithParameterName("transactions").WithMessage("*on 2024-01-02T00:00:00Z would take its holding below zero*");
     }
 
     [Fact]

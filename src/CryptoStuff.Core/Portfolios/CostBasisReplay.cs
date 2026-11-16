@@ -64,6 +64,19 @@ internal static class CostBasisReplay
     }
 
     /// <summary>
+    /// The one oversell rule, shared by a portfolio's ledger and every
+    /// cost-basis method: returns why <paramref name="sell"/> cannot be made
+    /// from the <paramref name="held"/> units, naming its coin and date, or
+    /// null when they cover it.
+    /// </summary>
+    public static string? OversellDetail(PortfolioTransaction sell, decimal held) =>
+        sell.Quantity > held
+            ? string.Create(
+                CultureInfo.InvariantCulture,
+                $"Selling {sell.Quantity} {sell.CoinId} on {UtcTimestamp.Format(sell.OccurredAt)} would take its holding below zero: only {held} would be held then.")
+            : null;
+
+    /// <summary>
     /// Throws when <paramref name="sell"/> takes more than the
     /// <paramref name="held"/> units, so a method never reports a negative
     /// holding for transactions a portfolio's ledger would have refused.
@@ -71,11 +84,9 @@ internal static class CostBasisReplay
     /// <exception cref="ArgumentException"><paramref name="sell"/> takes more than is held.</exception>
     public static void EnsureHeld(PortfolioTransaction sell, decimal held)
     {
-        if (sell.Quantity > held)
+        if (OversellDetail(sell, held) is { } oversold)
         {
-            throw new ArgumentException(
-                string.Create(CultureInfo.InvariantCulture, $"Selling {sell.Quantity} {sell.CoinId} would take its holding below zero: only {held} would be held then."),
-                TransactionsParameter);
+            throw new ArgumentException(oversold, TransactionsParameter);
         }
     }
 

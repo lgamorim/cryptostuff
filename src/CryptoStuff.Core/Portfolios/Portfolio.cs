@@ -232,9 +232,9 @@ public sealed class Portfolio
         foreach (var transaction in InLedgerOrder(transactions))
         {
             var held = holdings.GetValueOrDefault(transaction.CoinId);
-            if (transaction.Kind == TransactionKind.Sell && transaction.Quantity > held)
+            if (transaction.Kind == TransactionKind.Sell && CostBasisReplay.OversellDetail(transaction, held) is { } oversold)
             {
-                return Oversold(transaction, held);
+                return ValidationOutcome.Failure(oversold);
             }
 
             // No stored ledger can hold a coin past this: before the check,
@@ -258,11 +258,6 @@ public sealed class Portfolio
     // replay in this order too.
     internal static IEnumerable<PortfolioTransaction> InLedgerOrder(IEnumerable<PortfolioTransaction> transactions) =>
         transactions.OrderBy(t => t.OccurredAt).ThenBy(t => t.Sequence);
-
-    private static ValidationOutcome Oversold(PortfolioTransaction sell, decimal held) =>
-        ValidationOutcome.Failure(string.Create(
-            CultureInfo.InvariantCulture,
-            $"Selling {sell.Quantity} {sell.CoinId} on {UtcTimestamp.Format(sell.OccurredAt)} would take its holding below zero: only {held} would be held then."));
 
     private static ValidationOutcome TooLarge(string coinId) =>
         ValidationOutcome.Failure(string.Create(
