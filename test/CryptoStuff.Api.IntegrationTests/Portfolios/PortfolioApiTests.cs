@@ -10,6 +10,7 @@ using CryptoStuff.CoinGecko;
 using CryptoStuff.Core.Portfolios;
 using CryptoStuff.Persistence;
 using CryptoStuff.Persistence.Portfolios;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
@@ -862,6 +863,38 @@ public class PortfolioApiTests
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
         (await ReadProblemAsync(response, cancellationToken)).Detail.Should().Be($"Portfolio {created.Id} has no transaction with id 99.");
+    }
+
+    // A conditional write checks the ids it names before its If-Match, so the
+    // problem names the id even when the If-Match is malformed too.
+    [Theory]
+    [InlineData("PUT", "/portfolios/0", "id")]
+    [InlineData("DELETE", "/portfolios/0", "id")]
+    [InlineData("POST", "/portfolios/0/transactions", "id")]
+    [InlineData("PUT", "/portfolios/0/transactions/1", "id")]
+    [InlineData("DELETE", "/portfolios/0/transactions/1", "id")]
+    [InlineData("PUT", "/portfolios/1/transactions/0", "txId")]
+    [InlineData("DELETE", "/portfolios/1/transactions/0", "txId")]
+    public async Task Should_ReturnBadRequestNamingTheId_When_ConditionalWriteHasANonPositiveIdAndAMalformedIfMatch(string method, string path, string field)
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        using var factory = new CryptoStuffApiFactory();
+        using var client = factory.CreateClient();
+        using var request = new HttpRequestMessage(new HttpMethod(method), path)
+        {
+            Content = method == "DELETE"
+                ? null
+                : JsonContent.Create(path.Contains("/transactions", StringComparison.Ordinal) ? Buy(0.5m) : new { name = "renamed", costBasisMethod = "fifo" }),
+        };
+        request.Headers.TryAddWithoutValidation("If-Match", "1").Should().BeTrue();
+
+        var response = await client.SendAsync(request, cancellationToken);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var problem = await response.Content.ReadFromJsonAsync<HttpValidationProblemDetails>(JsonOptions, cancellationToken);
+        // `!` is safe: a 400 always carries a validation-problem body.
+        problem!.Errors.Should().ContainSingle().Which.Key.Should().Be(field);
+        problem.Errors[field].Should().Equal($"{field} must be a positive whole number.");
     }
 
     [Theory]

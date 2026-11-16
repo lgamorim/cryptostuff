@@ -1,11 +1,8 @@
-using System.Text.Json;
-using System.Text.Json.Serialization;
 using CryptoStuff.Api;
 using CryptoStuff.Api.Alerts;
 using CryptoStuff.Api.Portfolios;
 using CryptoStuff.Api.Watchlists;
 using CryptoStuff.Composition;
-using CryptoStuff.Core;
 using Scalar.AspNetCore;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -23,14 +20,9 @@ builder.Services.AddHostedService<AlertEvaluationBackgroundService>();
 builder.Services.AddAlertCheckRateLimit(builder.Configuration);
 builder.Services.AddProblemDetails();
 
-// Enumerations travel as the same lowercase tokens the CLI prints and Core's
-// parsers accept (`average-cost`, `buy`), never as numbers. Timestamps are UTC
-// ending in `Z`, the form the CLI prints.
-builder.Services.ConfigureHttpJsonOptions(options =>
-{
-    options.SerializerOptions.Converters.Add(new JsonStringEnumConverter(JsonNamingPolicy.KebabCaseLower));
-    options.SerializerOptions.Converters.Add(new UtcTimestampJsonConverter());
-});
+// The same JSON shape the CLI prints: enumerations as their tokens, timestamps
+// as UTC ending in `Z`.
+builder.Services.ConfigureHttpJsonOptions(options => CryptoStuffJson.Configure(options.SerializerOptions));
 builder.Services.AddHealthChecks();
 builder.Services.AddOpenApi();
 

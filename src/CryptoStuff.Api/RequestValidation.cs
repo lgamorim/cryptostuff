@@ -11,8 +11,8 @@ internal static class RequestValidation
 {
     // A query/path string value is never null-and-empty at once, and string.Split always
     // returns at least one element (an empty string splits to [""]), so a genuinely empty
-    // list can never reach the per-element loop below - only a blank entry can. This mirrors
-    // CliRunner.TryParseIdentifierList's identical reasoning for the same reason:
+    // list can never reach the per-element loop below - only a blank entry can. The CLI's
+    // CliArgumentReader.TryParseIdentifierList reasons the same way:
     // NonEmptyCollectionValidator's zero-element branch is unreachable from this call site.
     public static (IReadOnlyList<string> Values, IResult? Problem) ParseIdentifierList(string? raw, string fieldName)
     {

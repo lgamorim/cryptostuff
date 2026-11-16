@@ -1,10 +1,11 @@
 using System.Text.Json;
 
-namespace CryptoStuff.Core.UnitTests;
+namespace CryptoStuff.Composition.UnitTests;
 
 public class UtcTimestampJsonConverterTests
 {
-    private static readonly JsonSerializerOptions Options = new() { Converters = { new UtcTimestampJsonConverter() } };
+    // The converter is reached the way both hosts reach it.
+    private static readonly JsonSerializerOptions Options = CryptoStuffJson.Configure(new JsonSerializerOptions());
 
     [Fact]
     public void Should_WriteZSuffixedUtc_When_ValueHasAZeroOffset()

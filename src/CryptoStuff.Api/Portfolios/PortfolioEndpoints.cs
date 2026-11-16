@@ -93,8 +93,7 @@ public static class PortfolioEndpoints
         }
 
         var result = await service.GetAsync(id, cancellationToken);
-        SetETagOnSuccess(response, result);
-        return ServiceResultHttp.Ok(result);
+        return OkWithETag(response, result);
     }
 
     /// <summary><c>POST /portfolios</c> — creates an empty portfolio.</summary>
@@ -135,16 +134,10 @@ public static class PortfolioEndpoints
         HttpResponse response,
         CancellationToken cancellationToken)
     {
-        var idProblem = RequestValidation.ValidateId(id, "id");
-        if (idProblem is not null)
+        var (expectedVersions, targetProblem) = ParseWriteTarget(ifMatch, id);
+        if (targetProblem is not null)
         {
-            return idProblem;
-        }
-
-        var (expectedVersions, ifMatchProblem) = PortfolioETag.ParseIfMatch(ifMatch);
-        if (ifMatchProblem is not null)
-        {
-            return ifMatchProblem;
+            return targetProblem;
         }
 
         var nameProblem = RequestValidation.ValidateName(request?.Name, "name");
@@ -168,24 +161,17 @@ public static class PortfolioEndpoints
             ExpectedVersions = expectedVersions,
         };
         var result = await service.UpdateAsync(command, cancellationToken);
-        SetETagOnSuccess(response, result);
-        return ServiceResultHttp.Ok(result);
+        return OkWithETag(response, result);
     }
 
     /// <summary><c>DELETE /portfolios/{id}</c> — deletes a portfolio with all its transactions.</summary>
     public static async Task<IResult> DeleteAsync(
         int id, [FromHeader(Name = "If-Match")] string? ifMatch, IPortfolioService service, CancellationToken cancellationToken)
     {
-        var idProblem = RequestValidation.ValidateId(id, "id");
-        if (idProblem is not null)
+        var (expectedVersions, targetProblem) = ParseWriteTarget(ifMatch, id);
+        if (targetProblem is not null)
         {
-            return idProblem;
-        }
-
-        var (expectedVersions, ifMatchProblem) = PortfolioETag.ParseIfMatch(ifMatch);
-        if (ifMatchProblem is not null)
-        {
-            return ifMatchProblem;
+            return targetProblem;
         }
 
         var result = await service.DeleteAsync(id, expectedVersions, cancellationToken);
@@ -201,16 +187,10 @@ public static class PortfolioEndpoints
         HttpResponse response,
         CancellationToken cancellationToken)
     {
-        var idProblem = RequestValidation.ValidateId(id, "id");
-        if (idProblem is not null)
+        var (expectedVersions, targetProblem) = ParseWriteTarget(ifMatch, id);
+        if (targetProblem is not null)
         {
-            return idProblem;
-        }
-
-        var (expectedVersions, ifMatchProblem) = PortfolioETag.ParseIfMatch(ifMatch);
-        if (ifMatchProblem is not null)
-        {
-            return ifMatchProblem;
+            return targetProblem;
         }
 
         var (details, transactionProblem) = PortfolioRequestValidation.ParseTransaction(request);
@@ -271,16 +251,10 @@ public static class PortfolioEndpoints
         HttpResponse response,
         CancellationToken cancellationToken)
     {
-        var idProblem = RequestValidation.ValidateId(id, "id") ?? RequestValidation.ValidateId(txId, "txId");
-        if (idProblem is not null)
+        var (expectedVersions, targetProblem) = ParseWriteTarget(ifMatch, id, txId);
+        if (targetProblem is not null)
         {
-            return idProblem;
-        }
-
-        var (expectedVersions, ifMatchProblem) = PortfolioETag.ParseIfMatch(ifMatch);
-        if (ifMatchProblem is not null)
-        {
-            return ifMatchProblem;
+            return targetProblem;
         }
 
         var (details, transactionProblem) = PortfolioRequestValidation.ParseTransaction(request);
@@ -292,8 +266,7 @@ public static class PortfolioEndpoints
         // ParseTransaction returns details whenever it returns no problem.
         var command = new ReplaceTransactionCommand { PortfolioId = id, TransactionId = txId, Transaction = details!, ExpectedVersions = expectedVersions };
         var result = await service.ReplaceTransactionAsync(command, cancellationToken);
-        SetETagOnSuccess(response, result);
-        return ServiceResultHttp.Ok(result);
+        return OkWithETag(response, result);
     }
 
     /// <summary><c>DELETE /portfolios/{id}/transactions/{txId}</c> — deletes a transaction; the response is the whole portfolio.</summary>
@@ -305,22 +278,15 @@ public static class PortfolioEndpoints
         HttpResponse response,
         CancellationToken cancellationToken)
     {
-        var idProblem = RequestValidation.ValidateId(id, "id") ?? RequestValidation.ValidateId(txId, "txId");
-        if (idProblem is not null)
+        var (expectedVersions, targetProblem) = ParseWriteTarget(ifMatch, id, txId);
+        if (targetProblem is not null)
         {
-            return idProblem;
-        }
-
-        var (expectedVersions, ifMatchProblem) = PortfolioETag.ParseIfMatch(ifMatch);
-        if (ifMatchProblem is not null)
-        {
-            return ifMatchProblem;
+            return targetProblem;
         }
 
         var command = new RemoveTransactionCommand { PortfolioId = id, TransactionId = txId, ExpectedVersions = expectedVersions };
         var result = await service.RemoveTransactionAsync(command, cancellationToken);
-        SetETagOnSuccess(response, result);
-        return ServiceResultHttp.Ok(result);
+        return OkWithETag(response, result);
     }
 
     /// <summary><c>GET /portfolios/{id}/valuation</c> — the portfolio's holdings valued at live prices.</summary>
@@ -333,6 +299,22 @@ public static class PortfolioEndpoints
         }
 
         var result = await service.GetValuationAsync(id, cancellationToken);
+        return ServiceResultHttp.Ok(result);
+    }
+
+    // Every conditional write names a portfolio, and maybe one of its
+    // transactions, then the versions it expects. The ids are checked first,
+    // so a malformed id is reported before a malformed If-Match.
+    private static (IReadOnlyCollection<int>? ExpectedVersions, IResult? Problem) ParseWriteTarget(string? ifMatch, int id, int? txId = null)
+    {
+        var idProblem = RequestValidation.ValidateId(id, "id")
+            ?? (txId is { } transactionId ? RequestValidation.ValidateId(transactionId, "txId") : null);
+        return idProblem is not null ? (null, idProblem) : PortfolioETag.ParseIfMatch(ifMatch);
+    }
+
+    private static IResult OkWithETag(HttpResponse response, ServiceResult<PortfolioView> result)
+    {
+        SetETagOnSuccess(response, result);
         return ServiceResultHttp.Ok(result);
     }
 

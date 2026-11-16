@@ -65,6 +65,12 @@
   It also sets `GenerateDocumentationFile` so `IDE0005` (unused usings) runs
   on build, with `CS1591` suppressed: `archetype/application.md` requires XML
   docs only where intent isn't obvious.
+- A generic type's file takes the type's bare name (`CoinGeckoResponse<TValue>`
+  in `CoinGeckoResponse.cs`). When a non-generic sibling already holds that
+  name, the generic one's file appends `OfT` (`ServiceResult<TValue>` in
+  `ServiceResultOfT.cs`, beside `ServiceResult.cs`). This is how this repo meets
+  `core/coding-standards.md`'s "file name matches the type name" for generic
+  types; don't rename to `ServiceResult{TValue}.cs` or similar.
 - Add projects to `cryptostuff.slnx` with plain `dotnet sln add <path>`, never
   `--in-root`. That flag suppresses the `<Folder Name="/src/">` and
   `<Folder Name="/test/">` elements, so IDEs show every project flat at the

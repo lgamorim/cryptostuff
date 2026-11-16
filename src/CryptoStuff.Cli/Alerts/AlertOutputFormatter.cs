@@ -1,6 +1,6 @@
 using System.Globalization;
 using System.Text.Json;
-using System.Text.Json.Serialization;
+using CryptoStuff.Composition;
 using CryptoStuff.Core;
 using CryptoStuff.Core.Alerts;
 
@@ -9,12 +9,8 @@ namespace CryptoStuff.Cli.Alerts;
 /// <summary>Renders alert views as either indented JSON or human-readable text.</summary>
 public static class AlertOutputFormatter
 {
-    // Enums travel as the kebab-case tokens Core parses, in JSON as in text; timestamps as UTC ending in Z.
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        WriteIndented = true,
-        Converters = { new JsonStringEnumConverter(JsonNamingPolicy.KebabCaseLower), new UtcTimestampJsonConverter() },
-    };
+    // The hosts' JSON shape: enums as the tokens the text output prints, timestamps as UTC ending in Z.
+    private static readonly JsonSerializerOptions JsonOptions = CryptoStuffJson.Configure(new JsonSerializerOptions { WriteIndented = true });
 
     /// <summary>Formats one alert.</summary>
     public static string Format(AlertView view, bool json) =>

@@ -1,7 +1,8 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using CryptoStuff.Core;
 
-namespace CryptoStuff.Core;
+namespace CryptoStuff.Composition;
 
 /// <summary>
 /// Writes a <see cref="DateTimeOffset"/> as UTC text ending in <c>Z</c>, and
@@ -9,7 +10,7 @@ namespace CryptoStuff.Core;
 /// applies to request timestamps: text without an offset names no instant, so
 /// it is refused rather than read as the server's local time.
 /// </summary>
-public sealed class UtcTimestampJsonConverter : JsonConverter<DateTimeOffset>
+internal sealed class UtcTimestampJsonConverter : JsonConverter<DateTimeOffset>
 {
     /// <inheritdoc />
     // A token other than a string makes GetString throw, which the serializer
