@@ -1,3 +1,4 @@
+using System.Data.Common;
 using System.Globalization;
 using CryptoStuff.Core;
 using CryptoStuff.Core.Alerts;
@@ -5,6 +6,7 @@ using CryptoStuff.Persistence.Alerts;
 using CryptoStuff.Persistence.IntegrationTests.TestSupport;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 
 namespace CryptoStuff.Persistence.IntegrationTests.Alerts;
 
@@ -320,6 +322,25 @@ public sealed class AlertRepositoryTests : IAsyncLifetime
         armed.Should().OnlyContain(a => a.State == AlertState.Armed);
     }
 
+    // The background evaluation lists the armed alerts every tick, so that
+    // lookup must reach them through an index, already in id order, rather
+    // than read and sort every alert ever created.
+    [Fact]
+    public async Task Should_FindArmedAlertsThroughTheStateIndexWithoutSorting_When_ListingArmed()
+    {
+        var capture = new QueryCapture();
+        await using (var context = new CryptoStuffDbContext(
+            new DbContextOptionsBuilder<CryptoStuffDbContext>().UseSqlite(_database.ConnectionString).AddInterceptors(capture).Options))
+        {
+            await new AlertRepository(context).ListArmedAsync(Token);
+        }
+
+        var plan = await ExplainAsync(capture);
+
+        plan.Should().Contain(step => step.Contains("USING INDEX IX_PriceAlerts_State", StringComparison.Ordinal))
+            .And.NotContain(step => step.Contains("TEMP B-TREE", StringComparison.Ordinal));
+    }
+
     [Fact]
     public async Task Should_ListNothing_When_NoAlertIsArmed()
     {
@@ -507,6 +528,28 @@ public sealed class AlertRepositoryTests : IAsyncLifetime
         }
     }
 
+    // SQLite's plan for the captured query, one step's detail per element.
+    private async Task<List<string>> ExplainAsync(QueryCapture capture)
+    {
+        await using var connection = new SqliteConnection(_database.ConnectionString);
+        await connection.OpenAsync(Token);
+        await using var command = connection.CreateCommand();
+        command.CommandText = "EXPLAIN QUERY PLAN " + capture.CommandText;
+        foreach (var (name, value) in capture.Parameters)
+        {
+            command.Parameters.AddWithValue(name, value);
+        }
+
+        var steps = new List<string>();
+        await using var reader = await command.ExecuteReaderAsync(Token);
+        while (await reader.ReadAsync(Token))
+        {
+            steps.Add(reader.GetString(reader.GetOrdinal("detail")));
+        }
+
+        return steps;
+    }
+
     private async Task ExecuteAsync(string sql)
     {
         await using var context = _database.CreateContext();
@@ -545,4 +588,21 @@ public sealed class AlertRepositoryTests : IAsyncLifetime
     private static async Task<PriceAlert> FindSavedAsync(AlertRepository repository, int id) =>
         await repository.FindAsync(id, Token)
             ?? throw new InvalidOperationException($"Alert {id} was expected in the database but is missing.");
+
+    // Keeps the text and parameters of the last query a context ran.
+    private sealed class QueryCapture : DbCommandInterceptor
+    {
+        public string CommandText { get; private set; } = "";
+
+        public List<(string Name, object Value)> Parameters { get; } = [];
+
+        public override ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(
+            DbCommand command, CommandEventData eventData, InterceptionResult<DbDataReader> result, CancellationToken cancellationToken = default)
+        {
+            CommandText = command.CommandText;
+            Parameters.Clear();
+            Parameters.AddRange(command.Parameters.Cast<DbParameter>().Select(p => (p.ParameterName, p.Value ?? DBNull.Value)));
+            return base.ReaderExecutingAsync(command, eventData, result, cancellationToken);
+        }
+    }
 }

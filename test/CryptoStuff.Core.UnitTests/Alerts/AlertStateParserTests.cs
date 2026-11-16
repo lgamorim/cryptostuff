@@ -1,4 +1,3 @@
-using System.Text.Json;
 using CryptoStuff.Core.Alerts;
 
 namespace CryptoStuff.Core.UnitTests.Alerts;
@@ -68,14 +67,14 @@ public class AlertStateParserTests
         outcome.ErrorMessage.Should().Contain("State").And.Contain("armed").And.Contain("triggered");
     }
 
-    // The hosts print an enum with JsonNamingPolicy.KebabCaseLower, so every
-    // name printed that way has to parse back to the same state.
+    // EnumTokens writes the tokens the hosts print and the database stores,
+    // so every token it writes has to parse back to the same state.
     [Fact]
     public void Should_ParseEveryStateFromItsKebabCaseName_When_NameIsPrintedTheWayHostsPrintIt()
     {
         foreach (var state in Enum.GetValues<AlertState>())
         {
-            var token = JsonNamingPolicy.KebabCaseLower.ConvertName(state.ToString());
+            var token = EnumTokens.ToToken(state);
 
             AlertStateParser.TryParse(token, out var parsed).Should().BeTrue(token);
             parsed.Should().Be(state);

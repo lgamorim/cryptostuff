@@ -1,4 +1,3 @@
-using System.Text.Json;
 using CryptoStuff.Core.Portfolios;
 
 namespace CryptoStuff.Core.UnitTests.Portfolios;
@@ -53,14 +52,14 @@ public class CostBasisMethodParserTests
         parsed.Should().BeFalse();
     }
 
-    // The hosts print an enum with JsonNamingPolicy.KebabCaseLower, so every
-    // name printed that way has to parse back to the same method.
+    // EnumTokens writes the tokens the hosts print and the database stores,
+    // so every token it writes has to parse back to the same method.
     [Fact]
     public void Should_ParseEveryMethodFromItsKebabCaseName_When_NameIsPrintedTheWayHostsPrintIt()
     {
         foreach (var method in Enum.GetValues<CostBasisMethod>())
         {
-            var token = JsonNamingPolicy.KebabCaseLower.ConvertName(method.ToString());
+            var token = EnumTokens.ToToken(method);
 
             CostBasisMethodParser.TryParse(token, out var parsed).Should().BeTrue(token);
             parsed.Should().Be(method);

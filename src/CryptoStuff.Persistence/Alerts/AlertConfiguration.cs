@@ -32,10 +32,15 @@ internal sealed class AlertConfiguration : IEntityTypeConfiguration<PriceAlert>
         builder.Property(a => a.TriggeredPrice).HasColumnType("TEXT");
 
         builder.Property(a => a.Direction)
-            .HasConversion(direction => AlertTokens.ToToken(direction), token => AlertTokens.ToDirection(token));
+            .HasConversion(TokenConverter.For<AlertDirection>(AlertDirectionParser.TryParse, "alert direction"));
 
         builder.Property(a => a.State)
-            .HasConversion(state => AlertTokens.ToToken(state), token => AlertTokens.ToState(token));
+            .HasConversion(TokenConverter.For<AlertState>(AlertStateParser.TryParse, "alert state"));
+
+        // The background evaluation lists the armed alerts every tick. Each
+        // index entry also carries the row's id, the rowid an INTEGER PRIMARY
+        // KEY is, so the armed ones come back already in id order.
+        builder.HasIndex(a => a.State);
 
         // Stored as the UTC date and time without an offset, which SQLite reads
         // back as unspecified and so is stamped UTC again here. The converter

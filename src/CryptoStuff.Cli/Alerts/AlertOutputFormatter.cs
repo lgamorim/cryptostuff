@@ -44,16 +44,16 @@ public static class AlertOutputFormatter
         views.Count == 0
             ? "(no alerts)"
             : string.Join('\n', views.Select(view =>
-                $"{view.Id}: {view.CoinId} {Token(view.Direction)} {Invariant(view.Threshold)} {view.VsCurrency} ({Token(view.State)}{(view.AwaitingReset ? $", {AwaitingResetNote}" : string.Empty)})"));
+                $"{view.Id}: {view.CoinId} {EnumTokens.ToToken(view.Direction)} {Invariant(view.Threshold)} {view.VsCurrency} ({EnumTokens.ToToken(view.State)}{(view.AwaitingReset ? $", {AwaitingResetNote}" : string.Empty)})"));
 
     private static string FormatText(AlertView view) =>
         string.Join('\n',
             $"Id: {view.Id}",
             $"Coin: {view.CoinId}",
             $"Currency: {view.VsCurrency}",
-            $"Direction: {Token(view.Direction)}",
+            $"Direction: {EnumTokens.ToToken(view.Direction)}",
             $"Threshold: {Invariant(view.Threshold)}",
-            $"State: {Token(view.State)}{(view.AwaitingReset ? $" ({AwaitingResetNote})" : string.Empty)}",
+            $"State: {EnumTokens.ToToken(view.State)}{(view.AwaitingReset ? $" ({AwaitingResetNote})" : string.Empty)}",
             FormatTriggerLine(view),
             $"Version: {view.Version}");
 
@@ -84,12 +84,8 @@ public static class AlertOutputFormatter
     private static string FormatUnpricedAlert(UnpricedAlertView alert) => $"  {alert.Id}: {alert.CoinId} in {alert.VsCurrency}";
 
     private static string FormatTriggeredAlert(TriggeredAlertView alert) =>
-        $"  {alert.Id}: {alert.CoinId} {Token(alert.Direction)} {Invariant(alert.Threshold)} {alert.VsCurrency}"
+        $"  {alert.Id}: {alert.CoinId} {EnumTokens.ToToken(alert.Direction)} {Invariant(alert.Threshold)} {alert.VsCurrency}"
         + $", price {Invariant(alert.Price)} {alert.VsCurrency}, at {UtcTimestamp.Format(alert.TriggeredAt)}";
 
     private static string Invariant(decimal value) => value.ToString(CultureInfo.InvariantCulture);
-
-    private static string Token<TEnum>(TEnum value)
-        where TEnum : struct, Enum =>
-        JsonNamingPolicy.KebabCaseLower.ConvertName(value.ToString());
 }

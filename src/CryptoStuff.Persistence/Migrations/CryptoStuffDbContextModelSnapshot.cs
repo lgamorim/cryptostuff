@@ -57,6 +57,8 @@ namespace CryptoStuff.Persistence.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("State");
+
                     b.ToTable("PriceAlerts", (string)null);
                 });
 

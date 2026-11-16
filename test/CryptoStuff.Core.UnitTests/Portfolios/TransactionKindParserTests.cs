@@ -1,4 +1,3 @@
-using System.Text.Json;
 using CryptoStuff.Core.Portfolios;
 
 namespace CryptoStuff.Core.UnitTests.Portfolios;
@@ -51,14 +50,14 @@ public class TransactionKindParserTests
         parsed.Should().BeFalse();
     }
 
-    // The hosts print an enum with JsonNamingPolicy.KebabCaseLower, so every
-    // name printed that way has to parse back to the same kind.
+    // EnumTokens writes the tokens the hosts print and the database stores,
+    // so every token it writes has to parse back to the same kind.
     [Fact]
     public void Should_ParseEveryKindFromItsKebabCaseName_When_NameIsPrintedTheWayHostsPrintIt()
     {
         foreach (var kind in Enum.GetValues<TransactionKind>())
         {
-            var token = JsonNamingPolicy.KebabCaseLower.ConvertName(kind.ToString());
+            var token = EnumTokens.ToToken(kind);
 
             TransactionKindParser.TryParse(token, out var parsed).Should().BeTrue(token);
             parsed.Should().Be(kind);

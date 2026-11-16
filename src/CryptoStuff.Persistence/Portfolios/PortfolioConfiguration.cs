@@ -38,7 +38,7 @@ internal sealed class PortfolioConfiguration : IEntityTypeConfiguration<Portfoli
         builder.Property<int>(LastSequenceField).HasColumnName("LastSequence");
 
         builder.Property(p => p.CostBasisMethod)
-            .HasConversion(method => PortfolioTokens.ToToken(method), token => PortfolioTokens.ToCostBasisMethod(token));
+            .HasConversion(TokenConverter.For<CostBasisMethod>(CostBasisMethodParser.TryParse, "cost-basis method"));
 
         builder.Ignore(p => p.Transactions);
         // Owned, so a load always brings the whole ledger with the portfolio, and
@@ -64,7 +64,7 @@ internal sealed class PortfolioConfiguration : IEntityTypeConfiguration<Portfoli
                 utc => new DateTimeOffset(DateTime.SpecifyKind(utc, DateTimeKind.Utc)));
 
             transactions.Property(t => t.Kind)
-                .HasConversion(kind => PortfolioTokens.ToToken(kind), token => PortfolioTokens.ToTransactionKind(token));
+                .HasConversion(TokenConverter.For<TransactionKind>(TransactionKindParser.TryParse, "transaction kind"));
 
             // The domain never hands a portfolio's sequence out twice; the index
             // holds any other writer to the same rule. It leads with the foreign

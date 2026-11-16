@@ -1,4 +1,3 @@
-using System.Text.Json;
 using CryptoStuff.Composition;
 using CryptoStuff.Core;
 using CryptoStuff.Core.Alerts;
@@ -61,7 +60,7 @@ public sealed partial class AlertEvaluationBackgroundService(
         var evaluation = result.Value!;
         foreach (var alert in evaluation.Triggered)
         {
-            LogTriggered(alert.Id, alert.CoinId, alert.Price, alert.VsCurrency, ToToken(alert.Direction), alert.Threshold);
+            LogTriggered(alert.Id, alert.CoinId, alert.Price, alert.VsCurrency, EnumTokens.ToToken(alert.Direction), alert.Threshold);
         }
 
         ReportUnpriced(evaluation.Unpriced);
@@ -85,8 +84,6 @@ public sealed partial class AlertEvaluationBackgroundService(
 
         _unpriced = unpriced;
     }
-
-    private static string ToToken(AlertDirection direction) => JsonNamingPolicy.KebabCaseLower.ConvertName(direction.ToString());
 
     [LoggerMessage(EventId = 1, Level = LogLevel.Information,
         Message = "Alert {AlertId} triggered: {CoinId} is at {Price} {VsCurrency}, meeting its condition {Direction} {Threshold}.")]

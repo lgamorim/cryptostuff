@@ -1,4 +1,3 @@
-using System.Text.Json;
 using CryptoStuff.Core.Alerts;
 
 namespace CryptoStuff.Core.UnitTests.Alerts;
@@ -68,14 +67,14 @@ public class AlertDirectionParserTests
         outcome.ErrorMessage.Should().Contain("Direction").And.Contain("above").And.Contain("below");
     }
 
-    // The hosts print an enum with JsonNamingPolicy.KebabCaseLower, so every
-    // name printed that way has to parse back to the same direction.
+    // EnumTokens writes the tokens the hosts print and the database stores,
+    // so every token it writes has to parse back to the same direction.
     [Fact]
     public void Should_ParseEveryDirectionFromItsKebabCaseName_When_NameIsPrintedTheWayHostsPrintIt()
     {
         foreach (var direction in Enum.GetValues<AlertDirection>())
         {
-            var token = JsonNamingPolicy.KebabCaseLower.ConvertName(direction.ToString());
+            var token = EnumTokens.ToToken(direction);
 
             AlertDirectionParser.TryParse(token, out var parsed).Should().BeTrue(token);
             parsed.Should().Be(direction);

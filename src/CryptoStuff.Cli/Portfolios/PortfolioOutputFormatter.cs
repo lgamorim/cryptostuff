@@ -54,7 +54,7 @@ public static class PortfolioOutputFormatter
         views.Count == 0
             ? "(no portfolios)"
             : string.Join('\n', views.Select(view =>
-                $"{view.Id}: {TerminalText.Escape(view.Name)} ({view.VsCurrency}, {Token(view.CostBasisMethod)}, {FormatTransactionCount(view.Transactions.Count)})"));
+                $"{view.Id}: {TerminalText.Escape(view.Name)} ({view.VsCurrency}, {EnumTokens.ToToken(view.CostBasisMethod)}, {FormatTransactionCount(view.Transactions.Count)})"));
 
     private static string FormatText(PortfolioView view)
     {
@@ -63,7 +63,7 @@ public static class PortfolioOutputFormatter
             $"Id: {view.Id}",
             $"Name: {TerminalText.Escape(view.Name)}",
             $"Currency: {view.VsCurrency}",
-            $"Method: {Token(view.CostBasisMethod)}",
+            $"Method: {EnumTokens.ToToken(view.CostBasisMethod)}",
             $"Version: {view.Version}",
             view.Transactions.Count == 0 ? "Transactions: none" : "Transactions:",
         };
@@ -75,7 +75,7 @@ public static class PortfolioOutputFormatter
 
     private static string FormatText(PortfolioValuationView view)
     {
-        var lines = new List<string> { $"Portfolio: {view.PortfolioId} ({view.VsCurrency}, {Token(view.CostBasisMethod)})" };
+        var lines = new List<string> { $"Portfolio: {view.PortfolioId} ({view.VsCurrency}, {EnumTokens.ToToken(view.CostBasisMethod)})" };
 
         if (view.Coins.Count == 0)
         {
@@ -104,14 +104,10 @@ public static class PortfolioOutputFormatter
     private static string Computed(decimal value) => value.ToString(ComputedFigureFormat, CultureInfo.InvariantCulture);
 
     private static string FormatTransaction(PortfolioTransactionView transaction, string vsCurrency) =>
-        $"  {transaction.Id}: {UtcTimestamp.Format(transaction.OccurredAt)} {Token(transaction.Kind)} {Invariant(transaction.Quantity)} {transaction.CoinId}"
+        $"  {transaction.Id}: {UtcTimestamp.Format(transaction.OccurredAt)} {EnumTokens.ToToken(transaction.Kind)} {Invariant(transaction.Quantity)} {transaction.CoinId}"
         + $" @ {Invariant(transaction.UnitPrice)} {vsCurrency}, fee {Invariant(transaction.Fee)} {vsCurrency}";
 
     private static string Invariant(decimal value) => value.ToString(CultureInfo.InvariantCulture);
 
     private static string FormatTransactionCount(int count) => count == 1 ? "1 transaction" : $"{count} transactions";
-
-    private static string Token<TEnum>(TEnum value)
-        where TEnum : struct, Enum =>
-        JsonNamingPolicy.KebabCaseLower.ConvertName(value.ToString());
 }
