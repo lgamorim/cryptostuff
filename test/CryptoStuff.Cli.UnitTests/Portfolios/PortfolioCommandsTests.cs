@@ -15,7 +15,7 @@ public class PortfolioCommandsTests
 
     public PortfolioCommandsTests()
     {
-        _runner = new CliRunner(_market, _output, _error, portfolios: () => _portfolios);
+        _runner = new CliRunner(_market, TestStoredFeatures.With(portfolios: () => _portfolios), _output, _error);
     }
 
     [Fact]

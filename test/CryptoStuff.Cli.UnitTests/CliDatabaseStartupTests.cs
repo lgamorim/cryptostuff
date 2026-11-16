@@ -5,6 +5,12 @@ namespace CryptoStuff.Cli.UnitTests;
 public class CliDatabaseStartupTests
 {
     private readonly StringWriter _error = new();
+    private readonly CliResultWriter _writer;
+
+    public CliDatabaseStartupTests()
+    {
+        _writer = new CliResultWriter(TextWriter.Null, _error);
+    }
 
     public static TheoryData<Exception> DatabaseFailures => new()
     {
@@ -19,7 +25,7 @@ public class CliDatabaseStartupTests
     [Fact]
     public async Task Should_ReturnZeroAndWriteNothing_When_MigrationSucceeds()
     {
-        var exitCode = await CliDatabaseStartup.MigrateAsync(_ => Task.CompletedTask, _error, CancellationToken.None);
+        var exitCode = await CliDatabaseStartup.MigrateAsync(_ => Task.CompletedTask, _writer, CancellationToken.None);
 
         exitCode.Should().Be(0);
         _error.ToString().Should().BeEmpty();
@@ -37,7 +43,7 @@ public class CliDatabaseStartupTests
                 captured = cancellationToken;
                 return Task.CompletedTask;
             },
-            _error,
+            _writer,
             cancellationTokenSource.Token);
 
         captured.Should().Be(cancellationTokenSource.Token);
@@ -47,7 +53,7 @@ public class CliDatabaseStartupTests
     [MemberData(nameof(DatabaseFailures))]
     public async Task Should_ReturnOneAndWriteErrorLine_When_DatabaseCannotBeOpenedOrMigrated(Exception failure)
     {
-        var exitCode = await CliDatabaseStartup.MigrateAsync(_ => Task.FromException(failure), _error, CancellationToken.None);
+        var exitCode = await CliDatabaseStartup.MigrateAsync(_ => Task.FromException(failure), _writer, CancellationToken.None);
 
         exitCode.Should().Be(1);
         _error.ToString().Should().Be($"Error: the database could not be opened or migrated. {failure.Message}\n");
@@ -58,7 +64,7 @@ public class CliDatabaseStartupTests
     {
         var exitCode = await CliDatabaseStartup.MigrateAsync(
             _ => throw new SqliteException("SQLite Error 26: 'file is not a database'.", 26),
-            _error,
+            _writer,
             CancellationToken.None);
 
         exitCode.Should().Be(1);
@@ -73,7 +79,7 @@ public class CliDatabaseStartupTests
 
         var exitCode = await CliDatabaseStartup.MigrateAsync(
             cancellationToken => Task.FromCanceled(cancellationToken),
-            _error,
+            _writer,
             cancellationTokenSource.Token);
 
         exitCode.Should().Be(130);
@@ -85,133 +91,9 @@ public class CliDatabaseStartupTests
     {
         var failure = new InvalidDataException("PriceAlerts.State holds 'snoozed', which is not an alert state this version knows.");
 
-        var exitCode = await CliDatabaseStartup.MigrateAsync(_ => Task.FromException(failure), _error, CancellationToken.None);
+        var exitCode = await CliDatabaseStartup.MigrateAsync(_ => Task.FromException(failure), _writer, CancellationToken.None);
 
         exitCode.Should().Be(1);
         _error.ToString().Should().Be($"Error: the database holds data this version cannot read. {failure.Message}\n");
-    }
-
-    [Theory]
-    [InlineData("price")]
-    [InlineData("token")]
-    [InlineData("history")]
-    [InlineData("coin")]
-    [InlineData("developer")]
-    public async Task Should_NotInvokeMigration_When_CommandOnlyUsesCoinGecko(string command)
-    {
-        var migrated = false;
-
-        var exitCode = await CliDatabaseStartup.MigrateIfRequiredAsync(
-            CliArgumentParser.Parse([command, "bitcoin", "usd"]),
-            _ =>
-            {
-                migrated = true;
-                return Task.CompletedTask;
-            },
-            _error,
-            CancellationToken.None);
-
-        exitCode.Should().Be(0);
-        migrated.Should().BeFalse();
-    }
-
-    [Fact]
-    public async Task Should_InvokeMigrationOnceWithToken_When_CommandUsesTheDatabase()
-    {
-        using var cancellationTokenSource = new CancellationTokenSource();
-        var captured = new List<CancellationToken>();
-
-        var exitCode = await CliDatabaseStartup.MigrateIfRequiredAsync(
-            CliArgumentParser.Parse(["watchlist", "list"]),
-            cancellationToken =>
-            {
-                captured.Add(cancellationToken);
-                return Task.CompletedTask;
-            },
-            _error,
-            cancellationTokenSource.Token);
-
-        exitCode.Should().Be(0);
-        captured.Should().Equal(cancellationTokenSource.Token);
-    }
-
-    [Theory]
-    [InlineData(null)]
-    [InlineData("bogus")]
-    [InlineData("WATCHLIST")]
-    [InlineData("PORTFOLIO")]
-    [InlineData("ALERT")]
-    public async Task Should_NotInvokeMigration_When_CommandIsMissingOrUnrecognized(string? command)
-    {
-        var migrated = false;
-        string[] args = command is null ? [] : [command];
-
-        var exitCode = await CliDatabaseStartup.MigrateIfRequiredAsync(
-            CliArgumentParser.Parse(args),
-            _ =>
-            {
-                migrated = true;
-                return Task.CompletedTask;
-            },
-            _error,
-            CancellationToken.None);
-
-        exitCode.Should().Be(0);
-        migrated.Should().BeFalse();
-    }
-
-    [Fact]
-    public async Task Should_ReturnOneAndWriteErrorLine_When_DatabaseCommandCannotMigrate()
-    {
-        var failure = new SqliteException("SQLite Error 26: 'file is not a database'.", 26);
-
-        var exitCode = await CliDatabaseStartup.MigrateIfRequiredAsync(
-            CliArgumentParser.Parse(["watchlist", "list"]),
-            _ => Task.FromException(failure),
-            _error,
-            CancellationToken.None);
-
-        exitCode.Should().Be(1);
-        _error.ToString().Should().Be($"Error: the database could not be opened or migrated. {failure.Message}\n");
-    }
-
-    [Fact]
-    public async Task Should_Return130_When_DatabaseCommandMigrationCanceled()
-    {
-        using var cancellationTokenSource = new CancellationTokenSource();
-        await cancellationTokenSource.CancelAsync();
-
-        var exitCode = await CliDatabaseStartup.MigrateIfRequiredAsync(
-            CliArgumentParser.Parse(["watchlist", "list"]),
-            cancellationToken => Task.FromCanceled(cancellationToken),
-            _error,
-            cancellationTokenSource.Token);
-
-        exitCode.Should().Be(130);
-        _error.ToString().Should().BeEmpty();
-    }
-
-    [Theory]
-    [InlineData("watchlist", "list")]
-    [InlineData("portfolio", "list")]
-    [InlineData("portfolio", "tx", "delete", "1", "2")]
-    [InlineData("alert", "list")]
-    [InlineData("alert", "check")]
-    public async Task Should_InvokeMigrationOnce_When_CommandIsAStoredFeature(params string[] args)
-    {
-        var migrations = 0;
-
-        var exitCode = await CliDatabaseStartup.MigrateIfRequiredAsync(
-            CliArgumentParser.Parse(args),
-            _ =>
-            {
-                migrations++;
-                return Task.CompletedTask;
-            },
-            _error,
-            CancellationToken.None);
-
-        exitCode.Should().Be(0);
-        migrations.Should().Be(1);
     }
 }

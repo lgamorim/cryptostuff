@@ -28,7 +28,7 @@ public class PortfolioFailureTests
 
     public PortfolioFailureTests()
     {
-        _runner = new CliRunner(_market, _output, _error, portfolios: () => _portfolios);
+        _runner = new CliRunner(_market, TestStoredFeatures.With(portfolios: () => _portfolios), _output, _error);
     }
 
     public static TheoryData<string[]> Subcommands => new(SubcommandArguments);

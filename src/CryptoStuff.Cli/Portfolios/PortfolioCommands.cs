@@ -20,6 +20,13 @@ public sealed class PortfolioCommands
     }
 
     /// <summary>
+    /// Whether <paramref name="parsed"/> is one of the two transaction writes,
+    /// the only invocations <c>--fee</c> belongs to.
+    /// </summary>
+    public static bool TakesFee(CliArguments parsed) =>
+        parsed is { Command: Name, Arguments: ["tx", "add" or "edit", ..] };
+
+    /// <summary>
     /// Executes the subcommand named by the first argument of <paramref name="parsed"/>;
     /// a missing or unknown subcommand, or the wrong number of arguments, prints the usage.
     /// </summary>
@@ -30,10 +37,6 @@ public sealed class PortfolioCommands
                 AddTransactionAsync(rawId, new RawTransaction(kind, coin, quantity, price, when), parsed, cancellationToken),
             ["tx", "edit", var rawId, var rawTransactionId, var kind, var coin, var quantity, var price, var when] =>
                 EditTransactionAsync(rawId, rawTransactionId, new RawTransaction(kind, coin, quantity, price, when), parsed, cancellationToken),
-
-            // Only the two transaction writes above take --fee.
-            _ when parsed.Fee is not null => Task.FromResult(_writer.WriteUsage()),
-
             ["list"] => ListAsync(parsed, cancellationToken),
             ["create", var name, var currency, var rawMethod] => CreateAsync(name, currency, rawMethod, parsed, cancellationToken),
             ["show", var rawId] => ShowAsync(rawId, parsed, cancellationToken),

@@ -56,7 +56,7 @@ public class WatchlistCommandsTests
 
     public WatchlistCommandsTests()
     {
-        _runner = new CliRunner(_market, _output, _error, () => _watchlists);
+        _runner = new CliRunner(_market, TestStoredFeatures.With(watchlists: () => _watchlists), _output, _error);
     }
 
     [Fact]

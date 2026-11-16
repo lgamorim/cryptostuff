@@ -25,6 +25,13 @@ public sealed class AlertCommands
     }
 
     /// <summary>
+    /// Whether <paramref name="parsed"/> is <c>alert check</c>, the only
+    /// invocation <c>--exit-code</c> belongs to.
+    /// </summary>
+    public static bool TakesExitCode(CliArguments parsed) =>
+        parsed is { Command: Name, Arguments: ["check", ..] };
+
+    /// <summary>
     /// Executes the subcommand named by the first argument of <paramref name="parsed"/>;
     /// a missing or unknown subcommand, or the wrong number of arguments, prints the usage.
     /// </summary>
@@ -32,8 +39,6 @@ public sealed class AlertCommands
         parsed.Arguments switch
         {
             ["check"] => CheckAsync(parsed, cancellationToken),
-            // Only check above takes --exit-code.
-            _ when parsed.ExitCodeOnTrigger => Task.FromResult(_writer.WriteUsage()),
             ["list"] => ListAsync(parsed, cancellationToken),
             ["create", var coin, var currency, var rawDirection, var rawThreshold] =>
                 CreateAsync(coin, currency, rawDirection, rawThreshold, parsed, cancellationToken),

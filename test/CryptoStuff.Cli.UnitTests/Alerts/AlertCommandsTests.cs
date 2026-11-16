@@ -16,7 +16,7 @@ public class AlertCommandsTests
 
     public AlertCommandsTests()
     {
-        _runner = new CliRunner(_market, _output, _error, alerts: () => _alerts, alertEvaluator: () => _evaluator);
+        _runner = new CliRunner(_market, TestStoredFeatures.With(alerts: () => _alerts, alertEvaluator: () => _evaluator), _output, _error);
     }
 
     [Fact]

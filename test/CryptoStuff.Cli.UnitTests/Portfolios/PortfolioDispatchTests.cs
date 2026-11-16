@@ -22,7 +22,7 @@ public class PortfolioDispatchTests
     public async Task Should_ListPortfolioCommandsInUsage_When_NoCommandGiven(string expectedLine)
     {
         // Arrange
-        var runner = new CliRunner(_market, _output, _error, portfolios: () => _portfolios);
+        var runner = new CliRunner(_market, TestStoredFeatures.With(portfolios: () => _portfolios), _output, _error);
 
         // Act
         var exitCode = await runner.RunAsync([], CancellationToken.None);
@@ -30,21 +30,6 @@ public class PortfolioDispatchTests
         // Assert
         exitCode.Should().Be(1);
         _error.ToString().Should().Contain(expectedLine);
-    }
-
-    [Fact]
-    public async Task Should_ReturnOneAndUsage_When_PortfolioServiceIsNotAvailable()
-    {
-        // Arrange
-        var runner = new CliRunner(_market, _output, _error);
-
-        // Act
-        var exitCode = await runner.RunAsync(["portfolio", "list"], CancellationToken.None);
-
-        // Assert
-        exitCode.Should().Be(1);
-        _error.ToString().Should().Contain("Usage:");
-        _portfolios.CallCount.Should().Be(0);
     }
 
     [Theory]
@@ -56,11 +41,12 @@ public class PortfolioDispatchTests
     {
         // Arrange
         var resolved = false;
-        var runner = new CliRunner(_market, _output, _error, portfolios: () =>
+        var storedFeatures = TestStoredFeatures.With(portfolios: () =>
         {
             resolved = true;
             return _portfolios;
         });
+        var runner = new CliRunner(_market, storedFeatures, _output, _error);
 
         // Act
         await runner.RunAsync(args, CancellationToken.None);
@@ -73,7 +59,7 @@ public class PortfolioDispatchTests
     public async Task Should_NotCallCryptocurrencyService_When_PortfolioCommandRuns()
     {
         // Arrange
-        var runner = new CliRunner(_market, _output, _error, portfolios: () => _portfolios);
+        var runner = new CliRunner(_market, TestStoredFeatures.With(portfolios: () => _portfolios), _output, _error);
 
         // Act
         await runner.RunAsync(["portfolio", "value", "1"], CancellationToken.None);
@@ -110,10 +96,13 @@ public class PortfolioDispatchTests
     [InlineData("tx", "delete", "1", "2", "3")]
     [InlineData("tx", "add", "1", "buy", "bitcoin", "1", "1", "2024-01-31T14:30:00Z", "--fee")]
     [InlineData("tx", "add", "1", "buy", "bitcoin", "1", "1", "2024-01-31T14:30:00Z", "--fee", "1", "--fee", "2")]
+    [InlineData("tx", "add", "1", "buy", "bitcoin", "1", "1", "--fee", "1")]
+    [InlineData("tx", "edit", "1", "2", "buy", "bitcoin", "1", "1", "2024-01-31T14:30:00Z", "extra", "--fee", "1")]
+    [InlineData("tx", "bogus", "--fee", "1")]
     public async Task Should_ReturnOneAndUsageWithoutCallingService_When_SubcommandIsMissingUnknownOrMalformed(params string[] subcommand)
     {
         // Arrange
-        var runner = new CliRunner(_market, _output, _error, portfolios: () => _portfolios);
+        var runner = new CliRunner(_market, TestStoredFeatures.With(portfolios: () => _portfolios), _output, _error);
 
         // Act
         var exitCode = await runner.RunAsync(["portfolio", .. subcommand], CancellationToken.None);

@@ -21,7 +21,7 @@ public class WatchlistDispatchTests
     public async Task Should_ListWatchlistCommandsInUsage_When_NoCommandGiven(string expectedLine)
     {
         // Arrange
-        var runner = new CliRunner(_market, _output, _error, () => _watchlists);
+        var runner = new CliRunner(_market, TestStoredFeatures.With(watchlists: () => _watchlists), _output, _error);
 
         // Act
         var exitCode = await runner.RunAsync([], CancellationToken.None);
@@ -29,21 +29,6 @@ public class WatchlistDispatchTests
         // Assert
         exitCode.Should().Be(1);
         _error.ToString().Should().Contain(expectedLine);
-    }
-
-    [Fact]
-    public async Task Should_ReturnOneAndUsage_When_WatchlistServiceIsNotAvailable()
-    {
-        // Arrange
-        var runner = new CliRunner(_market, _output, _error);
-
-        // Act
-        var exitCode = await runner.RunAsync(["watchlist", "list"], CancellationToken.None);
-
-        // Assert
-        exitCode.Should().Be(1);
-        _error.ToString().Should().Contain("Usage:");
-        _watchlists.CallCount.Should().Be(0);
     }
 
     [Theory]
@@ -54,11 +39,12 @@ public class WatchlistDispatchTests
     {
         // Arrange
         var resolved = false;
-        var runner = new CliRunner(_market, _output, _error, () =>
+        var storedFeatures = TestStoredFeatures.With(watchlists: () =>
         {
             resolved = true;
             return _watchlists;
         });
+        var runner = new CliRunner(_market, storedFeatures, _output, _error);
 
         // Act
         await runner.RunAsync(args, CancellationToken.None);
@@ -71,7 +57,7 @@ public class WatchlistDispatchTests
     public async Task Should_NotCallCryptocurrencyService_When_WatchlistCommandRuns()
     {
         // Arrange
-        var runner = new CliRunner(_market, _output, _error, () => _watchlists);
+        var runner = new CliRunner(_market, TestStoredFeatures.With(watchlists: () => _watchlists), _output, _error);
 
         // Act
         await runner.RunAsync(["watchlist", "list"], CancellationToken.None);
@@ -103,7 +89,7 @@ public class WatchlistDispatchTests
     public async Task Should_ReturnOneAndUsageWithoutCallingService_When_SubcommandIsMissingUnknownOrMalformed(params string[] subcommand)
     {
         // Arrange
-        var runner = new CliRunner(_market, _output, _error, () => _watchlists);
+        var runner = new CliRunner(_market, TestStoredFeatures.With(watchlists: () => _watchlists), _output, _error);
 
         // Act
         var exitCode = await runner.RunAsync(["watchlist", .. subcommand], CancellationToken.None);

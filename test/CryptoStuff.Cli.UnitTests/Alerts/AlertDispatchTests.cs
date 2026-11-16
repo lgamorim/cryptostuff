@@ -21,7 +21,7 @@ public class AlertDispatchTests
     public async Task Should_ListAlertCommandsInUsage_When_NoCommandGiven(string expectedLine)
     {
         // Arrange
-        var runner = new CliRunner(_market, _output, _error, alerts: () => _alerts, alertEvaluator: () => _evaluator);
+        var runner = new CliRunner(_market, TestStoredFeatures.With(alerts: () => _alerts, alertEvaluator: () => _evaluator), _output, _error);
 
         // Act
         var exitCode = await runner.RunAsync([], CancellationToken.None);
@@ -29,36 +29,6 @@ public class AlertDispatchTests
         // Assert
         exitCode.Should().Be(1);
         _error.ToString().Should().Contain(expectedLine);
-    }
-
-    [Fact]
-    public async Task Should_ReturnOneAndUsage_When_AlertServicesAreNotAvailable()
-    {
-        // Arrange
-        var runner = new CliRunner(_market, _output, _error);
-
-        // Act
-        var exitCode = await runner.RunAsync(["alert", "list"], CancellationToken.None);
-
-        // Assert
-        exitCode.Should().Be(1);
-        _error.ToString().Should().Contain("Usage:");
-        _alerts.CallCount.Should().Be(0);
-    }
-
-    [Fact]
-    public async Task Should_ReturnOneAndUsage_When_OnlyTheAlertServiceIsAvailable()
-    {
-        // Arrange
-        var runner = new CliRunner(_market, _output, _error, alerts: () => _alerts);
-
-        // Act
-        var exitCode = await runner.RunAsync(["alert", "check"], CancellationToken.None);
-
-        // Assert
-        exitCode.Should().Be(1);
-        _error.ToString().Should().Contain("Usage:");
-        _evaluator.CallCount.Should().Be(0);
     }
 
     [Theory]
@@ -71,10 +41,7 @@ public class AlertDispatchTests
     {
         // Arrange
         var resolved = false;
-        var runner = new CliRunner(
-            _market,
-            _output,
-            _error,
+        var storedFeatures = TestStoredFeatures.With(
             alerts: () =>
             {
                 resolved = true;
@@ -85,6 +52,7 @@ public class AlertDispatchTests
                 resolved = true;
                 return _evaluator;
             });
+        var runner = new CliRunner(_market, storedFeatures, _output, _error);
 
         // Act
         await runner.RunAsync(args, CancellationToken.None);
@@ -97,7 +65,7 @@ public class AlertDispatchTests
     public async Task Should_NotCallCryptocurrencyService_When_AlertCommandRuns()
     {
         // Arrange
-        var runner = new CliRunner(_market, _output, _error, alerts: () => _alerts, alertEvaluator: () => _evaluator);
+        var runner = new CliRunner(_market, TestStoredFeatures.With(alerts: () => _alerts, alertEvaluator: () => _evaluator), _output, _error);
 
         // Act
         await runner.RunAsync(["alert", "check"], CancellationToken.None);
@@ -125,10 +93,12 @@ public class AlertDispatchTests
     [InlineData("rearm", "1", "2")]
     [InlineData("check", "extra")]
     [InlineData("check", "1")]
+    [InlineData("check", "extra", "--exit-code")]
+    [InlineData("--exit-code")]
     public async Task Should_ReturnOneAndUsageWithoutCallingAnything_When_SubcommandIsMissingUnknownOrMalformed(params string[] subcommand)
     {
         // Arrange
-        var runner = new CliRunner(_market, _output, _error, alerts: () => _alerts, alertEvaluator: () => _evaluator);
+        var runner = new CliRunner(_market, TestStoredFeatures.With(alerts: () => _alerts, alertEvaluator: () => _evaluator), _output, _error);
 
         // Act
         var exitCode = await runner.RunAsync(["alert", .. subcommand], CancellationToken.None);
@@ -148,7 +118,7 @@ public class AlertDispatchTests
     public async Task Should_ReturnOneAndUsage_When_FeeOptionIsGiven(params string[] subcommand)
     {
         // Arrange
-        var runner = new CliRunner(_market, _output, _error, alerts: () => _alerts, alertEvaluator: () => _evaluator);
+        var runner = new CliRunner(_market, TestStoredFeatures.With(alerts: () => _alerts, alertEvaluator: () => _evaluator), _output, _error);
 
         // Act
         var exitCode = await runner.RunAsync(["alert", .. subcommand, "--fee", "1"], CancellationToken.None);

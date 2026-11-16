@@ -44,30 +44,18 @@ Console.CancelKeyPress += (_, e) =>
     cancellationTokenSource.Cancel();
 };
 
-// Only before a command that uses the database, so it sees an up-to-date
-// schema; the CLI and the API share the file, and whichever starts first after
-// an upgrade migrates it. CoinGecko-only commands skip this entirely, since
-// EF Core's cold start costs about 640 ms per process.
-var migrationExitCode = await CliDatabaseStartup.MigrateIfRequiredAsync(
-    CliArgumentParser.Parse(args), provider.MigrateCryptoStuffDatabaseAsync, Console.Error, cancellationTokenSource.Token);
-if (migrationExitCode != 0)
-{
-    return migrationExitCode;
-}
-
 // One scope per invocation: the command's DbContext lives exactly as long as
 // the command, and is disposed before the process exits.
 await using var scope = provider.CreateAsyncScope();
 var cryptocurrencyService = scope.ServiceProvider.GetRequiredService<ICryptocurrencyService>();
 
-// Resolved on demand: building a stored-feature service constructs the
-// DbContext, which a CoinGecko-only command must not pay for.
-var runner = new CliRunner(
-    cryptocurrencyService,
-    Console.Out,
-    Console.Error,
+// The runner migrates, then resolves a stored-feature service, only for a
+// command that uses the database; the migration runs in a scope of its own.
+var storedFeatures = new CliStoredFeatures(
+    provider.MigrateCryptoStuffDatabaseAsync,
     () => scope.ServiceProvider.GetRequiredService<IWatchlistService>(),
     () => scope.ServiceProvider.GetRequiredService<IPortfolioService>(),
     () => scope.ServiceProvider.GetRequiredService<IAlertService>(),
     () => scope.ServiceProvider.GetRequiredService<IAlertEvaluator>());
+var runner = new CliRunner(cryptocurrencyService, storedFeatures, Console.Out, Console.Error);
 return await runner.RunAsync(args, cancellationTokenSource.Token);

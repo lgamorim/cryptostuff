@@ -1,7 +1,3 @@
-using CryptoStuff.Cli.Alerts;
-using CryptoStuff.Cli.Portfolios;
-using CryptoStuff.Cli.Watchlists;
-
 namespace CryptoStuff.Cli;
 
 /// <summary>
@@ -12,24 +8,15 @@ namespace CryptoStuff.Cli;
 public static class CliDatabaseStartup
 {
     /// <summary>
-    /// Migrates the database before <paramref name="parsed"/> runs when that
-    /// command uses it.
-    /// </summary>
-    public static Task<int> MigrateIfRequiredAsync(CliArguments parsed, Func<CancellationToken, Task> migrate, TextWriter error, CancellationToken cancellationToken) =>
-        parsed.Command is WatchlistCommands.Name or PortfolioCommands.Name or AlertCommands.Name
-            ? MigrateAsync(migrate, error, cancellationToken)
-            : Task.FromResult(0);
-
-    /// <summary>
     /// Runs <paramref name="migrate"/>, returning the exit code to stop with:
     /// <c>0</c> when it succeeded and the command may run, <c>130</c> if
     /// <paramref name="cancellationToken"/> was canceled, and <c>1</c> after
-    /// writing an error to <paramref name="error"/> for any other failure:
+    /// writing an error through <paramref name="writer"/> for any other failure:
     /// the database holds data this version cannot read, or could not be
     /// opened or migrated for any reason, so start-up never ends in a stack
     /// trace.
     /// </summary>
-    public static async Task<int> MigrateAsync(Func<CancellationToken, Task> migrate, TextWriter error, CancellationToken cancellationToken)
+    public static async Task<int> MigrateAsync(Func<CancellationToken, Task> migrate, CliResultWriter writer, CancellationToken cancellationToken)
     {
         try
         {
@@ -45,9 +32,7 @@ public static class CliDatabaseStartup
         // write; the message names the table, column and value.
         catch (InvalidDataException exception)
         {
-            error.Write($"Error: the database holds data this version cannot read. {exception.Message}");
-            error.Write('\n');
-            return 1;
+            return writer.WriteError($"Error: the database holds data this version cannot read. {exception.Message}");
         }
 
         // Most often a SqliteException (the file cannot be opened, is not a
@@ -57,9 +42,7 @@ public static class CliDatabaseStartup
         // reported the same way.
         catch (Exception exception)
         {
-            error.Write($"Error: the database could not be opened or migrated. {exception.Message}");
-            error.Write('\n');
-            return 1;
+            return writer.WriteError($"Error: the database could not be opened or migrated. {exception.Message}");
         }
     }
 }

@@ -102,13 +102,8 @@ public static class CliArgumentReader
     }
 
     /// <summary>Parses <paramref name="raw"/> as the <c>average-cost</c> or <c>fifo</c> token of a cost-basis method.</summary>
-    public static bool TryParseCostBasisMethod(string raw, string fieldName, out CostBasisMethod method, out string errorMessage)
-    {
-        var outcome = CostBasisMethodParser.Validate(raw, fieldName);
-        errorMessage = outcome.ErrorMessage ?? string.Empty;
-        method = default;
-        return outcome.IsValid && CostBasisMethodParser.TryParse(raw, out method);
-    }
+    public static bool TryParseCostBasisMethod(string raw, string fieldName, out CostBasisMethod method, out string errorMessage) =>
+        TryParseText(raw, fieldName, CostBasisMethodParser.TryParse, CostBasisMethodParser.Validate, out method, out errorMessage);
 
     /// <summary>
     /// Parses <paramref name="raw"/> as a decimal number, such as <c>0.5</c>
@@ -166,29 +161,37 @@ public static class CliArgumentReader
     }
 
     /// <summary>Parses <paramref name="raw"/> as the <c>buy</c> or <c>sell</c> token of a transaction kind.</summary>
-    public static bool TryParseTransactionKind(string raw, string fieldName, out TransactionKind kind, out string errorMessage)
-    {
-        var outcome = TransactionKindParser.Validate(raw, fieldName);
-        errorMessage = outcome.ErrorMessage ?? string.Empty;
-        kind = default;
-        return outcome.IsValid && TransactionKindParser.TryParse(raw, out kind);
-    }
+    public static bool TryParseTransactionKind(string raw, string fieldName, out TransactionKind kind, out string errorMessage) =>
+        TryParseText(raw, fieldName, TransactionKindParser.TryParse, TransactionKindParser.Validate, out kind, out errorMessage);
 
     /// <summary>Parses <paramref name="raw"/> as the <c>above</c> or <c>below</c> token of an alert direction.</summary>
-    public static bool TryParseAlertDirection(string raw, string fieldName, out AlertDirection direction, out string errorMessage)
-    {
-        var outcome = AlertDirectionParser.Validate(raw, fieldName);
-        errorMessage = outcome.ErrorMessage ?? string.Empty;
-        direction = default;
-        return outcome.IsValid && AlertDirectionParser.TryParse(raw, out direction);
-    }
+    public static bool TryParseAlertDirection(string raw, string fieldName, out AlertDirection direction, out string errorMessage) =>
+        TryParseText(raw, fieldName, AlertDirectionParser.TryParse, AlertDirectionParser.Validate, out direction, out errorMessage);
 
     /// <summary>Parses <paramref name="raw"/> as an ISO 8601 timestamp with a UTC offset, returned as the same instant in UTC.</summary>
-    public static bool TryParseTimestamp(string raw, string fieldName, out DateTimeOffset timestamp, out string errorMessage)
+    public static bool TryParseTimestamp(string raw, string fieldName, out DateTimeOffset timestamp, out string errorMessage) =>
+        TryParseText(raw, fieldName, TimestampFormatValidator.TryParse, TimestampFormatValidator.Validate, out timestamp, out errorMessage);
+
+    private delegate bool TextParser<TValue>(string? text, out TValue value);
+
+    // Parses once. Only text the parser rejects is validated, for its
+    // message: each Core parser's Validate fails exactly where its TryParse does.
+    private static bool TryParseText<TValue>(
+        string raw,
+        string fieldName,
+        TextParser<TValue> tryParse,
+        Func<string?, string, ValidationOutcome> validate,
+        out TValue value,
+        out string errorMessage)
     {
-        var outcome = TimestampFormatValidator.Validate(raw, fieldName);
-        errorMessage = outcome.ErrorMessage ?? string.Empty;
-        timestamp = default;
-        return outcome.IsValid && TimestampFormatValidator.TryParse(raw, out timestamp);
+        if (tryParse(raw, out value))
+        {
+            errorMessage = string.Empty;
+            return true;
+        }
+
+        // ValidationOutcome guarantees ErrorMessage is non-null when IsValid is false.
+        errorMessage = validate(raw, fieldName).ErrorMessage!;
+        return false;
     }
 }

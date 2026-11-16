@@ -12,7 +12,7 @@ public class CliRunnerTests
 
     public CliRunnerTests()
     {
-        _runner = new CliRunner(_service, _output, _error);
+        _runner = new CliRunner(_service, TestStoredFeatures.With(), _output, _error);
     }
 
     [Fact]

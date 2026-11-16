@@ -2,56 +2,38 @@ using CryptoStuff.Cli.Alerts;
 using CryptoStuff.Cli.Portfolios;
 using CryptoStuff.Cli.Watchlists;
 using CryptoStuff.Core;
-using CryptoStuff.Core.Alerts;
-using CryptoStuff.Core.Portfolios;
-using CryptoStuff.Core.Watchlists;
 
 namespace CryptoStuff.Cli;
 
 /// <summary>
 /// Parses, validates, and executes a single CLI invocation against
-/// <see cref="ICryptocurrencyService"/>, writing results and errors to the
-/// given writers instead of the console directly, so tests can assert on
-/// strings rather than the console.
+/// <see cref="ICryptocurrencyService"/> or a stored feature, writing results
+/// and errors to the given writers instead of the console directly, so tests
+/// can assert on strings rather than the console.
 /// </summary>
 public sealed class CliRunner
 {
     private readonly ICryptocurrencyService _service;
+    private readonly CliStoredFeatures _storedFeatures;
     private readonly CliResultWriter _writer;
-    private readonly Func<IWatchlistService>? _watchlists;
-    private readonly Func<IPortfolioService>? _portfolios;
-    private readonly Func<IAlertService>? _alerts;
-    private readonly Func<IAlertEvaluator>? _alertEvaluator;
 
     /// <summary>
-    /// Creates a runner that calls <paramref name="service"/> and writes to the given writers.
-    /// <paramref name="watchlists"/> supplies the watchlist service on demand, so a
-    /// command that never touches the database never resolves it; without it the
-    /// <c>watchlist</c> command family is not available. <paramref name="portfolios"/>
-    /// does the same for the <c>portfolio</c> family, and <paramref name="alerts"/> and
-    /// <paramref name="alertEvaluator"/> for the <c>alert</c> family, which needs both.
+    /// Creates a runner that calls <paramref name="service"/> for market data,
+    /// reaches the database through <paramref name="storedFeatures"/>, and
+    /// writes to the given writers.
     /// </summary>
-    public CliRunner(
-        ICryptocurrencyService service,
-        TextWriter output,
-        TextWriter error,
-        Func<IWatchlistService>? watchlists = null,
-        Func<IPortfolioService>? portfolios = null,
-        Func<IAlertService>? alerts = null,
-        Func<IAlertEvaluator>? alertEvaluator = null)
+    public CliRunner(ICryptocurrencyService service, CliStoredFeatures storedFeatures, TextWriter output, TextWriter error)
     {
         _service = service;
+        _storedFeatures = storedFeatures;
         _writer = new CliResultWriter(output, error);
-        _watchlists = watchlists;
-        _portfolios = portfolios;
-        _alerts = alerts;
-        _alertEvaluator = alertEvaluator;
     }
 
     /// <summary>
     /// Parses and executes <paramref name="args"/>, returning the process
     /// exit code: <c>0</c> on success, <c>1</c> on a usage, validation, or
-    /// service failure, or a database another writer kept locked, <c>2</c>
+    /// service failure, a database that could not be opened or migrated, or
+    /// one another writer kept locked, <c>2</c>
     /// when <c>alert check --exit-code</c> triggered an alert, and
     /// <c>130</c> if <paramref name="cancellationToken"/> is canceled mid-request.
     /// </summary>
@@ -63,22 +45,26 @@ public sealed class CliRunner
 
             return parsed.Command switch
             {
-                // Only portfolio transactions take --fee; swallowing it silently
-                // elsewhere would hide a mistyped invocation.
-                _ when parsed.Fee is not null && parsed.Command != PortfolioCommands.Name => _writer.WriteUsage(),
-                // Likewise only alert check takes --exit-code.
-                _ when parsed.ExitCodeOnTrigger && parsed.Command != AlertCommands.Name => _writer.WriteUsage(),
+                // Each option belongs to one family's subcommands, which that
+                // family names; swallowing it silently anywhere else would hide
+                // a mistyped invocation. Checked before anything runs, so such
+                // an invocation never touches the database.
+                _ when parsed.Fee is not null && !PortfolioCommands.TakesFee(parsed) => _writer.WriteUsage(),
+                _ when parsed.ExitCodeOnTrigger && !AlertCommands.TakesExitCode(parsed) => _writer.WriteUsage(),
                 "price" => await ExecutePriceAsync(parsed, cancellationToken),
                 "token" => await ExecuteTokenAsync(parsed, cancellationToken),
                 "history" => await ExecuteHistoryAsync(parsed, cancellationToken),
                 "coin" => await ExecuteCoinAsync(parsed, cancellationToken),
                 "developer" => await ExecuteDeveloperAsync(parsed, cancellationToken),
-                WatchlistCommands.Name when _watchlists is not null =>
-                    await new WatchlistCommands(_watchlists(), _writer).ExecuteAsync(parsed, cancellationToken),
-                PortfolioCommands.Name when _portfolios is not null =>
-                    await new PortfolioCommands(_portfolios(), _writer).ExecuteAsync(parsed, cancellationToken),
-                AlertCommands.Name when _alerts is not null && _alertEvaluator is not null =>
-                    await new AlertCommands(_alerts(), _alertEvaluator(), _writer).ExecuteAsync(parsed, cancellationToken),
+                WatchlistCommands.Name => await ExecuteStoredAsync(
+                    () => new WatchlistCommands(_storedFeatures.Watchlists(), _writer).ExecuteAsync(parsed, cancellationToken),
+                    cancellationToken),
+                PortfolioCommands.Name => await ExecuteStoredAsync(
+                    () => new PortfolioCommands(_storedFeatures.Portfolios(), _writer).ExecuteAsync(parsed, cancellationToken),
+                    cancellationToken),
+                AlertCommands.Name => await ExecuteStoredAsync(
+                    () => new AlertCommands(_storedFeatures.Alerts(), _storedFeatures.AlertEvaluator(), _writer).ExecuteAsync(parsed, cancellationToken),
+                    cancellationToken),
                 _ => _writer.WriteUsage(),
             };
         }
@@ -94,6 +80,18 @@ public sealed class CliRunner
         {
             return _writer.WriteError($"Error: {exception.Message}");
         }
+    }
+
+    // Migrates before a command that uses the database, so it sees an
+    // up-to-date schema; the CLI and the API share the file, and whichever
+    // starts first after an upgrade migrates it. Only then is the family's
+    // service resolved, since building it constructs the DbContext, and only
+    // these commands pay for either: EF Core's cold start costs about 640 ms
+    // per process, which the market-data commands skip.
+    private async Task<int> ExecuteStoredAsync(Func<Task<int>> execute, CancellationToken cancellationToken)
+    {
+        var migrationExitCode = await CliDatabaseStartup.MigrateAsync(_storedFeatures.Migrate, _writer, cancellationToken);
+        return migrationExitCode != 0 ? migrationExitCode : await execute();
     }
 
     private async Task<int> ExecutePriceAsync(CliArguments parsed, CancellationToken cancellationToken)
