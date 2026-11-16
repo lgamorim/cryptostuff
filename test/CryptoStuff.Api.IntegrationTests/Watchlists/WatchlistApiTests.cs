@@ -143,7 +143,7 @@ public class WatchlistApiTests
     {
         var cancellationToken = TestContext.Current.CancellationToken;
         using var factory = new CryptoStuffApiFactory();
-        factory.CoinGeckoClient.CoinResponse = KnownCoin("bitcoin");
+        factory.CoinGeckoClient.PriceMatrixResponse = UsdPrices(("bitcoin", 43000m));
         using var client = factory.CreateClient();
         var created = await CreateAsync(client, "majors", cancellationToken);
 
@@ -161,10 +161,10 @@ public class WatchlistApiTests
     {
         var cancellationToken = TestContext.Current.CancellationToken;
         using var factory = new CryptoStuffApiFactory();
-        factory.CoinGeckoClient.CoinResponse = KnownCoin("bitcoin");
+        factory.CoinGeckoClient.PriceMatrixResponse = UsdPrices(("bitcoin", 43000m));
         using var client = factory.CreateClient();
         var created = await CreateAsync(client, "majors", cancellationToken);
-        await client.PutAsync($"/watchlists/{created.Id}/coins/bitcoin", content: null, cancellationToken);
+        (await client.PutAsync($"/watchlists/{created.Id}/coins/bitcoin", content: null, cancellationToken)).StatusCode.Should().Be(HttpStatusCode.OK);
 
         var first = await client.DeleteAsync($"/watchlists/{created.Id}/coins/bitcoin", cancellationToken);
         var second = await client.DeleteAsync($"/watchlists/{created.Id}/coins/bitcoin", cancellationToken);
@@ -180,13 +180,10 @@ public class WatchlistApiTests
     {
         var cancellationToken = TestContext.Current.CancellationToken;
         using var factory = new CryptoStuffApiFactory();
-        factory.CoinGeckoClient.CoinResponse = KnownCoin("bitcoin");
-        factory.CoinGeckoClient.PriceMatrixResponse = CoinGeckoResponse<Dictionary<string, Dictionary<string, decimal>>>.Success(
-            new Dictionary<string, Dictionary<string, decimal>> { ["bitcoin"] = new() { ["usd"] = 43000m } },
-            HttpStatusCode.OK);
+        factory.CoinGeckoClient.PriceMatrixResponse = UsdPrices(("bitcoin", 43000m));
         using var client = factory.CreateClient();
         var created = await CreateAsync(client, "majors", cancellationToken);
-        await client.PutAsync($"/watchlists/{created.Id}/coins/bitcoin", content: null, cancellationToken);
+        (await client.PutAsync($"/watchlists/{created.Id}/coins/bitcoin", content: null, cancellationToken)).StatusCode.Should().Be(HttpStatusCode.OK);
 
         var response = await client.GetAsync($"/watchlists/{created.Id}/prices?currency=usd", cancellationToken);
 
@@ -203,14 +200,12 @@ public class WatchlistApiTests
     {
         var cancellationToken = TestContext.Current.CancellationToken;
         using var factory = new CryptoStuffApiFactory();
-        factory.CoinGeckoClient.CoinResponse = KnownCoin("bitcoin");
-        factory.CoinGeckoClient.PriceMatrixResponse = CoinGeckoResponse<Dictionary<string, Dictionary<string, decimal>>>.Success(
-            new Dictionary<string, Dictionary<string, decimal>> { ["bitcoin"] = new() { ["usd"] = 43000m } },
-            HttpStatusCode.OK);
+        factory.CoinGeckoClient.PriceMatrixResponse = UsdPrices(("bitcoin", 43000m), ("ghostcoin", 1m));
         using var client = factory.CreateClient();
         var created = await CreateAsync(client, "majors", cancellationToken);
         (await client.PutAsync($"/watchlists/{created.Id}/coins/bitcoin", content: null, cancellationToken)).StatusCode.Should().Be(HttpStatusCode.OK);
         (await client.PutAsync($"/watchlists/{created.Id}/coins/ghostcoin", content: null, cancellationToken)).StatusCode.Should().Be(HttpStatusCode.OK);
+        factory.CoinGeckoClient.PriceMatrixResponse = UsdPrices(("bitcoin", 43000m));
 
         var response = await client.GetAsync($"/watchlists/{created.Id}/prices?currency=usd", cancellationToken);
 
@@ -297,7 +292,7 @@ public class WatchlistApiTests
     {
         var cancellationToken = TestContext.Current.CancellationToken;
         using var factory = new CryptoStuffApiFactory();
-        factory.CoinGeckoClient.CoinResponse = KnownCoin("bitcoin");
+        factory.CoinGeckoClient.PriceMatrixResponse = UsdPrices(("bitcoin", 43000m));
         using var client = factory.CreateClient();
 
         var rename = await client.PutAsJsonAsync("/watchlists/99", new { name = "x" }, cancellationToken);
@@ -315,7 +310,7 @@ public class WatchlistApiTests
     {
         var cancellationToken = TestContext.Current.CancellationToken;
         using var factory = new CryptoStuffApiFactory();
-        factory.CoinGeckoClient.CoinResponse = CoinGeckoResponse<CoinGeckoCoin>.Failure(HttpStatusCode.NotFound);
+        factory.CoinGeckoClient.PriceMatrixResponse = UsdPrices();
         using var client = factory.CreateClient();
         var created = await CreateAsync(client, "majors", cancellationToken);
 
@@ -324,7 +319,7 @@ public class WatchlistApiTests
         response.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
         var problem = await response.Content.ReadFromJsonAsync<ProblemDetails>(JsonOptions, cancellationToken);
         // `!` is safe: every error response carries a ProblemDetails body.
-        problem!.Detail.Should().Be("CoinGecko has no coin with id 'not-a-coin'.");
+        problem!.Detail.Should().Be("The market data provider has no coin with id 'not-a-coin'.");
         var reloaded = await client.GetFromJsonAsync<WatchlistView>($"/watchlists/{created.Id}", JsonOptions, cancellationToken);
         // `!` is safe: the GET above succeeds, or GetFromJsonAsync throws.
         reloaded!.CoinIds.Should().BeEmpty();
@@ -519,12 +514,12 @@ public class WatchlistApiTests
     {
         var cancellationToken = TestContext.Current.CancellationToken;
         using var factory = new CryptoStuffApiFactory();
-        factory.CoinGeckoClient.CoinResponse = KnownCoin("bitcoin");
-        factory.CoinGeckoClient.PriceMatrixResponse =
-            CoinGeckoResponse<Dictionary<string, Dictionary<string, decimal>>>.Failure(upstream);
+        factory.CoinGeckoClient.PriceMatrixResponse = UsdPrices(("bitcoin", 43000m));
         using var client = factory.CreateClient();
         var created = await CreateAsync(client, "majors", cancellationToken);
-        await client.PutAsync($"/watchlists/{created.Id}/coins/bitcoin", content: null, cancellationToken);
+        (await client.PutAsync($"/watchlists/{created.Id}/coins/bitcoin", content: null, cancellationToken)).StatusCode.Should().Be(HttpStatusCode.OK);
+        factory.CoinGeckoClient.PriceMatrixResponse =
+            CoinGeckoResponse<Dictionary<string, Dictionary<string, decimal>>>.Failure(upstream);
 
         var response = await client.GetAsync($"/watchlists/{created.Id}/prices?currency=usd", cancellationToken);
 
@@ -539,9 +534,11 @@ public class WatchlistApiTests
         return (await response.Content.ReadFromJsonAsync<WatchlistView>(JsonOptions, cancellationToken))!;
     }
 
-    private static CoinGeckoResponse<CoinGeckoCoin> KnownCoin(string id) =>
-        CoinGeckoResponse<CoinGeckoCoin>.Success(
-            new CoinGeckoCoin { Id = id, Symbol = "btc", Name = "Bitcoin", Image = new CoinGeckoImage() },
+    // A simple/price answer quoting each coin in usd; a coin left out is one
+    // CoinGecko does not know.
+    private static CoinGeckoResponse<Dictionary<string, Dictionary<string, decimal>>> UsdPrices(params (string CoinId, decimal Usd)[] coins) =>
+        CoinGeckoResponse<Dictionary<string, Dictionary<string, decimal>>>.Success(
+            coins.ToDictionary(coin => coin.CoinId, coin => new Dictionary<string, decimal> { ["usd"] = coin.Usd }),
             HttpStatusCode.OK);
 
     private static async Task<JsonElement> ReadOpenApiDocumentAsync(HttpClient client, CancellationToken cancellationToken)

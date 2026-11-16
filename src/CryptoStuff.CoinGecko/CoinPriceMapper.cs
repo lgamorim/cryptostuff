@@ -3,7 +3,7 @@ using CryptoStuff.Core;
 namespace CryptoStuff.CoinGecko;
 
 /// <summary>Maps a <c>simple/price</c> price matrix to a <see cref="CoinPriceView"/>.</summary>
-public static class CoinPriceMapper
+internal static class CoinPriceMapper
 {
     /// <summary>
     /// Maps <paramref name="matrix"/> to a <see cref="CoinPriceView"/> covering

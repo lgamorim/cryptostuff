@@ -4,7 +4,7 @@ using CryptoStuff.Core;
 namespace CryptoStuff.CoinGecko;
 
 /// <summary>Maps a failed <see cref="CoinGeckoResponse{TValue}"/> to a <see cref="ServiceErrorCode"/>.</summary>
-public static class ServiceErrorCodeMapper
+internal static class ServiceErrorCodeMapper
 {
     /// <summary>
     /// Maps <paramref name="response"/>'s timeout flag and HTTP status code to

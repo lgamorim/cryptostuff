@@ -330,7 +330,7 @@ public class AlertApiTests
             "/alerts", new { coinId = "not-a-coin", vsCurrency = "usd", direction = "above", threshold = 1m }, cancellationToken);
 
         response.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
-        (await ReadProblemAsync(response, cancellationToken)).Detail.Should().Be("CoinGecko has no coin with id 'not-a-coin'.");
+        (await ReadProblemAsync(response, cancellationToken)).Detail.Should().Be("The market data provider has no coin with id 'not-a-coin'.");
         await using var context = factory.CreateContext();
         context.Alerts.Should().BeEmpty();
     }

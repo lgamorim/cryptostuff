@@ -1,7 +1,7 @@
 namespace CryptoStuff.Core.Watchlists;
 
 /// <summary>
-/// A named, ordered list of distinct CoinGecko coin ids. Coin ids are stored
+/// A named, ordered list of distinct coin ids, as the market data provider names them. Coin ids are stored
 /// trimmed and lowercased, so ids differing only in case or in outer
 /// whitespace are the same coin, and the name is stored trimmed. The id is
 /// zero until the repository first saves the watchlist and assigns one.
@@ -84,10 +84,10 @@ public sealed class Watchlist
         return true;
     }
 
-    /// <summary>The form in which a coin id is stored and compared.</summary>
+    /// <summary>The form in which a coin id is stored and compared, after refusing a blank one.</summary>
     internal static string NormalizeCoinId(string coinId)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(coinId);
-        return coinId.Trim().ToLowerInvariant();
+        return MarketIds.Normalize(coinId);
     }
 }

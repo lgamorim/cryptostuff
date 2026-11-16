@@ -2,19 +2,19 @@ namespace CryptoStuff.Core;
 
 /// <summary>
 /// Price lookups for coins the app already holds, watches or alerts on, where
-/// CoinGecko delisting one of them must not hide the prices of the rest.
+/// the market data provider delisting one of them must not hide the prices of the rest.
 /// </summary>
 public static class KnownCoinPrices
 {
     /// <summary>
     /// Gets the prices <paramref name="query"/> asks for, as
     /// <see cref="ICryptocurrencyService.GetPricesAsync"/> does, except that a
-    /// coin CoinGecko does not know comes back with no amounts, as a coin not
+    /// coin the market data provider does not know comes back with no amounts, as a coin not
     /// quoted in a requested currency already does, instead of failing the
     /// whole lookup. Every requested coin is in the result, in query order.
     /// </summary>
     /// <remarks>
-    /// One upstream call covers the whole query. CoinGecko omits a coin it no
+    /// One upstream call covers the whole query. The market data provider omits a coin it no
     /// longer knows, which the adapter reports as
     /// <see cref="ServiceErrorCode.NotFound"/> for the whole call without naming
     /// the coin; only then is each coin asked for on its own, in every

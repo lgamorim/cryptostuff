@@ -46,21 +46,22 @@ public interface IPortfolioService
     /// Records a transaction in a portfolio. It is a
     /// <see cref="ServiceErrorCode.RuleViolated"/> when the transaction is
     /// dated more than five minutes after the current time (the allowance for
-    /// a client clock running ahead), when its coin is new to the ledger and
-    /// CoinGecko doesn't know it or has no price for it in the portfolio's
+    /// a client clock running ahead), when it buys a coin new to the ledger
+    /// and the market data provider doesn't know it or has no price for it in the portfolio's
     /// vs_currency, when replaying the ledger with it would take a holding
     /// below zero, or when it would make a coin's amounts too large to
-    /// compute; any other upstream failure propagates. CoinGecko is not asked
-    /// about a coin any of the ledger's transactions already holds.
+    /// compute; any other upstream failure propagates. The market data provider is not asked
+    /// about a coin any of the ledger's transactions already holds, nor about
+    /// a sell of a coin new to the ledger, which always oversells.
     /// </summary>
     Task<ServiceResult<PortfolioView>> AddTransactionAsync(AddTransactionCommand command, CancellationToken cancellationToken);
 
     /// <summary>
     /// Replaces every detail of one of a portfolio's transactions, keeping its
     /// id and sequence, under the same rules as
-    /// <see cref="AddTransactionAsync"/>, so CoinGecko is asked about the
-    /// coin only when the ledger holds it nowhere, the replaced transaction
-    /// included.
+    /// <see cref="AddTransactionAsync"/>, so the market data provider is asked about the
+    /// coin only for a buy of one the ledger holds nowhere, the replaced
+    /// transaction included.
     /// </summary>
     Task<ServiceResult<PortfolioView>> ReplaceTransactionAsync(ReplaceTransactionCommand command, CancellationToken cancellationToken);
 
@@ -75,9 +76,9 @@ public interface IPortfolioService
 
     /// <summary>
     /// Values a portfolio's holdings at live prices, in the portfolio's
-    /// vs_currency, under its cost-basis method. CoinGecko is asked for the
+    /// vs_currency, under its cost-basis method. The market data provider is asked for the
     /// coins still held, through <see cref="KnownCoinPrices.GetKnownCoinPricesAsync"/>,
-    /// and not at all when none is. An open coin CoinGecko returns no price
+    /// and not at all when none is. An open coin the market data provider returns no price
     /// for, in that currency, or does not know at all, is left unpriced and
     /// listed in <see cref="PortfolioValuationView.UnpricedCoins"/> rather than
     /// failing the valuation; any other upstream failure propagates with its

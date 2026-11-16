@@ -47,11 +47,8 @@ public sealed class PortfolioTransaction
     internal static PortfolioTransaction Create(int sequence, TransactionDetails details)
     {
         EnsureValid(details);
-        return new(sequence, details.Kind, NormalizeCoinId(details.CoinId), details.Quantity, details.UnitPrice, details.Fee, details.OccurredAt.ToUniversalTime());
+        return new(sequence, details.Kind, MarketIds.Normalize(details.CoinId), details.Quantity, details.UnitPrice, details.Fee, details.OccurredAt.ToUniversalTime());
     }
-
-    /// <summary>The form in which a coin id is stored and compared.</summary>
-    internal static string NormalizeCoinId(string coinId) => coinId.Trim().ToLowerInvariant();
 
     /// <summary>
     /// Takes every detail of <paramref name="replacement"/>, a transaction

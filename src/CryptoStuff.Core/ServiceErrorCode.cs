@@ -4,18 +4,18 @@ namespace CryptoStuff.Core;
 public enum ServiceErrorCode
 {
     /// <summary>
-    /// The requested resource does not exist: CoinGecko returned `404`, or no
+    /// The requested resource does not exist: the market data provider returned `404`, or no
     /// persisted record has the given id.
     /// </summary>
     NotFound,
 
-    /// <summary>CoinGecko's rate limit was exceeded (`429`).</summary>
+    /// <summary>The market data provider's rate limit was exceeded (`429`).</summary>
     RateLimited,
 
-    /// <summary>The request to CoinGecko timed out before a response arrived.</summary>
+    /// <summary>The request to the market data provider timed out before a response arrived.</summary>
     RequestTimedOut,
 
-    /// <summary>CoinGecko failed for any other reason.</summary>
+    /// <summary>The market data provider failed for any other reason.</summary>
     UpstreamUnavailable,
 
     /// <summary>The write conflicts with stored state, such as a duplicate name or a lost concurrency race.</summary>

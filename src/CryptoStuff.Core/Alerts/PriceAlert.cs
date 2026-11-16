@@ -81,7 +81,7 @@ public sealed class PriceAlert
         ArgumentException.ThrowIfNullOrWhiteSpace(vsCurrency);
         EnsurePositive(threshold);
         EnsureDefined(direction);
-        return new(coinId.Trim().ToLowerInvariant(), vsCurrency.Trim().ToLowerInvariant(), direction, threshold);
+        return new(MarketIds.Normalize(coinId), MarketIds.Normalize(vsCurrency), direction, threshold);
     }
 
     /// <summary>

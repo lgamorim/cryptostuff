@@ -11,9 +11,9 @@ namespace CryptoStuff.Api.Portfolios;
 /// </summary>
 public static class PortfolioEndpoints
 {
-    // Adding or replacing a transaction asks CoinGecko about its coin when the
-    // coin is new to the portfolio's ledger, so those two writes can also fail
-    // upstream.
+    // Adding or replacing a transaction asks CoinGecko about its coin when it
+    // buys a coin new to the portfolio's ledger, so those two writes can also
+    // fail upstream.
     private static readonly int[] CheckedTransactionWriteProblems =
     [
         StatusCodes.Status400BadRequest,

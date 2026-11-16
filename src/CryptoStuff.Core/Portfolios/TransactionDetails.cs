@@ -6,7 +6,7 @@ public sealed record TransactionDetails
     /// <summary>Whether the transaction buys or sells.</summary>
     public required TransactionKind Kind { get; init; }
 
-    /// <summary>The CoinGecko coin id, in any case; it is stored lowercased.</summary>
+    /// <summary>The market data provider's coin id, in any case; it is stored lowercased.</summary>
     public required string CoinId { get; init; }
 
     /// <summary>How many units were bought or sold; must satisfy <see cref="PositiveDecimalValidator"/>.</summary>

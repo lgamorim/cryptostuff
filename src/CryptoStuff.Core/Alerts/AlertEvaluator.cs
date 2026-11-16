@@ -35,7 +35,7 @@ public sealed class AlertEvaluator(
     /// Prices every alert in its currency with one lookup for the union of
     /// their coins and currencies, all before any alert is triggered, so a
     /// failure leaves every alert armed. An alert left without a price, its
-    /// coin unknown to CoinGecko or not quoted in its currency, is reported
+    /// coin unknown to the market data provider or not quoted in its currency, is reported
     /// unpriced instead of failing the others: it stays armed, and the next
     /// evaluation tries it again.
     /// </summary>
@@ -53,19 +53,18 @@ public sealed class AlertEvaluator(
         }
 
         // `!` is safe: a successful result always carries its value.
-        var coins = prices.Value!.Coins;
+        var table = new PriceTable(prices.Value!.Coins);
         var priced = new List<PricedAlert>();
         var unpriced = new List<UnpricedAlertView>();
         foreach (var alert in alerts)
         {
-            var amount = coins.FirstOrDefault(c => c.CoinId == alert.CoinId)?.Amounts.FirstOrDefault(a => a.Currency == alert.VsCurrency);
-            if (amount is null)
+            if (table.TryGetAmount(alert.CoinId, alert.VsCurrency, out var price))
             {
-                unpriced.Add(new UnpricedAlertView { Id = alert.Id, CoinId = alert.CoinId, VsCurrency = alert.VsCurrency });
+                priced.Add(new PricedAlert(alert, price));
             }
             else
             {
-                priced.Add(new PricedAlert(alert, amount.Amount));
+                unpriced.Add(new UnpricedAlertView { Id = alert.Id, CoinId = alert.CoinId, VsCurrency = alert.VsCurrency });
             }
         }
 

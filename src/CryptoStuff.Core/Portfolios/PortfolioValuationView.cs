@@ -20,7 +20,7 @@ public sealed record PortfolioValuationView
     public required IReadOnlyList<CoinValuationView> Coins { get; init; }
 
     /// <summary>
-    /// The ids of the coins still held that CoinGecko gave no price for in the
+    /// The ids of the coins still held that the market data provider gave no price for in the
     /// portfolio's vs_currency, ordered by coin id; empty when every one was
     /// priced. Their rows have no market value or unrealized profit and loss,
     /// and the totals leave them out.
@@ -40,7 +40,7 @@ public sealed record CoinValuationView
     /// <summary>How many units are still held.</summary>
     public required decimal Quantity { get; init; }
 
-    /// <summary>The units held times the live price of one; null when the coin is held but CoinGecko gave no price for it.</summary>
+    /// <summary>The units held times the live price of one; null when the coin is held but the market data provider gave no price for it.</summary>
     public required decimal? MarketValue { get; init; }
 
     /// <summary>What the units still held cost, fees on their buys included.</summary>

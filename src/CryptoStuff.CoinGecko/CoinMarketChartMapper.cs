@@ -4,7 +4,7 @@ using CryptoStuff.Core;
 namespace CryptoStuff.CoinGecko;
 
 /// <summary>Maps a <c>coins/{id}/market_chart</c> chart to a <see cref="CoinMarketChartView"/>.</summary>
-public static class CoinMarketChartMapper
+internal static class CoinMarketChartMapper
 {
     /// <summary>
     /// Maps each series in <paramref name="chart"/> point-by-point, converting

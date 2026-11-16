@@ -946,7 +946,7 @@ public class PortfolioApiTests
             cancellationToken);
 
         response.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
-        (await ReadProblemAsync(response, cancellationToken)).Detail.Should().Be("CoinGecko has no coin with id 'not-a-coin'.");
+        (await ReadProblemAsync(response, cancellationToken)).Detail.Should().Be("The market data provider has no coin with id 'not-a-coin'.");
         var reloaded = await client.GetFromJsonAsync<PortfolioView>($"/portfolios/{created.Id}", JsonOptions, cancellationToken);
 
         // `!` is safe: the GET above succeeds, or GetFromJsonAsync throws.

@@ -291,7 +291,24 @@ public class WatchlistServiceTests
         // `!` is safe: the assertion above fails the test unless the result
         // succeeded, and a successful result always carries its value.
         result.Value!.CoinIds.Should().Equal("ethereum", "bitcoin");
-        upstream.CapturedCoinQuery.Should().Be(new CoinQuery { CoinId = "bitcoin" });
+        upstream.CapturedPricesQueries.Should().BeEquivalentTo([new CoinPriceQuery { CoinIds = ["bitcoin"], VsCurrencies = ["usd"] }]);
+        upstream.GetCoinCallCount.Should().Be(0);
+        repository.SaveChangesCallCount.Should().Be(1);
+    }
+
+    // A watchlist has no currency, so the coin is only checked to exist: one
+    // the provider knows but quotes in no requested currency still comes back.
+    [Fact]
+    public async Task Should_AppendAndSave_When_AddCoinAsyncCoinIsKnownButHasNoUsdPrice()
+    {
+        var (repository, upstream, service) = CreateSut();
+        var watchlist = SeedWatchlist(repository, "Majors");
+        upstream.PricesResult = ServiceResult<CoinPriceView>.Success(new CoinPriceView { Coins = [new CoinPrice { CoinId = "obscurecoin", Amounts = [] }] });
+
+        var result = await service.AddCoinAsync(new WatchlistCoinCommand { WatchlistId = watchlist.Id, CoinId = "obscurecoin" }, CancellationToken.None);
+
+        result.IsSuccess.Should().BeTrue();
+        watchlist.CoinIds.Should().Equal("obscurecoin");
         repository.SaveChangesCallCount.Should().Be(1);
     }
 
@@ -305,7 +322,7 @@ public class WatchlistServiceTests
 
         // `!` is safe: adding a known coin asks CoinGecko about it and then succeeds, and a null
         // query or value would fail the test with a NullReferenceException anyway.
-        upstream.CapturedCoinQuery!.CoinId.Should().Be("bitcoin");
+        upstream.CapturedPricesQuery!.CoinIds.Should().Equal("bitcoin");
         result.Value!.CoinIds.Should().Equal("bitcoin");
     }
 
@@ -314,7 +331,7 @@ public class WatchlistServiceTests
     {
         var (repository, upstream, service) = CreateSut();
         var watchlist = SeedWatchlist(repository, "Majors");
-        upstream.CoinResult = ServiceResult<CoinView>.Failure(ServiceErrorCode.NotFound);
+        upstream.PricesResult = ServiceResult<CoinPriceView>.Failure(ServiceErrorCode.NotFound);
 
         var result = await service.AddCoinAsync(new WatchlistCoinCommand { WatchlistId = watchlist.Id, CoinId = "notacoin" }, CancellationToken.None);
 
@@ -330,7 +347,7 @@ public class WatchlistServiceTests
     {
         var (repository, upstream, service) = CreateSut();
         var watchlist = SeedWatchlist(repository, "Majors");
-        upstream.CoinResult = ServiceResult<CoinView>.Failure(ServiceErrorCode.RateLimited, "Slow down.");
+        upstream.PricesResult = ServiceResult<CoinPriceView>.Failure(ServiceErrorCode.RateLimited, "Slow down.");
 
         var result = await service.AddCoinAsync(new WatchlistCoinCommand { WatchlistId = watchlist.Id, CoinId = "bitcoin" }, CancellationToken.None);
 
@@ -352,7 +369,7 @@ public class WatchlistServiceTests
         // `!` is safe: the assertion above fails the test unless the result
         // succeeded, and a successful result always carries its value.
         result.Value!.CoinIds.Should().Equal("bitcoin", "ethereum");
-        upstream.GetCoinCallCount.Should().Be(0);
+        upstream.GetPricesCallCount.Should().Be(0);
         repository.SaveChangesCallCount.Should().Be(0);
     }
 
@@ -364,7 +381,7 @@ public class WatchlistServiceTests
         var result = await service.AddCoinAsync(new WatchlistCoinCommand { WatchlistId = UnknownId, CoinId = "bitcoin" }, CancellationToken.None);
 
         result.ErrorCode.Should().Be(ServiceErrorCode.NotFound);
-        upstream.GetCoinCallCount.Should().Be(0);
+        upstream.GetPricesCallCount.Should().Be(0);
     }
 
     [Fact]
@@ -389,7 +406,7 @@ public class WatchlistServiceTests
         var act = () => service.AddCoinAsync(new WatchlistCoinCommand { WatchlistId = watchlist.Id, CoinId = " " }, CancellationToken.None);
 
         await act.Should().ThrowAsync<ArgumentException>();
-        upstream.GetCoinCallCount.Should().Be(0);
+        upstream.GetPricesCallCount.Should().Be(0);
         repository.SaveChangesCallCount.Should().Be(0);
     }
 
@@ -408,7 +425,7 @@ public class WatchlistServiceTests
         // succeeded, and a successful result always carries its value.
         result.Value!.CoinIds.Should().Equal("bitcoin", "solana");
         repository.SaveChangesCallCount.Should().Be(1);
-        upstream.GetCoinCallCount.Should().Be(0);
+        upstream.GetPricesCallCount.Should().Be(0);
     }
 
     [Fact]
@@ -812,7 +829,9 @@ public class WatchlistServiceTests
         var result = await service.AddCoinAsync(new WatchlistCoinCommand { WatchlistId = watchlist.Id, CoinId = " bitcoin " }, CancellationToken.None);
 
         result.IsSuccess.Should().BeTrue();
-        upstream.CapturedCoinQuery.Should().Be(new CoinQuery { CoinId = "bitcoin" });
+        // `!` is safe: the add above succeeded, which it only does after asking about the coin, and a
+        // null query would fail the test with a NullReferenceException anyway.
+        upstream.CapturedPricesQuery!.CoinIds.Should().Equal("bitcoin");
         watchlist.CoinIds.Should().Equal("bitcoin");
     }
 }

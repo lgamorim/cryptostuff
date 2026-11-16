@@ -3,7 +3,7 @@ using CryptoStuff.Core;
 namespace CryptoStuff.CoinGecko;
 
 /// <summary>Maps a <c>coins/{id}/history</c> result to a <see cref="CoinDeveloperDataView"/>.</summary>
-public static class CoinDeveloperDataMapper
+internal static class CoinDeveloperDataMapper
 {
     /// <summary>
     /// Maps <paramref name="history"/> to a <see cref="CoinDeveloperDataView"/>.

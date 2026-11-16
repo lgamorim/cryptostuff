@@ -7,7 +7,7 @@ public sealed record AlertEvaluationView
     public required IReadOnlyList<TriggeredAlertView> Triggered { get; init; }
 
     /// <summary>
-    /// The armed alerts CoinGecko gave no price for, ordered by id; empty when
+    /// The armed alerts the market data provider gave no price for, ordered by id; empty when
     /// every alert was priced. They stay armed and are evaluated again next time.
     /// </summary>
     public required IReadOnlyList<UnpricedAlertView> Unpriced { get; init; }
@@ -22,7 +22,7 @@ public sealed record UnpricedAlertView
     /// <summary>The lowercased id of the coin the alert watches.</summary>
     public required string CoinId { get; init; }
 
-    /// <summary>The lowercased vs_currency CoinGecko gave no price in.</summary>
+    /// <summary>The lowercased vs_currency the market data provider gave no price in.</summary>
     public required string VsCurrency { get; init; }
 }
 

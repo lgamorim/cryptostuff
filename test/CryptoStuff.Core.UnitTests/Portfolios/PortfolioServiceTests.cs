@@ -484,6 +484,22 @@ public class PortfolioServiceTests
         repository.SaveChangesCallCount.Should().Be(0);
     }
 
+    // A sell of a coin the ledger has never held always oversells, so asking
+    // upstream about the coin first would only spend a call.
+    [Fact]
+    public async Task Should_ReturnRuleViolatedWithoutUpstreamCall_When_AddTransactionAsyncSellsACoinNeverHeld()
+    {
+        var (repository, upstream, service) = CreateSut();
+        var portfolio = SeedPortfolioWith(repository, Buy("bitcoin", 1m, Day(1)));
+
+        var result = await service.AddTransactionAsync(AddCommand(portfolio, Sell("ethereum", 1m, Day(2))), CancellationToken.None);
+
+        result.ErrorCode.Should().Be(ServiceErrorCode.RuleViolated);
+        result.ErrorDetail.Should().Contain("ethereum").And.Contain("below zero");
+        upstream.GetPricesCallCount.Should().Be(0);
+        repository.SaveChangesCallCount.Should().Be(0);
+    }
+
     [Fact]
     public async Task Should_RecordAndSaveWithoutUpstreamCall_When_AddTransactionAsyncSellsACoinCoinGeckoNoLongerKnows()
     {
@@ -629,6 +645,24 @@ public class PortfolioServiceTests
 
         SucceededValue(result).Transactions.Select(t => t.CoinId).Should().Equal("ghostcoin", "ghostcoin");
         upstream.GetPricesCallCount.Should().Be(0);
+    }
+
+    // As with an add, a sell of a coin the ledger holds nowhere always
+    // oversells, so replacing a transaction with one asks nothing upstream.
+    [Fact]
+    public async Task Should_ReturnRuleViolatedWithoutUpstreamCallOrSave_When_ReplaceTransactionAsyncSellsACoinNeverHeld()
+    {
+        var (repository, upstream, service) = CreateSut();
+        var portfolio = SeedPortfolioWith(repository, Buy("bitcoin", 1m, Day(1)), Buy("bitcoin", 1m, Day(2)));
+        var command = new ReplaceTransactionCommand { PortfolioId = portfolio.Id, TransactionId = portfolio.Transactions[1].Id, Transaction = Sell("ethereum", 1m, Day(2)) };
+
+        var result = await service.ReplaceTransactionAsync(command, CancellationToken.None);
+
+        result.ErrorCode.Should().Be(ServiceErrorCode.RuleViolated);
+        result.ErrorDetail.Should().Contain("ethereum").And.Contain("below zero");
+        portfolio.Transactions[1].CoinId.Should().Be("bitcoin");
+        upstream.GetPricesCallCount.Should().Be(0);
+        repository.SaveChangesCallCount.Should().Be(0);
     }
 
     [Fact]

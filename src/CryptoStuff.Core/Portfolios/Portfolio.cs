@@ -74,7 +74,7 @@ public sealed class Portfolio
         var normalizedName = NameValidator.Normalize(name);
         ArgumentException.ThrowIfNullOrWhiteSpace(vsCurrency);
         EnsureDefined(costBasisMethod);
-        return new Portfolio(normalizedName, vsCurrency.Trim().ToLowerInvariant(), costBasisMethod);
+        return new Portfolio(normalizedName, MarketIds.Normalize(vsCurrency), costBasisMethod);
     }
 
     /// <summary>Gives the portfolio a new name and cost-basis method. The vs_currency never changes.</summary>

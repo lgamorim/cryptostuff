@@ -203,8 +203,8 @@ public sealed class PortfolioService(
         }
 
         // Only the units still held need a price: a closed position is worth
-        // nothing, and with none open there is nothing to ask CoinGecko.
-        IReadOnlyList<CoinPrice> livePrices = [];
+        // nothing, and with none open there is nothing to ask the market data provider.
+        var livePrices = new PriceTable([]);
         var openCoinIds = positions.Where(p => p.Position.Quantity > 0m).Select(p => p.CoinId).ToList();
         if (openCoinIds.Count > 0)
         {
@@ -216,7 +216,7 @@ public sealed class PortfolioService(
             }
 
             // `!` is safe: a successful result always carries its value.
-            livePrices = prices.Value!.Coins;
+            livePrices = new PriceTable(prices.Value!.Coins);
         }
 
         try
@@ -240,7 +240,7 @@ public sealed class PortfolioService(
 
     /// <summary>
     /// Joins each coin's position with its live price. A coin still held that
-    /// CoinGecko gave no price for, in the portfolio's vs_currency, because it
+    /// the market data provider gave no price for, in the portfolio's vs_currency, because it
     /// no longer knows the coin or does not quote it in that currency, is left
     /// unpriced rather than failing the valuation: its row has no market value
     /// or unrealized profit and loss, and the totals leave it out, so they
@@ -249,7 +249,7 @@ public sealed class PortfolioService(
     private static PortfolioValuationView Value(
         Portfolio portfolio,
         IReadOnlyList<(string CoinId, CoinPosition Position)> positions,
-        IReadOnlyList<CoinPrice> livePrices)
+        PriceTable livePrices)
     {
         var coins = new List<CoinValuationView>();
         var unpricedCoins = new List<string>();
@@ -258,15 +258,14 @@ public sealed class PortfolioService(
             decimal? marketValue = 0m;
             if (position.Quantity > 0m)
             {
-                var livePrice = livePrices.FirstOrDefault(c => c.CoinId == coinId)?.Amounts.FirstOrDefault(a => a.Currency == portfolio.VsCurrency);
-                if (livePrice is null)
+                if (livePrices.TryGetAmount(coinId, portfolio.VsCurrency, out var livePrice))
                 {
-                    marketValue = null;
-                    unpricedCoins.Add(coinId);
+                    marketValue = position.Quantity * livePrice;
                 }
                 else
                 {
-                    marketValue = position.Quantity * livePrice.Amount;
+                    marketValue = null;
+                    unpricedCoins.Add(coinId);
                 }
             }
 
@@ -301,13 +300,13 @@ public sealed class PortfolioService(
 
     /// <summary>
     /// Checks the rules on a transaction's details that need more than the
-    /// ledger — the clock and CoinGecko — returning the failure to report, or
+    /// ledger — the clock and the market data provider — returning the failure to report, or
     /// null when they hold. Details that break the entity's own rules throw
-    /// first, before CoinGecko is asked about the coin. Only a coin new to the
-    /// ledger is checked upstream: one any of its transactions already holds
-    /// passed the check when that transaction was recorded, and asking again
-    /// would stop a coin CoinGecko has since delisted from being sold, and
-    /// every write to a held coin while CoinGecko is failing.
+    /// first, before the market data provider is asked about the coin. Only a buy of a coin
+    /// new to the ledger is checked upstream: one any of its transactions
+    /// already holds passed the check when that transaction was recorded, and
+    /// asking again would stop a coin the market data provider has since delisted from being
+    /// sold, and every write to a held coin while the market data provider is failing.
     /// </summary>
     private async Task<ServiceResult<PortfolioView>?> CheckTransactionAsync(
         TransactionDetails details,
@@ -320,10 +319,12 @@ public sealed class PortfolioService(
             return futureDated;
         }
 
-        var coinId = PortfolioTransaction.NormalizeCoinId(details.CoinId);
-        return portfolio.Transactions.Any(t => t.CoinId == coinId)
+        // A sell of a coin the ledger has never held always oversells, which
+        // the ledger itself reports, so asking upstream would only spend a call.
+        var coinId = MarketIds.Normalize(details.CoinId);
+        return details.Kind == TransactionKind.Sell || portfolio.Transactions.Any(t => t.CoinId == coinId)
             ? null
-            : await CheckCoinUpstreamAsync(coinId, portfolio.VsCurrency, cancellationToken);
+            : await UpstreamCoinChecks.CheckPricedAsync<PortfolioView>(cryptocurrencyService, coinId, portfolio.VsCurrency, cancellationToken);
     }
 
     /// <summary>
@@ -365,57 +366,9 @@ public sealed class PortfolioService(
             : null;
     }
 
-    /// <summary>
-    /// Checks with CoinGecko that the coin exists and is priced in the
-    /// portfolio's vs_currency — the price lookup valuation will make —
-    /// returning the failure to report, or null when both hold. Either one
-    /// missing is a <see cref="ServiceErrorCode.RuleViolated"/>; any other
-    /// upstream failure is passed on unchanged.
-    /// </summary>
-    private async Task<ServiceResult<PortfolioView>?> CheckCoinUpstreamAsync(string coinId, string vsCurrency, CancellationToken cancellationToken)
-    {
-        var priceQuery = new CoinPriceQuery { CoinIds = [coinId], VsCurrencies = [vsCurrency] };
-        var prices = await cryptocurrencyService.GetPricesAsync(priceQuery, cancellationToken);
-        if (prices.ErrorCode is { } errorCode)
-        {
-            return errorCode == ServiceErrorCode.NotFound
-                ? ServiceResult<PortfolioView>.Failure(ServiceErrorCode.RuleViolated, $"CoinGecko has no coin with id '{coinId}'.")
-                : ServiceResult<PortfolioView>.Failure(errorCode, prices.ErrorDetail);
-        }
-
-        // A currency CoinGecko doesn't know is not an error upstream: the
-        // coin just comes back without an amount in it.
-        // `!` is safe: a successful result always carries its value.
-        var pricedInCurrency = prices.Value!.Coins.Any(c => c.Amounts.Any(a => a.Currency == vsCurrency));
-        return pricedInCurrency
-            ? null
-            : ServiceResult<PortfolioView>.Failure(ServiceErrorCode.RuleViolated, $"CoinGecko has no price for '{coinId}' in '{vsCurrency}'.");
-    }
-
-    /// <summary>
-    /// Saves the pending change to <paramref name="portfolio"/>. On a
-    /// <see cref="PersistenceConflictException"/> it discards that change, so
-    /// nothing stale stays pending, and tells a portfolio another writer deleted
-    /// from any other conflict. Any other exception, including cancellation and
-    /// <see cref="PersistenceBusyException"/>, propagates.
-    /// </summary>
-    private async Task<SaveOutcome> SaveAsync(Portfolio portfolio, CancellationToken cancellationToken)
-    {
-        try
-        {
-            await repository.SaveChangesAsync(cancellationToken);
-            return SaveOutcome.Saved;
-        }
-        catch (PersistenceConflictException)
-        {
-            repository.Discard(portfolio);
-
-            // An id of zero is a portfolio never saved, which no one can have deleted.
-            return portfolio.Id != 0 && !await repository.ExistsAsync(portfolio.Id, cancellationToken)
-                ? SaveOutcome.Deleted
-                : SaveOutcome.Conflicted;
-        }
-    }
+    /// <summary>Saves the pending change to <paramref name="portfolio"/>, as <see cref="RecordSave.SaveAsync"/> describes.</summary>
+    private Task<SaveOutcome> SaveAsync(Portfolio portfolio, CancellationToken cancellationToken) =>
+        RecordSave.SaveAsync(repository.SaveChangesAsync, () => repository.Discard(portfolio), () => portfolio.Id, repository.ExistsAsync, cancellationToken);
 
     /// <summary>
     /// Returns the detail to report when the caller expected

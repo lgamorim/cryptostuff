@@ -97,12 +97,9 @@ public sealed class WatchlistService(IWatchlistRepository repository, ICryptocur
             return Success(watchlist);
         }
 
-        var coin = await cryptocurrencyService.GetCoinAsync(new CoinQuery { CoinId = coinId }, cancellationToken);
-        if (coin.ErrorCode is { } errorCode)
+        if (await UpstreamCoinChecks.CheckKnownAsync<WatchlistView>(cryptocurrencyService, coinId, cancellationToken) is { } rejected)
         {
-            return errorCode == ServiceErrorCode.NotFound
-                ? ServiceResult<WatchlistView>.Failure(ServiceErrorCode.RuleViolated, $"CoinGecko has no coin with id '{coinId}'.")
-                : ServiceResult<WatchlistView>.Failure(errorCode, coin.ErrorDetail);
+            return rejected;
         }
 
         watchlist.AddCoin(coinId);
@@ -149,30 +146,9 @@ public sealed class WatchlistService(IWatchlistRepository repository, ICryptocur
             _ => ServiceResult<WatchlistView>.Failure(ServiceErrorCode.Conflict, ChangedConcurrentlyDetail(watchlist.Id)),
         };
 
-    /// <summary>
-    /// Saves the pending change to <paramref name="watchlist"/>. On a
-    /// <see cref="PersistenceConflictException"/> it discards that change, so
-    /// nothing stale stays pending, and tells a watchlist another writer deleted
-    /// from any other conflict. Any other exception, including cancellation and
-    /// <see cref="PersistenceBusyException"/>, propagates.
-    /// </summary>
-    private async Task<SaveOutcome> SaveAsync(Watchlist watchlist, CancellationToken cancellationToken)
-    {
-        try
-        {
-            await repository.SaveChangesAsync(cancellationToken);
-            return SaveOutcome.Saved;
-        }
-        catch (PersistenceConflictException)
-        {
-            repository.Discard(watchlist);
-
-            // An id of zero is a watchlist never saved, which no one can have deleted.
-            return watchlist.Id != 0 && !await repository.ExistsAsync(watchlist.Id, cancellationToken)
-                ? SaveOutcome.Deleted
-                : SaveOutcome.Conflicted;
-        }
-    }
+    /// <summary>Saves the pending change to <paramref name="watchlist"/>, as <see cref="RecordSave.SaveAsync"/> describes.</summary>
+    private Task<SaveOutcome> SaveAsync(Watchlist watchlist, CancellationToken cancellationToken) =>
+        RecordSave.SaveAsync(repository.SaveChangesAsync, () => repository.Discard(watchlist), () => watchlist.Id, repository.ExistsAsync, cancellationToken);
 
     private static ServiceResult<WatchlistView> Success(Watchlist watchlist) =>
         ServiceResult<WatchlistView>.Success(WatchlistMapper.ToView(watchlist));

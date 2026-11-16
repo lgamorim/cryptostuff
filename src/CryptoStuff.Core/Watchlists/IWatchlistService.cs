@@ -31,10 +31,12 @@ public interface IWatchlistService
     Task<ServiceResult> DeleteAsync(int id, CancellationToken cancellationToken);
 
     /// <summary>
-    /// Appends a coin, after checking with CoinGecko that it exists. A coin
-    /// CoinGecko doesn't know is a <see cref="ServiceErrorCode.RuleViolated"/>
-    /// naming it; any other upstream failure propagates. Adding a coin already
-    /// present succeeds without changing anything or calling CoinGecko.
+    /// Appends a coin, after checking with the market data provider that it exists: one price
+    /// lookup in usd, which the market data provider answers for any coin it knows, quoted in
+    /// usd or not. A coin the market data provider doesn't know is a
+    /// <see cref="ServiceErrorCode.RuleViolated"/> naming it; any other
+    /// upstream failure propagates. Adding a coin already present succeeds
+    /// without changing anything or calling the market data provider.
     /// </summary>
     Task<ServiceResult<WatchlistView>> AddCoinAsync(WatchlistCoinCommand command, CancellationToken cancellationToken);
 
@@ -43,11 +45,11 @@ public interface IWatchlistService
 
     /// <summary>
     /// Gets live prices for the watchlist's coins, in its order, through
-    /// <see cref="KnownCoinPrices.GetKnownCoinPricesAsync"/>: a coin CoinGecko
+    /// <see cref="KnownCoinPrices.GetKnownCoinPricesAsync"/>: a coin the market data provider
     /// does not know comes back with no amounts, as one it does not quote in
     /// the currency does, while every other upstream failure propagates.
     /// <see cref="ServiceErrorCode.NotFound"/> is kept for an unknown
-    /// watchlist. An empty watchlist gets an empty view without calling CoinGecko.
+    /// watchlist. An empty watchlist gets an empty view without calling the market data provider.
     /// </summary>
     Task<ServiceResult<CoinPriceView>> GetPricesAsync(WatchlistPriceQuery query, CancellationToken cancellationToken);
 }

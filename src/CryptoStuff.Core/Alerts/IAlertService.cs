@@ -3,7 +3,7 @@ namespace CryptoStuff.Core.Alerts;
 /// <summary>
 /// The price-alert workflow both hosts drive. An unknown alert id is
 /// <see cref="ServiceErrorCode.NotFound"/>; a write that conflicts with stored
-/// state is <see cref="ServiceErrorCode.Conflict"/>; a coin or currency CoinGecko
+/// state is <see cref="ServiceErrorCode.Conflict"/>; a coin or currency the market data provider
 /// doesn't know is <see cref="ServiceErrorCode.RuleViolated"/> with a detail
 /// explaining it. A write that carries the version its caller last read is a
 /// <see cref="ServiceErrorCode.PreconditionFailed"/> when the stored alert is
@@ -21,7 +21,7 @@ public interface IAlertService
     Task<ServiceResult<AlertView>> GetAsync(int id, CancellationToken cancellationToken);
 
     /// <summary>
-    /// Creates an armed alert. CoinGecko is asked once, for the coin priced in
+    /// Creates an armed alert. The market data provider is asked once, for the coin priced in
     /// the currency — the lookup evaluation will make — and it is a
     /// <see cref="ServiceErrorCode.RuleViolated"/> when the coin is unknown or
     /// has no price in that currency; any other upstream failure propagates
@@ -32,7 +32,7 @@ public interface IAlertService
     /// <summary>
     /// Replaces an alert's direction and threshold, which re-arms it whether
     /// or not it had triggered. Losing a race with another write to the same
-    /// alert is a <see cref="ServiceErrorCode.Conflict"/>. CoinGecko is not
+    /// alert is a <see cref="ServiceErrorCode.Conflict"/>. The market data provider is not
     /// asked, since the coin and currency never change.
     /// </summary>
     Task<ServiceResult<AlertView>> UpdateAsync(UpdateAlertCommand command, CancellationToken cancellationToken);

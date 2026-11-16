@@ -2,7 +2,7 @@ namespace CryptoStuff.Core;
 
 /// <summary>
 /// A request for a coin's developer repository activity as of a given date —
-/// sourced from CoinGecko's <c>coins/{id}/history</c> endpoint despite the
+/// sourced from the market data provider's <c>coins/{id}/history</c> endpoint despite the
 /// absence of "history" from this type's name (that endpoint's own data is
 /// unrelated to the "Historical market series" capability).
 /// </summary>

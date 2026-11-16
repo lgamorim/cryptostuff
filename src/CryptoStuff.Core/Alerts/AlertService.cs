@@ -27,9 +27,9 @@ public sealed class AlertService(
     public async Task<ServiceResult<AlertView>> CreateAsync(CreateAlertCommand command, CancellationToken cancellationToken)
     {
         // Built first, so details that break the entity's rules throw before
-        // CoinGecko is asked anything.
+        // the market data provider is asked anything.
         var alert = PriceAlert.Create(command.CoinId, command.VsCurrency, command.Direction, command.Threshold);
-        if (await CheckCoinUpstreamAsync(alert, cancellationToken) is { } rejected)
+        if (await UpstreamCoinChecks.CheckPricedAsync<AlertView>(cryptocurrencyService, alert.CoinId, alert.VsCurrency, cancellationToken) is { } rejected)
         {
             return rejected;
         }
@@ -105,33 +105,6 @@ public sealed class AlertService(
     }
 
     /// <summary>
-    /// Checks with CoinGecko that the coin exists and is priced in the
-    /// alert's vs_currency — the price lookup evaluation will make — returning
-    /// the failure to report, or null when both hold. Either one missing is a
-    /// <see cref="ServiceErrorCode.RuleViolated"/>; any other upstream failure
-    /// is passed on unchanged.
-    /// </summary>
-    private async Task<ServiceResult<AlertView>?> CheckCoinUpstreamAsync(PriceAlert alert, CancellationToken cancellationToken)
-    {
-        var priceQuery = new CoinPriceQuery { CoinIds = [alert.CoinId], VsCurrencies = [alert.VsCurrency] };
-        var prices = await cryptocurrencyService.GetPricesAsync(priceQuery, cancellationToken);
-        if (prices.ErrorCode is { } errorCode)
-        {
-            return errorCode == ServiceErrorCode.NotFound
-                ? ServiceResult<AlertView>.Failure(ServiceErrorCode.RuleViolated, $"CoinGecko has no coin with id '{alert.CoinId}'.")
-                : ServiceResult<AlertView>.Failure(errorCode, prices.ErrorDetail);
-        }
-
-        // A currency CoinGecko doesn't know is not an error upstream: the
-        // coin just comes back without an amount in it.
-        // `!` is safe: a successful result always carries its value.
-        var pricedInCurrency = prices.Value!.Coins.Any(c => c.Amounts.Any(a => a.Currency == alert.VsCurrency));
-        return pricedInCurrency
-            ? null
-            : ServiceResult<AlertView>.Failure(ServiceErrorCode.RuleViolated, $"CoinGecko has no price for '{alert.CoinId}' in '{alert.VsCurrency}'.");
-    }
-
-    /// <summary>
     /// Saves the change just made to <paramref name="alert"/>, or reports a
     /// lost race as a <see cref="ServiceErrorCode.Conflict"/>, or as
     /// <see cref="ServiceErrorCode.NotFound"/> when another writer deleted it.
@@ -157,30 +130,9 @@ public sealed class AlertService(
     private static string ChangedConcurrentlyDetail(int id) =>
         $"Alert {id} was changed by another operation; reload it and try again.";
 
-    /// <summary>
-    /// Saves the pending change to <paramref name="alert"/>. On a
-    /// <see cref="PersistenceConflictException"/> it discards that change, so
-    /// nothing stale stays pending, and tells an alert another writer deleted
-    /// from any other conflict. Any other exception, including cancellation and
-    /// <see cref="PersistenceBusyException"/>, propagates.
-    /// </summary>
-    private async Task<SaveOutcome> SaveAsync(PriceAlert alert, CancellationToken cancellationToken)
-    {
-        try
-        {
-            await repository.SaveChangesAsync(cancellationToken);
-            return SaveOutcome.Saved;
-        }
-        catch (PersistenceConflictException)
-        {
-            repository.Discard(alert);
-
-            // An id of zero is an alert never saved, which no one can have deleted.
-            return alert.Id != 0 && !await repository.ExistsAsync(alert.Id, cancellationToken)
-                ? SaveOutcome.Deleted
-                : SaveOutcome.Conflicted;
-        }
-    }
+    /// <summary>Saves the pending change to <paramref name="alert"/>, as <see cref="RecordSave.SaveAsync"/> describes.</summary>
+    private Task<SaveOutcome> SaveAsync(PriceAlert alert, CancellationToken cancellationToken) =>
+        RecordSave.SaveAsync(repository.SaveChangesAsync, () => repository.Discard(alert), () => alert.Id, repository.ExistsAsync, cancellationToken);
 
     private static ServiceResult<AlertView> Success(PriceAlert alert) =>
         ServiceResult<AlertView>.Success(AlertMapper.ToView(alert));

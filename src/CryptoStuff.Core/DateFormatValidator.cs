@@ -2,7 +2,7 @@ using System.Globalization;
 
 namespace CryptoStuff.Core;
 
-/// <summary>Validates that a date input is well-formed in CoinGecko's <c>dd-MM-yyyy</c> format.</summary>
+/// <summary>Validates that a date input is well-formed in the market data provider's <c>dd-MM-yyyy</c> format.</summary>
 public static class DateFormatValidator
 {
     private const string Format = "dd-MM-yyyy";
