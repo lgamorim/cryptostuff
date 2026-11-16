@@ -67,6 +67,8 @@ public sealed class AlertRepositoryTests : IAsyncLifetime
         found.Threshold.Should().Be(100m);
         found.State.Should().Be(AlertState.Triggered);
         found.TriggeredAt.Should().Be(triggeredAt);
+        // `!` is safe: the assertion above fails the test unless TriggeredAt is the time saved,
+        // which is not null.
         found.TriggeredAt!.Value.Offset.Should().Be(TimeSpan.Zero);
         found.TriggeredPrice.Should().Be(150.5m);
         found.Version.Should().Be(2);

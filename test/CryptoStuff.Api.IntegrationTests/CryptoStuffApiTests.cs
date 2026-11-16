@@ -55,6 +55,7 @@ public class CryptoStuffApiTests
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
         var problem = await response.Content.ReadFromJsonAsync<HttpValidationProblemDetails>(JsonOptions, cancellationToken);
+        // `!` is safe: every error response carries a ProblemDetails body.
         problem!.Title.Should().Be("Not Found");
     }
 
@@ -69,6 +70,7 @@ public class CryptoStuffApiTests
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         var problem = await response.Content.ReadFromJsonAsync<HttpValidationProblemDetails>(JsonOptions, cancellationToken);
+        // `!` is safe: a 400 always carries a validation-problem body.
         problem!.Errors.Should().ContainKey("coins").WhoseValue.Should().Equal("coins is required.");
     }
 
@@ -103,6 +105,7 @@ public class CryptoStuffApiTests
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         var problem = await response.Content.ReadFromJsonAsync<HttpValidationProblemDetails>(JsonOptions, cancellationToken);
+        // `!` is safe: a 400 always carries a validation-problem body.
         problem!.Errors.Should().ContainKey("platform");
     }
 
@@ -125,6 +128,7 @@ public class CryptoStuffApiTests
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var body = await response.Content.ReadFromJsonAsync<CoinMarketChartView>(JsonOptions, cancellationToken);
+        // `!` is safe: a 200 from this route always carries its view as the body.
         body!.Prices.Should().ContainSingle(point => point.Value == 42000m);
     }
 
@@ -139,6 +143,7 @@ public class CryptoStuffApiTests
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         var problem = await response.Content.ReadFromJsonAsync<HttpValidationProblemDetails>(JsonOptions, cancellationToken);
+        // `!` is safe: a 400 always carries a validation-problem body.
         problem!.Errors.Should().ContainKey("days").WhoseValue.Should().Equal("days must be a positive number of days.");
     }
 
@@ -162,6 +167,7 @@ public class CryptoStuffApiTests
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var body = await response.Content.ReadFromJsonAsync<CoinView>(JsonOptions, cancellationToken);
+        // `!` is safe: a 200 from this route always carries its view as the body.
         body!.Id.Should().Be("bitcoin");
         body.ImageUrl.Should().Be("https://example.com/bitcoin.png");
     }
@@ -178,6 +184,7 @@ public class CryptoStuffApiTests
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
         var problem = await response.Content.ReadFromJsonAsync<HttpValidationProblemDetails>(JsonOptions, cancellationToken);
+        // `!` is safe: every error response carries a ProblemDetails body.
         problem!.Title.Should().Be("Not Found");
     }
 
@@ -192,6 +199,7 @@ public class CryptoStuffApiTests
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         var problem = await response.Content.ReadFromJsonAsync<HttpValidationProblemDetails>(JsonOptions, cancellationToken);
+        // `!` is safe: a 400 always carries a validation-problem body.
         problem!.Errors.Should().ContainKey("coin").WhoseValue.Should().Equal("coin is required.");
     }
 
@@ -271,6 +279,7 @@ public class CryptoStuffApiTests
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var body = await response.Content.ReadFromJsonAsync<CoinDeveloperDataView>(JsonOptions, cancellationToken);
+        // `!` is safe: a 200 from this route always carries its view as the body.
         body!.Forks.Should().Be(100);
         body.Stars.Should().Be(200);
     }
@@ -286,6 +295,7 @@ public class CryptoStuffApiTests
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         var problem = await response.Content.ReadFromJsonAsync<HttpValidationProblemDetails>(JsonOptions, cancellationToken);
+        // `!` is safe: a 400 always carries a validation-problem body.
         problem!.Errors.Should().ContainKey("date").WhoseValue.Should().Equal("date must be a valid date in dd-MM-yyyy format.");
     }
 

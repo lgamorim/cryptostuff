@@ -178,6 +178,8 @@ public class CryptoStuffServiceCollectionExtensionsTests
     {
         var field = typeof(CachingCryptocurrencyService).GetField(
             "_cacheDuration", BindingFlags.NonPublic | BindingFlags.Instance);
+        // `!` is safe on both: the field is declared on CachingCryptocurrencyService, so
+        // the lookup cannot return null, and it holds a TimeSpan, which is never null.
         return (TimeSpan)field!.GetValue(service)!;
     }
 

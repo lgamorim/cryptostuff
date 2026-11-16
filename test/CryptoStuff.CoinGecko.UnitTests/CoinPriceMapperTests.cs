@@ -79,6 +79,8 @@ public class CoinPriceMapperTests
     {
         var matrix = new Dictionary<string, Dictionary<string, decimal>>
         {
+            // `!` is deliberate: it stands in for a null CoinGecko can send as a
+            // coin's entry in the price matrix, where the type allows none.
             ["bitcoin"] = null!,
         };
 

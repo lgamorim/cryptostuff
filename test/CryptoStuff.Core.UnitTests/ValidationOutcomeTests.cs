@@ -23,6 +23,7 @@ public class ValidationOutcomeTests
     [Fact]
     public void Should_ThrowArgumentException_When_CreatedViaFailureWithNullMessage()
     {
+        // `!` is deliberate: the test passes the null the signature forbids.
         var act = () => ValidationOutcome.Failure(null!);
 
         act.Should().Throw<ArgumentException>();

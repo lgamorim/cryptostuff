@@ -101,6 +101,8 @@ public class CoinMapperTests
     [Fact]
     public void Should_ReturnNullImageUrl_When_ImageIsExplicitlyNullDespiteBeingRequired()
     {
+        // `!` is deliberate: it stands in for a null CoinGecko can send where the
+        // type allows none.
         var coin = new CoinGeckoCoin { Id = "bitcoin", Symbol = "btc", Name = "Bitcoin", Image = null! };
 
         var view = CoinMapper.ToView(coin);
@@ -131,6 +133,7 @@ public class CoinMapperTests
         var view = CoinMapper.ToView(coin);
 
         view.MarketData.Should().ContainSingle();
+        // `!` is safe: the assertion above fails the test unless MarketData holds one snapshot.
         var snapshot = view.MarketData!.Single();
         snapshot.Currency.Should().Be("usd");
         snapshot.Price.Should().Be(50000m);
@@ -151,6 +154,7 @@ public class CoinMapperTests
         var view = CoinMapper.ToView(coin);
 
         view.MarketData.Should().ContainSingle();
+        // `!` is safe: the assertion above fails the test unless MarketData holds one snapshot.
         view.MarketData!.Single().Currency.Should().Be("usd");
     }
 
@@ -166,6 +170,7 @@ public class CoinMapperTests
 
         var view = CoinMapper.ToView(coin);
 
+        // `!` is safe: the coin has market data, which the mapper always maps to a list.
         view.MarketData!.Select(s => s.Currency).Should().Equal("aud", "eur", "usd");
     }
 
@@ -189,6 +194,8 @@ public class CoinMapperTests
     {
         var coin = CreateCoin(marketData: new CoinGeckoCoinMarketData
         {
+            // `!` is deliberate: it stands in for a null CoinGecko can send where the
+            // type allows none.
             CurrentPrice = null!,
             MarketCap = new Dictionary<string, decimal> { ["usd"] = 1m },
             TotalVolume = new Dictionary<string, decimal> { ["usd"] = 1m },
@@ -205,6 +212,8 @@ public class CoinMapperTests
         var coin = CreateCoin(marketData: new CoinGeckoCoinMarketData
         {
             CurrentPrice = new Dictionary<string, decimal> { ["usd"] = 1m },
+            // `!` is deliberate: it stands in for a null CoinGecko can send where the
+            // type allows none.
             MarketCap = null!,
             TotalVolume = new Dictionary<string, decimal> { ["usd"] = 1m },
         });
@@ -221,6 +230,8 @@ public class CoinMapperTests
         {
             CurrentPrice = new Dictionary<string, decimal> { ["usd"] = 1m },
             MarketCap = new Dictionary<string, decimal> { ["usd"] = 1m },
+            // `!` is deliberate: it stands in for a null CoinGecko can send where the
+            // type allows none.
             TotalVolume = null!,
         });
 

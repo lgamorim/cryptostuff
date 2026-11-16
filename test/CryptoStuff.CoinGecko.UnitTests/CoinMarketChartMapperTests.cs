@@ -123,6 +123,8 @@ public class CoinMarketChartMapperTests
     [Fact]
     public void Should_ReturnEmptySeries_When_ASeriesIsExplicitlyNullDespiteBeingRequired()
     {
+        // `!` is deliberate: each stands in for a null CoinGecko can send where the
+        // type allows none.
         var chart = new CoinGeckoMarketChart { Prices = null!, MarketCaps = null!, TotalVolumes = null! };
 
         var view = CoinMarketChartMapper.ToView(chart);

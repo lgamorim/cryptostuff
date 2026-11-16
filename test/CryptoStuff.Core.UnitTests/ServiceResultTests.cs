@@ -25,6 +25,7 @@ public class ServiceResultTests
     [Fact]
     public void Should_ThrowArgumentNullException_When_CreatedViaSuccessWithNullValue()
     {
+        // `!` is deliberate: the test passes the null the signature forbids.
         var act = () => ServiceResult<string>.Success(null!);
 
         act.Should().Throw<ArgumentNullException>();

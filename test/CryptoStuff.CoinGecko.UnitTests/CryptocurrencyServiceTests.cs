@@ -20,6 +20,8 @@ public class CryptocurrencyServiceTests
         var result = await service.GetPricesAsync(query, CancellationToken.None);
 
         result.IsSuccess.Should().BeTrue();
+        // `!` is safe: the assertion above fails the test unless the result
+        // succeeded, and a successful result always carries its value.
         result.Value!.Coins.Should().ContainSingle(c => c.CoinId == "bitcoin");
     }
 
@@ -87,6 +89,8 @@ public class CryptocurrencyServiceTests
         var result = await service.GetPricesAsync(query, CancellationToken.None);
 
         result.IsSuccess.Should().BeTrue();
+        // `!` is safe: the assertion above fails the test unless the result
+        // succeeded, and a successful result always carries its value.
         result.Value!.Coins.Should().BeEmpty();
     }
 
@@ -135,6 +139,8 @@ public class CryptocurrencyServiceTests
         var result = await service.GetTokenPricesAsync(query, CancellationToken.None);
 
         result.IsSuccess.Should().BeTrue();
+        // `!` is safe: the assertion above fails the test unless the result
+        // succeeded, and a successful result always carries its value.
         result.Value!.Tokens.Should().ContainSingle(t => t.ContractAddress == "0xaaa");
     }
 
@@ -188,6 +194,8 @@ public class CryptocurrencyServiceTests
         var result = await service.GetTokenPricesAsync(query, CancellationToken.None);
 
         result.IsSuccess.Should().BeTrue();
+        // `!` is safe: the assertion above fails the test unless the result
+        // succeeded, and a successful result always carries its value.
         result.Value!.Tokens.Should().BeEmpty();
     }
 
@@ -238,6 +246,8 @@ public class CryptocurrencyServiceTests
         var result = await service.GetMarketChartAsync(query, CancellationToken.None);
 
         result.IsSuccess.Should().BeTrue();
+        // `!` is safe: the assertion above fails the test unless the result
+        // succeeded, and a successful result always carries its value.
         result.Value!.Prices.Should().ContainSingle();
     }
 
@@ -292,6 +302,8 @@ public class CryptocurrencyServiceTests
         var result = await service.GetCoinAsync(query, CancellationToken.None);
 
         result.IsSuccess.Should().BeTrue();
+        // `!` is safe: the assertion above fails the test unless the result
+        // succeeded, and a successful result always carries its value.
         result.Value!.Id.Should().Be("bitcoin");
     }
 
@@ -346,6 +358,8 @@ public class CryptocurrencyServiceTests
         var result = await service.GetDeveloperDataAsync(query, CancellationToken.None);
 
         result.IsSuccess.Should().BeTrue();
+        // `!` is safe: the assertion above fails the test unless the result
+        // succeeded, and a successful result always carries its value.
         result.Value!.Id.Should().Be("bitcoin");
     }
 
