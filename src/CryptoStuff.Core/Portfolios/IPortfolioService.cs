@@ -7,8 +7,9 @@ namespace CryptoStuff.Core.Portfolios;
 /// write that breaks a ledger rule is <see cref="ServiceErrorCode.RuleViolated"/>
 /// with a detail explaining it. A write that carries the version its caller
 /// last read is a <see cref="ServiceErrorCode.PreconditionFailed"/> when the
-/// stored portfolio is at another one, checked before anything else but the
-/// portfolio's existence; without one it is unconditional. Names, currencies, tokens, and transaction
+/// stored portfolio is at another one, checked after the portfolio's existence
+/// and, when replacing or removing a transaction, the transaction's, but before
+/// any other rule; without one it is unconditional. Names, currencies, tokens, and transaction
 /// details are expected to have passed the shared validators already: input
 /// that breaks the entities' rules throws <see cref="ArgumentException"/>.
 /// </summary>

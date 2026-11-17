@@ -16,6 +16,7 @@ internal sealed class FakeAlertRepository : IAlertRepository
     private readonly Dictionary<PriceAlert, int> _trackedVersions = [];
     private readonly Dictionary<int, AlertState> _persistedStates = [];
     private readonly HashSet<int> _changedConcurrently = [];
+    private readonly Dictionary<int, Exception> _saveFailures = [];
     private readonly List<PriceAlert> _discarded = [];
     private int? _deleteConcurrentlyOnSave;
     private int _lastId;
@@ -49,6 +50,13 @@ internal sealed class FakeAlertRepository : IAlertRepository
     /// save that writes a change to it conflicts.
     /// </summary>
     public void ChangeConcurrently(int id) => _changedConcurrently.Add(id);
+
+    /// <summary>
+    /// Makes any save that writes a change to the alert with the given id
+    /// throw <paramref name="exception"/> and write nothing, as a database
+    /// transaction that fails partway rolls back.
+    /// </summary>
+    public void FailSavesOf(int id, Exception exception) => _saveFailures[id] = exception;
 
     /// <summary>The state the alert with the given id has in storage, whatever its in-memory copy says.</summary>
     public AlertState PersistedStateOf(int id) => _persistedStates[id];
@@ -121,6 +129,11 @@ internal sealed class FakeAlertRepository : IAlertRepository
         if (changed.Any(alert => _changedConcurrently.Contains(alert.Id)))
         {
             throw new PersistenceConflictException("An alert was changed by another writer.");
+        }
+
+        if (changed.Select(alert => _saveFailures.GetValueOrDefault(alert.Id)).FirstOrDefault(failure => failure is not null) is { } saveFailure)
+        {
+            throw saveFailure;
         }
 
         foreach (var alert in changed)

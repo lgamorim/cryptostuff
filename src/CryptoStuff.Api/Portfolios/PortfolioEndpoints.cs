@@ -34,7 +34,8 @@ public static class PortfolioEndpoints
         group.MapGet("/", ListAsync)
             .WithProblemMetadata<IReadOnlyList<PortfolioView>>(StatusCodes.Status200OK);
         group.MapPost("/", CreateAsync)
-            .WithProblemMetadata<PortfolioView>(StatusCodes.Status201Created, StatusCodes.Status400BadRequest, StatusCodes.Status409Conflict);
+            .WithProblemMetadata<PortfolioView>(StatusCodes.Status201Created, StatusCodes.Status400BadRequest, StatusCodes.Status409Conflict)
+            .WithDatabaseBusyProblem();
         group.MapGet("/{id:int}", GetAsync)
             .WithProblemMetadata<PortfolioView>(StatusCodes.Status200OK, StatusCodes.Status400BadRequest, StatusCodes.Status404NotFound);
         group.MapPut("/{id:int}", UpdateAsync)
@@ -43,20 +44,24 @@ public static class PortfolioEndpoints
                 StatusCodes.Status400BadRequest,
                 StatusCodes.Status404NotFound,
                 StatusCodes.Status409Conflict,
-                StatusCodes.Status412PreconditionFailed);
+                StatusCodes.Status412PreconditionFailed)
+            .WithDatabaseBusyProblem();
         group.MapDelete("/{id:int}", DeleteAsync)
             .WithProblemMetadata(
                 StatusCodes.Status204NoContent,
                 StatusCodes.Status400BadRequest,
                 StatusCodes.Status404NotFound,
                 StatusCodes.Status409Conflict,
-                StatusCodes.Status412PreconditionFailed);
+                StatusCodes.Status412PreconditionFailed)
+            .WithDatabaseBusyProblem();
         group.MapPost("/{id:int}/transactions", AddTransactionAsync)
-            .WithProblemMetadata<PortfolioView>(StatusCodes.Status201Created, CheckedTransactionWriteProblems);
+            .WithProblemMetadata<PortfolioView>(StatusCodes.Status201Created, CheckedTransactionWriteProblems)
+            .WithDatabaseBusyProblem();
         group.MapGet("/{id:int}/transactions/{txId:int}", GetTransactionAsync)
             .WithProblemMetadata<PortfolioTransactionView>(StatusCodes.Status200OK, StatusCodes.Status400BadRequest, StatusCodes.Status404NotFound);
         group.MapPut("/{id:int}/transactions/{txId:int}", ReplaceTransactionAsync)
-            .WithProblemMetadata<PortfolioView>(StatusCodes.Status200OK, CheckedTransactionWriteProblems);
+            .WithProblemMetadata<PortfolioView>(StatusCodes.Status200OK, CheckedTransactionWriteProblems)
+            .WithDatabaseBusyProblem();
         group.MapDelete("/{id:int}/transactions/{txId:int}", RemoveTransactionAsync)
             .WithProblemMetadata<PortfolioView>(
                 StatusCodes.Status200OK,
@@ -64,7 +69,8 @@ public static class PortfolioEndpoints
                 StatusCodes.Status404NotFound,
                 StatusCodes.Status409Conflict,
                 StatusCodes.Status412PreconditionFailed,
-                StatusCodes.Status422UnprocessableEntity);
+                StatusCodes.Status422UnprocessableEntity)
+            .WithDatabaseBusyProblem();
         group.MapGet("/{id:int}/valuation", GetValuationAsync)
             .WithProblemMetadata<PortfolioValuationView>(
                 StatusCodes.Status200OK,

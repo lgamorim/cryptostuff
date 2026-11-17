@@ -248,8 +248,8 @@ public class AlertEvaluatorTests
         result.IsSuccess.Should().BeTrue();
         upstream.CapturedCancellationToken.Should().Be(source.Token);
 
-        // One load of the armed alerts, then one save per triggered alert.
-        repository.CapturedCancellationTokens.Should().HaveCount(3).And.AllSatisfy(token => token.Should().Be(source.Token));
+        // One load of the armed alerts, then one save for every change.
+        repository.CapturedCancellationTokens.Should().HaveCount(2).And.AllSatisfy(token => token.Should().Be(source.Token));
     }
 
     [Fact]
@@ -279,7 +279,25 @@ public class AlertEvaluatorTests
     }
 
     [Fact]
-    public async Task Should_SkipTheAlertChangedConcurrentlyAndStillTriggerTheOthers_When_OneSaveConflicts()
+    public async Task Should_SaveEveryTriggerAndResetTogether_When_SeveralAlertsChange()
+    {
+        var (repository, upstream, _, evaluator) = CreateSut();
+        var rearmed = SeedRearmed(repository, "bitcoin");
+        var first = SeedAlert(repository, "ethereum");
+        var second = SeedAlert(repository, "litecoin");
+        upstream.PricesResult = Prices(("bitcoin", "usd", 90m), ("ethereum", "usd", 150m), ("litecoin", "usd", 150m));
+
+        var result = await evaluator.EvaluateAsync(CancellationToken.None);
+
+        SucceededValue(result).Triggered.Select(t => t.Id).Should().Equal(first.Id, second.Id);
+        repository.SaveChangesCallCount.Should().Be(1);
+        rearmed.AwaitingReset.Should().BeFalse();
+        repository.PersistedStateOf(first.Id).Should().Be(AlertState.Triggered);
+        repository.PersistedStateOf(second.Id).Should().Be(AlertState.Triggered);
+    }
+
+    [Fact]
+    public async Task Should_ReportConflictAndTriggerNothing_When_AnAlertChangedConcurrently()
     {
         var (repository, upstream, _, evaluator) = CreateSut();
         var first = SeedAlert(repository, "bitcoin");
@@ -290,10 +308,46 @@ public class AlertEvaluatorTests
 
         var result = await evaluator.EvaluateAsync(CancellationToken.None);
 
-        SucceededValue(result).Triggered.Select(t => t.Id).Should().Equal(first.Id, last.Id);
-        repository.PersistedStateOf(first.Id).Should().Be(AlertState.Triggered);
+        result.ErrorCode.Should().Be(ServiceErrorCode.Conflict);
+        result.ErrorDetail.Should().Be("Another operation changed an alert while the check ran, so nothing was triggered; run the check again.");
+        repository.PersistedStateOf(first.Id).Should().Be(AlertState.Armed);
         repository.PersistedStateOf(stale.Id).Should().Be(AlertState.Armed);
-        repository.PersistedStateOf(last.Id).Should().Be(AlertState.Triggered);
+        repository.PersistedStateOf(last.Id).Should().Be(AlertState.Armed);
+
+        // Every change is dropped, so a later save in the same scope does not fail again on the stale one.
+        repository.Discarded.Should().Equal(first, stale, last);
+    }
+
+    [Fact]
+    public async Task Should_PropagateBusyAndWriteNothing_When_SavingALaterAlertFindsTheDatabaseBusy()
+    {
+        var (repository, upstream, _, evaluator) = CreateSut();
+        var first = SeedAlert(repository, "bitcoin");
+        var busy = SeedAlert(repository, "ethereum");
+        upstream.PricesResult = Prices(("bitcoin", "usd", 150m), ("ethereum", "usd", 150m));
+        repository.FailSavesOf(busy.Id, new PersistenceBusyException("The database is busy."));
+
+        var act = () => evaluator.EvaluateAsync(CancellationToken.None);
+
+        await act.Should().ThrowAsync<PersistenceBusyException>();
+        repository.PersistedStateOf(first.Id).Should().Be(AlertState.Armed);
+        repository.PersistedStateOf(busy.Id).Should().Be(AlertState.Armed);
+    }
+
+    [Fact]
+    public async Task Should_PropagateCancellationAndWriteNothing_When_SavingALaterAlertIsCancelled()
+    {
+        var (repository, upstream, _, evaluator) = CreateSut();
+        var first = SeedAlert(repository, "bitcoin");
+        var cancelled = SeedAlert(repository, "ethereum");
+        upstream.PricesResult = Prices(("bitcoin", "usd", 150m), ("ethereum", "usd", 150m));
+        repository.FailSavesOf(cancelled.Id, new OperationCanceledException());
+
+        var act = () => evaluator.EvaluateAsync(CancellationToken.None);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        repository.PersistedStateOf(first.Id).Should().Be(AlertState.Armed);
+        repository.PersistedStateOf(cancelled.Id).Should().Be(AlertState.Armed);
     }
 
     [Fact]
@@ -359,7 +413,7 @@ public class AlertEvaluatorTests
     }
 
     [Fact]
-    public async Task Should_DropTheResetAndStillTriggerTheOthers_When_TheResetSaveConflicts()
+    public async Task Should_ReportConflictAndTriggerNothing_When_AResetAlertChangedConcurrently()
     {
         var (repository, upstream, _, evaluator) = CreateSut();
         var rearmed = SeedRearmed(repository, "bitcoin");
@@ -369,8 +423,9 @@ public class AlertEvaluatorTests
 
         var result = await evaluator.EvaluateAsync(CancellationToken.None);
 
-        SucceededValue(result).Triggered.Should().ContainSingle().Which.Id.Should().Be(other.Id);
-        repository.PersistedStateOf(other.Id).Should().Be(AlertState.Triggered);
+        result.ErrorCode.Should().Be(ServiceErrorCode.Conflict);
+        repository.PersistedStateOf(other.Id).Should().Be(AlertState.Armed);
+        repository.Discarded.Should().Equal(rearmed, other);
     }
 
     // An Above-100 alert that triggered and was re-armed, so it waits for its

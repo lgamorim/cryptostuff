@@ -10,7 +10,11 @@ public interface IAlertEvaluator
 {
     /// <summary>
     /// Evaluates the armed alerts once and reports the ones that triggered and
-    /// the ones it could not price, which stay armed.
+    /// the ones it could not price, which stay armed. Its triggers and resets
+    /// are saved together, so an evaluation that fails, returns
+    /// <see cref="ServiceErrorCode.Conflict"/> because another writer changed
+    /// one of the alerts, or throws (a busy database, cancellation) has
+    /// triggered nothing.
     /// </summary>
     Task<ServiceResult<AlertEvaluationView>> EvaluateAsync(CancellationToken cancellationToken);
 }

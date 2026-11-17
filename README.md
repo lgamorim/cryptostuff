@@ -553,11 +553,15 @@ alert unpriced rather than failing the evaluation.
 
 **Two writers.** Evaluations can overlap another write to the same alert,
 such as another evaluation (the CLI beside the API, or a doubled tick), an
-edit, a re-arm, or a delete. Each trigger, and each reset of a re-armed
-alert, is saved on its own, and the alert's version turns a lost race into a
-skip rather than an overwrite: that alert is left as the other writer made it
-and is checked again by the next evaluation, while the rest of the
-evaluation's changes are still saved. The skipped alert does not appear in the
+edit, a re-arm, or a delete. An evaluation saves all of its triggers, and
+every reset of a re-armed alert, together, so it writes all of them or none.
+The alert's version turns a lost race into a failure rather than an
+overwrite: if another writer changed or deleted any of the evaluated alerts
+after the evaluation read it, the evaluation fails with `Conflict`, triggers
+nothing, and leaves every alert as it was, so the next evaluation checks them
+all again. The same holds when the database stays busy past SQLite's wait or
+the evaluation is cancelled while saving: nothing was triggered, so an
+evaluation that failed never leaves behind an alert it triggered but did not
 report.
 
 ### Background evaluation
@@ -598,7 +602,9 @@ what price. A tick that fails costs only that tick, and the next one tries
 again: an evaluation that returns an [error code](#error-codes) is logged at
 `Warning` with its code and detail
 (`Alert evaluation failed with RateLimited: …`), and one that throws, such as on a database error, is logged at `Error`
-with the exception. Either way every alert it had not triggered stays armed.
+with the exception. An evaluation saves its triggers together, so one that
+returns an error code triggered nothing and one that throws saved all of its
+triggers or none; either way the next one checks every alert still armed.
 
 Alerts an evaluation could not price are logged at `Warning`, but only when
 they differ from the ones the last successful evaluation could not price, so a
@@ -1132,7 +1138,7 @@ Failures use the [ProblemDetails](#rest-api) contract above:
 |---|---|
 | `400` | A missing body or malformed JSON; a blank `coinId` or `vsCurrency`; a `direction` that is not `above` or `below`; a missing `threshold`, or one of zero or below; an `id` of zero or below |
 | `404` | No alert has that `id`, another writer deleted it while the request was saving, or the `id` is not a whole number (no route matches it) |
-| `409` | A concurrent write won the race |
+| `409` | A concurrent write won the race; for `POST /alerts/check`, another write changed one of the evaluated alerts, so nothing was triggered and the check can be run again |
 | `422` | Creating an alert on a coin CoinGecko does not know, or that has no price in that vs_currency; the `detail` names it |
 | `429` | `POST /alerts/check` went over `Alerts:ChecksPerMinute`, with a `Retry-After` header, or CoinGecko's rate limit was hit while checking a new alert's coin or while evaluating |
 | `502`, `504` | CoinGecko failed while checking a new alert's coin or while evaluating |

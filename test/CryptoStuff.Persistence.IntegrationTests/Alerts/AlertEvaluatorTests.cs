@@ -26,8 +26,10 @@ public sealed class AlertEvaluatorTests : IAsyncLifetime
         return ValueTask.CompletedTask;
     }
 
+    // The changed alert has the lower id, so the evaluation's save writes it
+    // first and fails there; the other alert must still be left armed.
     [Fact]
-    public async Task Should_SkipTheAlertAnotherContextChanged_When_OthersStillTrigger()
+    public async Task Should_TriggerNothingAndKeepTheOtherWritersChange_When_AnotherContextChangedAnAlert()
     {
         var stale = await SaveNewAsync("bitcoin");
         var other = await SaveNewAsync("ethereum");
@@ -35,33 +37,51 @@ public sealed class AlertEvaluatorTests : IAsyncLifetime
             PricesAt(150m, "bitcoin", "ethereum"),
             _ => ChangeFreshAsync(stale.Id, alert => alert.Update(AlertDirection.Below, 50m)));
 
-        var triggered = await EvaluateAsync(upstream);
+        var result = await EvaluateResultAsync(upstream);
 
-        triggered.Select(t => t.Id).Should().Equal(other.Id);
+        result.ErrorCode.Should().Be(ServiceErrorCode.Conflict);
         upstream.GetPricesCallCount.Should().Be(1);
         var foundStale = await FindFreshAsync(stale.Id);
         foundStale.State.Should().Be(AlertState.Armed);
         foundStale.Direction.Should().Be(AlertDirection.Below);
         foundStale.Threshold.Should().Be(50m);
         foundStale.Version.Should().Be(2);
+        (await FindFreshAsync(other.Id)).State.Should().Be(AlertState.Armed);
+    }
+
+    // As above, with the alert that triggers first in the save and the deleted
+    // one after it, so a save that was not all-or-none would keep the first.
+    [Fact]
+    public async Task Should_TriggerNothing_When_AnotherContextDeletedAnAlert()
+    {
+        var other = await SaveNewAsync("bitcoin");
+        var deleted = await SaveNewAsync("ethereum");
+        var upstream = new CompetingPriceService(PricesAt(150m, "bitcoin", "ethereum"), _ => DeleteFreshAsync(deleted.Id));
+
+        var result = await EvaluateResultAsync(upstream);
+
+        result.ErrorCode.Should().Be(ServiceErrorCode.Conflict);
+        (await FindFreshOrNullAsync(deleted.Id)).Should().BeNull();
+        (await FindFreshAsync(other.Id)).State.Should().Be(AlertState.Armed);
+    }
+
+    [Fact]
+    public async Task Should_TriggerTheAlertsStillMet_When_TheEvaluationAfterAConflictRuns()
+    {
+        var stale = await SaveNewAsync("bitcoin");
+        var other = await SaveNewAsync("ethereum");
+        await EvaluateResultAsync(new CompetingPriceService(
+            PricesAt(150m, "bitcoin", "ethereum"),
+            _ => ChangeFreshAsync(stale.Id, alert => alert.Update(AlertDirection.Below, 50m))));
+
+        var triggered = await EvaluateAsync(new CompetingPriceService(PricesAt(150m, "bitcoin", "ethereum"), _ => Task.CompletedTask));
+
+        triggered.Select(t => t.Id).Should().Equal(other.Id);
         var foundOther = await FindFreshAsync(other.Id);
         foundOther.State.Should().Be(AlertState.Triggered);
         foundOther.TriggeredAt.Should().Be(Now);
         foundOther.TriggeredPrice.Should().Be(150m);
-    }
-
-    [Fact]
-    public async Task Should_SkipTheAlertAnotherContextDeleted_When_OthersStillTrigger()
-    {
-        var deleted = await SaveNewAsync("bitcoin");
-        var other = await SaveNewAsync("ethereum");
-        var upstream = new CompetingPriceService(PricesAt(150m, "bitcoin", "ethereum"), _ => DeleteFreshAsync(deleted.Id));
-
-        var triggered = await EvaluateAsync(upstream);
-
-        triggered.Select(t => t.Id).Should().Equal(other.Id);
-        (await FindFreshOrNullAsync(deleted.Id)).Should().BeNull();
-        (await FindFreshAsync(other.Id)).State.Should().Be(AlertState.Triggered);
+        (await FindFreshAsync(stale.Id)).State.Should().Be(AlertState.Armed);
     }
 
     [Fact]
@@ -98,17 +118,21 @@ public sealed class AlertEvaluatorTests : IAsyncLifetime
             Coins = [.. coinIds.Select(id => new CoinPrice { CoinId = id, Amounts = [new CurrencyAmount { Currency = "usd", Amount = amount }] })],
         };
 
-    // Runs one evaluation in a context of its own, as one host process would,
-    // and returns what it triggered.
+    // Runs one evaluation that must succeed, and returns what it triggered.
     private async Task<IReadOnlyList<TriggeredAlertView>> EvaluateAsync(ICryptocurrencyService upstream)
     {
-        await using var context = _database.CreateContext();
-        var evaluator = new AlertEvaluator(new AlertRepository(context), upstream, new FixedTimeProvider(Now));
-
-        var result = await evaluator.EvaluateAsync(Token);
+        var result = await EvaluateResultAsync(upstream);
 
         result.IsSuccess.Should().BeTrue();
         return result.Value?.Triggered ?? [];
+    }
+
+    // Runs one evaluation in a context of its own, as one host process would.
+    private async Task<ServiceResult<AlertEvaluationView>> EvaluateResultAsync(ICryptocurrencyService upstream)
+    {
+        await using var context = _database.CreateContext();
+        var evaluator = new AlertEvaluator(new AlertRepository(context), upstream, new FixedTimeProvider(Now));
+        return await evaluator.EvaluateAsync(Token);
     }
 
     private async Task<PriceAlert> SaveNewAsync(string coinId)

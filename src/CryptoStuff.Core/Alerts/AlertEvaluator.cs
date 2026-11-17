@@ -11,6 +11,9 @@ public sealed class AlertEvaluator(
     ICryptocurrencyService cryptocurrencyService,
     TimeProvider timeProvider) : IAlertEvaluator
 {
+    private const string ChangedConcurrentlyDetail =
+        "Another operation changed an alert while the check ran, so nothing was triggered; run the check again.";
+
     /// <inheritdoc />
     public async Task<ServiceResult<AlertEvaluationView>> EvaluateAsync(CancellationToken cancellationToken)
     {
@@ -28,7 +31,15 @@ public sealed class AlertEvaluator(
 
         // `!` is safe: a successful result always carries its value.
         var (pricedAlerts, unpriced) = priced.Value!;
-        return Success(await TriggerAsync(pricedAlerts, cancellationToken), unpriced);
+        var (triggered, changed) = Trigger(pricedAlerts);
+        if (changed.Count == 0)
+        {
+            return Success(triggered, unpriced);
+        }
+
+        return await SaveAllAsync(changed, cancellationToken)
+            ? Success(triggered, unpriced)
+            : ServiceResult<AlertEvaluationView>.Failure(ServiceErrorCode.Conflict, ChangedConcurrentlyDetail);
     }
 
     /// <summary>
@@ -72,23 +83,21 @@ public sealed class AlertEvaluator(
     }
 
     /// <summary>
-    /// Triggers each alert its price meets and saves it on its own, so an
-    /// alert changed concurrently costs only its own trigger. A re-armed alert
-    /// whose price has moved back is saved with its reset instead, so a later
-    /// evaluation can trigger it. Every trigger carries the same time, read
-    /// once after the prices arrived.
+    /// Triggers each alert its price meets, and resets each re-armed alert
+    /// whose price has moved back, so a later evaluation can trigger it; none
+    /// of it is saved yet. Every trigger carries the same time, read once
+    /// after the prices arrived.
     /// </summary>
-    private async Task<List<TriggeredAlertView>> TriggerAsync(IReadOnlyList<PricedAlert> priced, CancellationToken cancellationToken)
+    private (List<TriggeredAlertView> Triggered, List<PriceAlert> Changed) Trigger(IReadOnlyList<PricedAlert> priced)
     {
         var now = timeProvider.GetUtcNow();
         var triggered = new List<TriggeredAlertView>();
+        var changed = new List<PriceAlert>();
         foreach (var (alert, price) in priced)
         {
-            // A reset that fails to save is dropped like a trigger would be;
-            // the next evaluation sees the price again.
             if (alert.ResetIfNotMetBy(price))
             {
-                await TrySaveAsync(alert, cancellationToken);
+                changed.Add(alert);
                 continue;
             }
 
@@ -99,11 +108,7 @@ public sealed class AlertEvaluator(
                 continue;
             }
 
-            if (!await TrySaveAsync(alert, cancellationToken))
-            {
-                continue;
-            }
-
+            changed.Add(alert);
             triggered.Add(new TriggeredAlertView
             {
                 Id = alert.Id,
@@ -116,18 +121,21 @@ public sealed class AlertEvaluator(
             });
         }
 
-        return triggered;
+        return (triggered, changed);
     }
 
     /// <summary>
-    /// Saves the change just made to <paramref name="alert"/>, returning
-    /// false, with the alert dropped, when another writer changed or deleted it
-    /// since it was read. A failed save leaves its change pending, so without
-    /// the discard every later save would fail on the same stale alert; the
-    /// next run finds the alert as it now is. Any other exception, including
-    /// cancellation, propagates.
+    /// Saves every trigger and reset of the run in one save, so the run writes
+    /// all of them or none: a failure partway, whether a busy database or
+    /// cancellation, never leaves an alert triggered that the run did not get
+    /// to report. Returns false, with every change dropped, when another
+    /// writer changed or deleted one of the alerts since it was read; a failed
+    /// save leaves its changes pending, so without the discard every later
+    /// save in the same scope would fail again on the same stale alert. The
+    /// next run finds the alerts as they now are. Any other exception,
+    /// including cancellation, propagates.
     /// </summary>
-    private async Task<bool> TrySaveAsync(PriceAlert alert, CancellationToken cancellationToken)
+    private async Task<bool> SaveAllAsync(IReadOnlyList<PriceAlert> changed, CancellationToken cancellationToken)
     {
         try
         {
@@ -136,7 +144,11 @@ public sealed class AlertEvaluator(
         }
         catch (PersistenceConflictException)
         {
-            repository.Discard(alert);
+            foreach (var alert in changed)
+            {
+                repository.Discard(alert);
+            }
+
             return false;
         }
     }

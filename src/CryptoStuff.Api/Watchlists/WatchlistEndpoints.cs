@@ -18,15 +18,18 @@ public static class WatchlistEndpoints
         group.MapGet("/", ListAsync)
             .WithProblemMetadata<IReadOnlyList<WatchlistView>>(StatusCodes.Status200OK);
         group.MapPost("/", CreateAsync)
-            .WithProblemMetadata<WatchlistView>(StatusCodes.Status201Created, StatusCodes.Status400BadRequest, StatusCodes.Status409Conflict);
+            .WithProblemMetadata<WatchlistView>(StatusCodes.Status201Created, StatusCodes.Status400BadRequest, StatusCodes.Status409Conflict)
+            .WithDatabaseBusyProblem();
         group.MapGet("/{id:int}", GetAsync)
             .WithProblemMetadata<WatchlistView>(StatusCodes.Status200OK, StatusCodes.Status400BadRequest, StatusCodes.Status404NotFound);
         group.MapPut("/{id:int}", RenameAsync)
             .WithProblemMetadata<WatchlistView>(
-                StatusCodes.Status200OK, StatusCodes.Status400BadRequest, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict);
+                StatusCodes.Status200OK, StatusCodes.Status400BadRequest, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict)
+            .WithDatabaseBusyProblem();
         group.MapDelete("/{id:int}", DeleteAsync)
             .WithProblemMetadata(
-                StatusCodes.Status204NoContent, StatusCodes.Status400BadRequest, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict);
+                StatusCodes.Status204NoContent, StatusCodes.Status400BadRequest, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict)
+            .WithDatabaseBusyProblem();
         group.MapPut("/{id:int}/coins/{coin}", AddCoinAsync)
             .WithProblemMetadata<WatchlistView>(
                 StatusCodes.Status200OK,
@@ -36,10 +39,12 @@ public static class WatchlistEndpoints
                 StatusCodes.Status422UnprocessableEntity,
                 StatusCodes.Status429TooManyRequests,
                 StatusCodes.Status502BadGateway,
-                StatusCodes.Status504GatewayTimeout);
+                StatusCodes.Status504GatewayTimeout)
+            .WithDatabaseBusyProblem();
         group.MapDelete("/{id:int}/coins/{coin}", RemoveCoinAsync)
             .WithProblemMetadata<WatchlistView>(
-                StatusCodes.Status200OK, StatusCodes.Status400BadRequest, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict);
+                StatusCodes.Status200OK, StatusCodes.Status400BadRequest, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict)
+            .WithDatabaseBusyProblem();
         group.MapGet("/{id:int}/prices", GetPricesAsync)
             .WithProblemMetadata<CoinPriceView>(
                 StatusCodes.Status200OK,

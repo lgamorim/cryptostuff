@@ -253,6 +253,29 @@ public sealed class AlertRepositoryTests : IAsyncLifetime
         (await FindFreshAsync(other.Id)).State.Should().Be(AlertState.Triggered);
     }
 
+    // The alert evaluation saves a whole run's triggers in one save and relies
+    // on it writing all of them or none. The fresh alert's id is the lower, so
+    // its update is written before the stale one fails.
+    [Fact]
+    public async Task Should_WriteNoneOfTheSavesChanges_When_OneAlertInItConflicts()
+    {
+        var fresh = await SaveNewAsync("bitcoin");
+        var stale = await SaveNewAsync("ethereum");
+        await using var context = _database.CreateContext();
+        var repository = new AlertRepository(context);
+        var freshCopy = await FindSavedAsync(repository, fresh.Id);
+        var staleCopy = await FindSavedAsync(repository, stale.Id);
+        await UpdateFreshAsync(stale.Id, AlertDirection.Below, 50m);
+        var triggeredAt = new DateTimeOffset(2026, 1, 5, 12, 0, 0, TimeSpan.Zero);
+        freshCopy.Trigger(150m, triggeredAt).IsValid.Should().BeTrue();
+        staleCopy.Trigger(150m, triggeredAt).IsValid.Should().BeTrue();
+
+        await SaveExpectingConflictAsync(repository);
+
+        (await FindFreshAsync(fresh.Id)).State.Should().Be(AlertState.Armed);
+        (await FindFreshAsync(stale.Id)).State.Should().Be(AlertState.Armed);
+    }
+
     [Fact]
     public async Task Should_ThrowPersistenceConflictException_When_RemovingAlertChangedSinceItWasRead()
     {

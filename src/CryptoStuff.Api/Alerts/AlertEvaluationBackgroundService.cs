@@ -90,11 +90,11 @@ public sealed partial class AlertEvaluationBackgroundService(
     private partial void LogTriggered(int alertId, string coinId, decimal price, string vsCurrency, string direction, decimal threshold);
 
     [LoggerMessage(EventId = 2, Level = LogLevel.Warning,
-        Message = "Alert evaluation failed with {ErrorCode}: {ErrorDetail} Every alert stays armed until the next evaluation.")]
+        Message = "Alert evaluation failed with {ErrorCode}: {ErrorDetail} It triggered nothing, so the next evaluation checks every alert again.")]
     private partial void LogEvaluationFailed(ServiceErrorCode errorCode, string? errorDetail);
 
     [LoggerMessage(EventId = 3, Level = LogLevel.Error,
-        Message = "Alert evaluation threw an exception. Every alert it had not yet triggered stays armed until the next evaluation.")]
+        Message = "Alert evaluation threw an exception. It saves its triggers together, so it saved all of them or none; the next evaluation checks every alert still armed.")]
     private partial void LogEvaluationThrew(Exception exception);
 
     [LoggerMessage(EventId = 4, Level = LogLevel.Warning,

@@ -224,7 +224,7 @@ public sealed class AlertEvaluationBackgroundServiceTests : IAsyncDisposable
                 UnpricedWarning("5 (ghostcoin in usd)"),
                 new LogEntry(
                     LogLevel.Warning,
-                    "Alert evaluation failed with RateLimited: Try again in a minute. Every alert stays armed until the next evaluation.",
+                    "Alert evaluation failed with RateLimited: Try again in a minute. It triggered nothing, so the next evaluation checks every alert again.",
                     null),
             ]);
     }
@@ -251,7 +251,7 @@ public sealed class AlertEvaluationBackgroundServiceTests : IAsyncDisposable
                 UnpricedWarning("5 (ghostcoin in usd)"),
                 new LogEntry(
                     LogLevel.Error,
-                    "Alert evaluation threw an exception. Every alert it had not yet triggered stays armed until the next evaluation.",
+                    "Alert evaluation threw an exception. It saves its triggers together, so it saved all of them or none; the next evaluation checks every alert still armed.",
                     failure),
             ]);
     }
@@ -271,7 +271,7 @@ public sealed class AlertEvaluationBackgroundServiceTests : IAsyncDisposable
             [
                 new LogEntry(
                     LogLevel.Warning,
-                    "Alert evaluation failed with RateLimited: Try again in a minute. Every alert stays armed until the next evaluation.",
+                    "Alert evaluation failed with RateLimited: Try again in a minute. It triggered nothing, so the next evaluation checks every alert again.",
                     null),
             ]);
     }
@@ -292,7 +292,7 @@ public sealed class AlertEvaluationBackgroundServiceTests : IAsyncDisposable
             [
                 new LogEntry(
                     LogLevel.Error,
-                    "Alert evaluation threw an exception. Every alert it had not yet triggered stays armed until the next evaluation.",
+                    "Alert evaluation threw an exception. It saves its triggers together, so it saved all of them or none; the next evaluation checks every alert still armed.",
                     failure),
             ]);
     }

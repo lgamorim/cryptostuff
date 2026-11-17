@@ -32,30 +32,37 @@ public static class AlertEndpoints
                 StatusCodes.Status422UnprocessableEntity,
                 StatusCodes.Status429TooManyRequests,
                 StatusCodes.Status502BadGateway,
-                StatusCodes.Status504GatewayTimeout);
+                StatusCodes.Status504GatewayTimeout)
+            .WithDatabaseBusyProblem();
 
         group.MapGet("/{id:int}", GetAsync)
             .WithProblemMetadata<AlertView>(StatusCodes.Status200OK, StatusCodes.Status400BadRequest, StatusCodes.Status404NotFound);
         group.MapPut("/{id:int}", UpdateAsync)
             .WithProblemMetadata<AlertView>(
-                StatusCodes.Status200OK, StatusCodes.Status400BadRequest, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict);
+                StatusCodes.Status200OK, StatusCodes.Status400BadRequest, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict)
+            .WithDatabaseBusyProblem();
         group.MapDelete("/{id:int}", DeleteAsync)
             .WithProblemMetadata(
-                StatusCodes.Status204NoContent, StatusCodes.Status400BadRequest, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict);
+                StatusCodes.Status204NoContent, StatusCodes.Status400BadRequest, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict)
+            .WithDatabaseBusyProblem();
         group.MapPost("/{id:int}/rearm", RearmAsync)
             .WithProblemMetadata<AlertView>(
-                StatusCodes.Status200OK, StatusCodes.Status400BadRequest, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict);
+                StatusCodes.Status200OK, StatusCodes.Status400BadRequest, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict)
+            .WithDatabaseBusyProblem();
 
-        // Evaluating asks CoinGecko for every armed alert's price; that is its
-        // only way to fail, besides the throttle that keeps it from spending
-        // CoinGecko's rate limit, which answers 429 too.
+        // Evaluating asks CoinGecko for every armed alert's price, which can
+        // fail upstream; the throttle that keeps it from spending CoinGecko's
+        // rate limit answers 429 too. Its one save of every trigger fails as a
+        // whole when another writer changed one of the alerts.
         group.MapPost("/check", CheckAsync)
             .RequireRateLimiting(AlertCheckRateLimit.PolicyName)
             .WithProblemMetadata<AlertEvaluationView>(
                 StatusCodes.Status200OK,
+                StatusCodes.Status409Conflict,
                 StatusCodes.Status429TooManyRequests,
                 StatusCodes.Status502BadGateway,
-                StatusCodes.Status504GatewayTimeout);
+                StatusCodes.Status504GatewayTimeout)
+            .WithDatabaseBusyProblem();
     }
 
     /// <summary><c>GET /alerts</c> — every alert.</summary>
