@@ -54,6 +54,30 @@ public static class CryptoStuffDatabase
         }
     }
 
+    /// <summary>
+    /// Whether <paramref name="context"/>'s database opens and has no pending
+    /// migration. Only reads: a missing file is reported not ready and is not
+    /// created, nor is a missing directory. A database SQLite cannot open or
+    /// read, such as a file that is not a SQLite database, is not ready rather
+    /// than an exception; cancellation still throws.
+    /// </summary>
+    public static async Task<bool> IsReadyAsync(CryptoStuffDbContext context, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+
+        // EF checks that a file database exists before reading its migration
+        // history, without opening it, so a missing file is never created here.
+        try
+        {
+            var pending = await context.Database.GetPendingMigrationsAsync(cancellationToken);
+            return !pending.Any();
+        }
+        catch (SqliteException)
+        {
+            return false;
+        }
+    }
+
     // A null connection string parses to an empty data source, which, like an
     // in-memory one, names no file whose directory could be missing.
     private static string? FileDatabaseDirectory(string? connectionString)

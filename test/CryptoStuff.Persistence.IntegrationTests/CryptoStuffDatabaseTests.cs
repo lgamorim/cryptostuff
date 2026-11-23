@@ -479,6 +479,117 @@ public class CryptoStuffDatabaseTests
         }
     }
 
+    [Fact]
+    public async Task Should_ReportReady_When_DatabaseIsMigrated()
+    {
+        using var database = await TestDatabase.CreateMigratedAsync();
+        await using var context = database.CreateContext();
+
+        var isReady = await CryptoStuffDatabase.IsReadyAsync(context, TestContext.Current.CancellationToken);
+
+        isReady.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Should_ReportNotReady_When_AMigrationIsPending()
+    {
+        var filePath = Path.Combine(TestDatabase.Root, $"{Guid.NewGuid():N}.db");
+        try
+        {
+            await StoreWatchlistAtAddPriceAlertsAsync(filePath);
+            await using var context = TestDatabase.CreateContextFor(filePath);
+
+            var isReady = await CryptoStuffDatabase.IsReadyAsync(context, TestContext.Current.CancellationToken);
+
+            isReady.Should().BeFalse();
+        }
+        finally
+        {
+            File.Delete(filePath);
+        }
+    }
+
+    [Fact]
+    public async Task Should_ThrowArgumentNullException_When_ReadinessContextIsNull()
+    {
+        // `!` passes null past the non-nullable parameter to exercise the guard.
+        var act = () => CryptoStuffDatabase.IsReadyAsync(null!, TestContext.Current.CancellationToken);
+
+        await act.Should().ThrowAsync<ArgumentNullException>().WithParameterName("context");
+    }
+
+    [Fact]
+    public async Task Should_ThrowOperationCanceledException_When_ReadinessCheckCanceled()
+    {
+        using var database = await TestDatabase.CreateMigratedAsync();
+        await using var context = database.CreateContext();
+
+        var act = () => CryptoStuffDatabase.IsReadyAsync(context, new CancellationToken(canceled: true));
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    [Fact]
+    public async Task Should_ReportNotReadyAndNotCreateTheFile_When_FileIsMissing()
+    {
+        Directory.CreateDirectory(TestDatabase.Root);
+        var filePath = Path.Combine(TestDatabase.Root, $"{Guid.NewGuid():N}.db");
+        try
+        {
+            await using var context = TestDatabase.CreateContextFor(filePath);
+
+            var isReady = await CryptoStuffDatabase.IsReadyAsync(context, TestContext.Current.CancellationToken);
+
+            isReady.Should().BeFalse();
+            File.Exists(filePath).Should().BeFalse("a probe only reads");
+        }
+        finally
+        {
+            File.Delete(filePath);
+        }
+    }
+
+    [Fact]
+    public async Task Should_ReportNotReadyAndNotCreateTheDirectory_When_DirectoryIsMissing()
+    {
+        var directory = Path.Combine(TestDatabase.Root, $"{Guid.NewGuid():N}");
+        await using var context = TestDatabase.CreateContextFor(Path.Combine(directory, "cryptostuff.db"));
+        try
+        {
+            var isReady = await CryptoStuffDatabase.IsReadyAsync(context, TestContext.Current.CancellationToken);
+
+            isReady.Should().BeFalse();
+            Directory.Exists(directory).Should().BeFalse("a probe only reads");
+        }
+        finally
+        {
+            if (Directory.Exists(directory))
+            {
+                Directory.Delete(directory, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task Should_ReportNotReady_When_FileIsNotASqliteDatabase()
+    {
+        var filePath = Path.Combine(TestDatabase.Root, $"{Guid.NewGuid():N}.db");
+        try
+        {
+            Directory.CreateDirectory(TestDatabase.Root);
+            await File.WriteAllTextAsync(filePath, "This is not a SQLite database, just text long enough to fill a header.", TestContext.Current.CancellationToken);
+            await using var context = TestDatabase.CreateContextFor(filePath);
+
+            var isReady = await CryptoStuffDatabase.IsReadyAsync(context, TestContext.Current.CancellationToken);
+
+            isReady.Should().BeFalse();
+        }
+        finally
+        {
+            File.Delete(filePath);
+        }
+    }
+
     // Stops at the schema the price alert release shipped, which
     // CryptoStuffDatabase offers no way to do, and stores one watchlist in it.
     private static async Task StoreWatchlistAtAddPriceAlertsAsync(string filePath)

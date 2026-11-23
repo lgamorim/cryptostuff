@@ -20,4 +20,18 @@ public static class CryptoStuffServiceProviderExtensions
         var context = scope.ServiceProvider.GetRequiredService<CryptoStuffDbContext>();
         await CryptoStuffDatabase.MigrateAsync(context, cancellationToken);
     }
+
+    /// <summary>
+    /// Whether the configured database is ready to serve the stored features,
+    /// through <see cref="CryptoStuffDatabase.IsReadyAsync"/>, which only reads.
+    /// Resolves the context from a scope of its own, as the migration does.
+    /// </summary>
+    public static async Task<bool> IsCryptoStuffDatabaseReadyAsync(this IServiceProvider services, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+
+        await using var scope = services.CreateAsyncScope();
+        var context = scope.ServiceProvider.GetRequiredService<CryptoStuffDbContext>();
+        return await CryptoStuffDatabase.IsReadyAsync(context, cancellationToken);
+    }
 }

@@ -3,6 +3,8 @@ using CryptoStuff.Api.Alerts;
 using CryptoStuff.Api.Portfolios;
 using CryptoStuff.Api.Watchlists;
 using CryptoStuff.Composition;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Scalar.AspNetCore;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -23,7 +25,14 @@ builder.Services.AddProblemDetails();
 // The same JSON shape the CLI prints: enumerations as their tokens, timestamps
 // as UTC ending in `Z`.
 builder.Services.ConfigureHttpJsonOptions(options => CryptoStuffJson.Configure(options.SerializerOptions));
-builder.Services.AddHealthChecks();
+// Readiness checks the shared database only. CoinGecko is deliberately not
+// probed, so a probe never spends the API key's rate limit.
+builder.Services.AddHealthChecks()
+    .Add(new HealthCheckRegistration(
+        "database",
+        services => new DatabaseReadinessHealthCheck(services.IsCryptoStuffDatabaseReadyAsync),
+        failureStatus: null,
+        tags: null));
 builder.Services.AddOpenApi();
 
 var app = builder.Build();
@@ -46,7 +55,10 @@ app.MapCryptoStuffEndpoints();
 app.MapWatchlistEndpoints();
 app.MapPortfolioEndpoints();
 app.MapAlertEndpoints();
-app.MapHealthChecks("/health");
+// Liveness runs no check, so it answers even while the database is unusable;
+// readiness runs every registered check.
+app.MapHealthChecks("/health", new HealthCheckOptions { Predicate = _ => false });
+app.MapHealthChecks("/health/ready");
 app.MapOpenApi();
 
 if (app.Environment.IsDevelopment())

@@ -312,6 +312,78 @@ public class CryptoStuffApiTests
     }
 
     [Fact]
+    public async Task Should_ReturnServiceUnavailableAsPlainTextWithoutDetail_When_ReadinessCheckThrows()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var failingOpen = new FailingConnectionOpen();
+        using var factory = new CryptoStuffApiFactory(interceptor: failingOpen);
+        using var client = factory.CreateClient();
+        failingOpen.Armed = true;
+
+        var response = await client.GetAsync("/health/ready", cancellationToken);
+
+        response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("text/plain");
+        (await response.Content.ReadAsStringAsync(cancellationToken)).Should().Be("Unhealthy");
+    }
+
+    [Fact]
+    public async Task Should_ReturnOkForLivenessWhileReadinessIsServiceUnavailable_When_DatabaseFileDeleted()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        using var factory = new CryptoStuffApiFactory();
+        using var client = factory.CreateClient();
+        File.Delete(factory.DatabaseFilePath);
+
+        var liveness = await client.GetAsync("/health", cancellationToken);
+        var readiness = await client.GetAsync("/health/ready", cancellationToken);
+
+        liveness.StatusCode.Should().Be(HttpStatusCode.OK);
+        readiness.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+    }
+
+    [Fact]
+    public async Task Should_ReturnOk_When_ReadinessRequestedAndDatabaseIsReady()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        using var factory = new CryptoStuffApiFactory();
+        using var client = factory.CreateClient();
+
+        var response = await client.GetAsync("/health/ready", cancellationToken);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task Should_NotCallCoinGecko_When_ReadinessRequested()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        using var factory = new CryptoStuffApiFactory();
+        using var client = factory.CreateClient();
+
+        var response = await client.GetAsync("/health/ready", cancellationToken);
+
+        factory.CoinGeckoClient.CallCount.Should().Be(0, "a probe must never spend the API key's rate limit");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task Should_ReturnServiceUnavailableAsPlainText_When_ReadinessRequestedAndDatabaseFileDeleted()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        using var factory = new CryptoStuffApiFactory();
+        using var client = factory.CreateClient();
+        File.Delete(factory.DatabaseFilePath);
+
+        var response = await client.GetAsync("/health/ready", cancellationToken);
+
+        response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("text/plain");
+        (await response.Content.ReadAsStringAsync(cancellationToken)).Should().Be("Unhealthy");
+        File.Exists(factory.DatabaseFilePath).Should().BeFalse("a probe only reads");
+    }
+
+    [Fact]
     public async Task Should_ReturnOk_When_OpenApiDocumentRequested()
     {
         var cancellationToken = TestContext.Current.CancellationToken;

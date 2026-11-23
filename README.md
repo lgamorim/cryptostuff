@@ -93,9 +93,9 @@ and those parsers read.
 |---|---|---|
 | `CryptoStuff.CoinGecko` | `ICoinGeckoClient` and `CoinGeckoClient` (the wire format), `CryptocurrencyService` (the adapter) | [Configuration](#configuration), [Error codes](#error-codes) |
 | `CryptoStuff.Persistence` | `CryptoStuffDbContext`, a `*Configuration` mapping and a `*Repository` for each stored feature, `CryptoStuffDatabase` | [Data storage](#data-storage), [Database migrations](#database-migrations) |
-| `CryptoStuff.Composition` | `AddCryptoStuff`, `AddAlertEvaluationSchedule`, `MigrateCryptoStuffDatabaseAsync`, `RateLimitRetryHandler`, `DatabaseConnectionString`, `CryptoStuffJson` | [Registration](#registration), [Rate limiting](#rate-limiting), [Data storage](#data-storage) |
+| `CryptoStuff.Composition` | `AddCryptoStuff`, `AddAlertEvaluationSchedule`, `MigrateCryptoStuffDatabaseAsync`, `IsCryptoStuffDatabaseReadyAsync`, `RateLimitRetryHandler`, `DatabaseConnectionString`, `CryptoStuffJson` | [Registration](#registration), [Rate limiting](#rate-limiting), [Data storage](#data-storage) |
 | `CryptoStuff.Cli` | `CliRunner`, a `*Commands` class for each stored feature | [Command-line interface](#command-line-interface) |
-| `CryptoStuff.Api` | `CryptoStuffEndpoints`, a `*Endpoints` class for each stored feature, `AlertEvaluationBackgroundService`, `StartupDatabaseMigration` | [REST API](#rest-api), [Background evaluation](#background-evaluation) |
+| `CryptoStuff.Api` | `CryptoStuffEndpoints`, a `*Endpoints` class for each stored feature, `AlertEvaluationBackgroundService`, `StartupDatabaseMigration`, `DatabaseReadinessHealthCheck` | [REST API](#rest-api), [Background evaluation](#background-evaluation), [Health, OpenAPI, and Scalar](#health-openapi-and-scalar) |
 
 `CryptoStuff.CoinGecko`'s mappers, from its wire format to Core's views and
 from its failures to a `ServiceErrorCode`, are internal, visible only to
@@ -1189,7 +1189,15 @@ Failures use the [ProblemDetails](#rest-api) contract above:
 
 ### Health, OpenAPI, and Scalar
 
-- `GET /health` — a liveness probe, available in every environment.
+- `GET /health` — a liveness probe, available in every environment. It runs
+  no check, so it answers `200` even while the database is unusable.
+- `GET /health/ready` — a readiness probe, available in every environment:
+  `200` when the shared database opens and has no pending migration, `503`
+  otherwise, such as when the file is missing or is not a SQLite database.
+  A `503` carries only the plain-text status, `Unhealthy`, with no detail,
+  so no file path can leak. It only reads: a missing database file, or its
+  missing directory, is reported, not created. It does not call CoinGecko,
+  so a probe never spends the API key's rate limit.
 - `GET /openapi/v1.json` — the generated OpenAPI document, available in every
   environment.
 - `GET /scalar/v1` — an interactive Scalar UI over the OpenAPI document,
