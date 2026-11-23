@@ -36,28 +36,70 @@ The AI workflow is the experiment.
 
 ## Projects
 
-| Project | Purpose |
-|---|---|
-| `CryptoStuff.CoinGecko` | API client and adapter — sole owner of the wire format; covers `simple/price`, `simple/token_price/{platform}`, `coins/{id}/market_chart`, `coins/{id}`, and `coins/{id}/history` (the latter's `date` query parameter must be `dd-MM-yyyy`); `CryptocurrencyService` implements Core's `ICryptocurrencyService` over the client, mapping its responses to Core's views (`CoinPriceMapper`, `TokenPriceMapper`, `CoinMarketChartMapper`, `CoinMapper`, `CoinDeveloperDataMapper`) and its failures to a `ServiceErrorCode` (`ServiceErrorCodeMapper`); the mappers are internal, visible only to `CryptoStuff.CoinGecko.UnitTests` through `InternalsVisibleTo` |
-| `CryptoStuff.Core` | Queries (`CoinPriceQuery`, `TokenPriceQuery`, `CoinMarketChartQuery`, `CoinQuery`, `CoinDeveloperDataQuery`) and view records (`CoinPriceView`, `TokenPriceView`, `CoinMarketChartView`, `CoinView`, `CoinDeveloperDataView`), the `ICryptocurrencyService` market-data contract, results, caching, validation, the `KnownCoinPrices` lookup (prices for coins the app already tracks, where one CoinGecko no longer knows leaves the rest priced), `EnumTokens` (the one way an enumeration is written as the text token the hosts print, the database stores and the token parsers read); watchlists (`Watchlists/`): the `Watchlist` entity, `IWatchlistRepository`, `IWatchlistService` and `WatchlistService`, the `CreateWatchlistCommand`, `RenameWatchlistCommand` and `WatchlistCoinCommand` commands, the `WatchlistPriceQuery` query, the `WatchlistView` view, and `WatchlistMapper`; portfolios (`Portfolios/`): the `Portfolio` entity, whose ledger of `PortfolioTransaction` buys and sells never takes a holding below zero, `TransactionDetails`, the `CostBasisMethod` and `TransactionKind` enumerations with their token parsers (`CostBasisMethodParser`, `TransactionKindParser`), `IPortfolioRepository`, `IPortfolioService` and `PortfolioService`, the `CreatePortfolioCommand`, `UpdatePortfolioCommand`, `AddTransactionCommand`, `ReplaceTransactionCommand` and `RemoveTransactionCommand` commands, the `PortfolioView` and `PortfolioTransactionView` views, `PortfolioMapper`, and the [cost-basis](#cost-basis) strategy (`ICostBasisMethod`, implemented by `AverageCostMethod` and `FifoMethod`, chosen through `CostBasisMethods`, each reducing a coin's transactions to a `CoinPosition`), and [valuation](#valuation) (`IPortfolioService.GetValuationAsync`, returning a `PortfolioValuationView` of `CoinValuationView` rows and `PortfolioValuationTotals`); price alerts (`Alerts/`): the `PriceAlert` entity, an armed or triggered alert met inclusively by a price at or past its threshold, whose coin and vs_currency are fixed at creation, the `AlertDirection` and `AlertState` enumerations with their token parsers (`AlertDirectionParser`, `AlertStateParser`), `IAlertRepository`, `IAlertService` and `AlertService`, the `CreateAlertCommand` and `UpdateAlertCommand` commands, the `AlertView` view, `AlertMapper`, and [evaluation](#alert-evaluation) (`IAlertEvaluator` and `AlertEvaluator`, returning an `AlertEvaluationView` of `TriggeredAlertView` and `UnpricedAlertView` rows); and, shared by the stored features, `PersistenceConflictException` and the `NameValidator`, `PositiveIdValidator`, `PositiveDecimalValidator`, `NonNegativeDecimalValidator` and `TimestampFormatValidator` rules |
-| `CryptoStuff.Persistence` | EF Core over SQLite: `CryptoStuffDbContext`, the watchlist mapping (`WatchlistConfiguration`) and `WatchlistRepository`, the portfolio mapping (`PortfolioConfiguration`, which owns the portfolio's transactions) and `PortfolioRepository`, the alert mapping (`AlertConfiguration`) and `AlertRepository`, which also lists the armed alerts and can discard an alert whose save conflicted, translation of unique-constraint and concurrency failures (and, for portfolios, a portfolio deleted under a pending save) into `PersistenceConflictException`, `CryptoStuffDatabase.MigrateAsync` (creates a file database's directory, then migrates), the design-time context factory, and the checked-in migrations (`Migrations/`) |
-| `CryptoStuff.Composition` | Registration and HTTP pipeline wiring: `AddCryptoStuff`, `AddAlertEvaluationSchedule` (the API's [background evaluation](#background-evaluation) interval, as an `AlertEvaluationSchedule`), `DatabaseConnectionString` (locates the shared database), `MigrateCryptoStuffDatabaseAsync` (the start-up migration both hosts run), and `CryptoStuffJson` (the JSON shape both hosts write: enumerations as their tokens, timestamps as UTC ending in `Z`) |
-| `CryptoStuff.Cli` | Console host |
-| `CryptoStuff.Api` | Minimal REST host, including `AlertEvaluationBackgroundService`, the [background alert evaluation](#background-evaluation), and `StartupDatabaseMigration`, which runs the start-up migration as the host's first step |
-| `CryptoStuff.CoinGecko.UnitTests` | Unit tests for `CryptoStuff.CoinGecko` |
-| `CryptoStuff.Core.UnitTests` | Unit tests for `CryptoStuff.Core` |
-| `CryptoStuff.Composition.UnitTests` | Unit tests for `CryptoStuff.Composition` |
-| `CryptoStuff.Cli.UnitTests` | Unit tests for `CryptoStuff.Cli` |
-| `CryptoStuff.Api.UnitTests` | Unit tests for `CryptoStuff.Api` |
-| `CryptoStuff.Api.IntegrationTests` | Integration tests over `CryptoStuff.Api`, hosted for real with only its CoinGecko client faked and each test's host on a migrated temporary database file of its own — needs neither an API key nor network access, and never touches the real database |
+Six projects under `src/`, each with its tests under `test/`:
 
-`CryptoStuff.Cli` and `CryptoStuff.Api` both reference `CryptoStuff.Composition`,
-which references `CryptoStuff.Core` and the two adapters that plug into it:
-`CryptoStuff.CoinGecko`, which references `CryptoStuff.Core`, implementing its
-`ICryptocurrencyService`, and `CryptoStuff.Persistence`, which references
-`CryptoStuff.Core`, implementing its repository interfaces. Dependencies point
-inward: `CryptoStuff.Core` references no other project, so it never sees
+| Project | Role | Tests |
+|---|---|---|
+| `CryptoStuff.Core` | The domain: the market-data contract, watchlists, portfolios, price alerts, validation, and caching; see [Inside Core](#inside-core) | `CryptoStuff.Core.UnitTests` |
+| `CryptoStuff.CoinGecko` | Adapter: the CoinGecko API client, sole owner of the wire format, and the `ICryptocurrencyService` implementation over it | `CryptoStuff.CoinGecko.UnitTests` |
+| `CryptoStuff.Persistence` | Adapter: EF Core over SQLite, implementing Core's repository interfaces, with the checked-in migrations | `CryptoStuff.Persistence.IntegrationTests` |
+| `CryptoStuff.Composition` | Wiring: service registration, the HTTP retry pipeline, the database location, and the JSON shape both hosts write | `CryptoStuff.Composition.UnitTests` |
+| `CryptoStuff.Cli` | Console host | `CryptoStuff.Cli.UnitTests` |
+| `CryptoStuff.Api` | Minimal REST host, which also evaluates the price alerts in the background | `CryptoStuff.Api.UnitTests`, `CryptoStuff.Api.IntegrationTests` |
+
+An arrow reads "references":
+
+```mermaid
+graph TD
+    Cli[CryptoStuff.Cli] --> Composition[CryptoStuff.Composition]
+    Api[CryptoStuff.Api] --> Composition
+    Composition --> CoinGecko[CryptoStuff.CoinGecko]
+    Composition --> Persistence[CryptoStuff.Persistence]
+    Composition --> Core[CryptoStuff.Core]
+    CoinGecko --> Core
+    Persistence --> Core
+```
+
+Dependencies point inward. The two adapters plug into `CryptoStuff.Core` by
+implementing its interfaces: `CryptoStuff.CoinGecko` its
+`ICryptocurrencyService`, and `CryptoStuff.Persistence` its repository
+interfaces. `CryptoStuff.Core` references no other project, so it never sees
 CoinGecko's wire format or EF Core.
+
+### Inside Core
+
+`CryptoStuff.Core` is organized by feature. Each row names the types to start
+reading from and the sections that explain the behaviour:
+
+| Area | Folder | Start with | Explained in |
+|---|---|---|---|
+| Market data | [root](src/CryptoStuff.Core) | `ICryptocurrencyService`, its five `*Query` inputs and `*View` results, `CachingCryptocurrencyService`, `KnownCoinPrices` | [Caching](#caching), [Missing identifiers](#missing-identifiers) |
+| Watchlists | [`Watchlists/`](src/CryptoStuff.Core/Watchlists) | `Watchlist`, `IWatchlistService`, `IWatchlistRepository` | [Watchlist routes](#watchlist-routes) |
+| Portfolios | [`Portfolios/`](src/CryptoStuff.Core/Portfolios) | `Portfolio`, `IPortfolioService`, `IPortfolioRepository`, `ICostBasisMethod` | [Cost basis](#cost-basis), [Valuation](#valuation) |
+| Price alerts | [`Alerts/`](src/CryptoStuff.Core/Alerts) | `PriceAlert`, `IAlertService`, `IAlertEvaluator`, `IAlertRepository` | [Alert evaluation](#alert-evaluation) |
+| Shared | [root](src/CryptoStuff.Core) | `ServiceResult`, `ServiceErrorCode`, the validators, `EnumTokens` | [Error codes](#error-codes), [Input validation](#input-validation) |
+
+The three stored features' folders share one shape: the entity, its
+repository interface, a service and its interface, `*Command` records for its
+writes, `*View` records for its results, and a mapper. Each enumeration a
+feature adds (`CostBasisMethod`, `TransactionKind`, `AlertDirection`,
+`AlertState`) comes with a parser, and `EnumTokens` is the one way an
+enumeration is written as the text token the hosts print, the database stores,
+and those parsers read.
+
+### Inside the other projects
+
+| Project | Start with | Explained in |
+|---|---|---|
+| `CryptoStuff.CoinGecko` | `ICoinGeckoClient` and `CoinGeckoClient` (the wire format), `CryptocurrencyService` (the adapter) | [Configuration](#configuration), [Error codes](#error-codes) |
+| `CryptoStuff.Persistence` | `CryptoStuffDbContext`, a `*Configuration` mapping and a `*Repository` for each stored feature, `CryptoStuffDatabase` | [Data storage](#data-storage), [Database migrations](#database-migrations) |
+| `CryptoStuff.Composition` | `AddCryptoStuff`, `AddAlertEvaluationSchedule`, `MigrateCryptoStuffDatabaseAsync`, `RateLimitRetryHandler`, `DatabaseConnectionString`, `CryptoStuffJson` | [Registration](#registration), [Rate limiting](#rate-limiting), [Data storage](#data-storage) |
+| `CryptoStuff.Cli` | `CliRunner`, a `*Commands` class for each stored feature | [Command-line interface](#command-line-interface) |
+| `CryptoStuff.Api` | `CryptoStuffEndpoints`, a `*Endpoints` class for each stored feature, `AlertEvaluationBackgroundService`, `StartupDatabaseMigration` | [REST API](#rest-api), [Background evaluation](#background-evaluation) |
+
+`CryptoStuff.CoinGecko`'s mappers, from its wire format to Core's views and
+from its failures to a `ServiceErrorCode`, are internal, visible only to
+`CryptoStuff.CoinGecko.UnitTests` through `InternalsVisibleTo`.
 
 ## Prerequisites
 
@@ -72,7 +114,9 @@ CoinGecko's wire format or EF Core.
 `https://api.coingecko.com/api/v3`. Every request is authenticated with the
 demo API key described in Prerequisites (`CoinGecko:ApiKey` locally,
 `CoinGecko__ApiKey` in deployment), sent as the `x-cg-demo-api-key` HTTP
-header.
+header. `CryptoStuff.CoinGecko` consumes five endpoints: `simple/price`,
+`simple/token_price/{platform}`, `coins/{id}/market_chart`, `coins/{id}`, and
+`coins/{id}/history`, whose `date` query parameter must be `dd-MM-yyyy`.
 
 The API host reads `PathBase` (in `appsettings.json`, or the `PathBase`
 environment variable), empty by default. Behind a reverse proxy that serves
@@ -1162,6 +1206,13 @@ dotnet format
 CI (`.github/workflows/ci.yml`) runs the same three commands — build and test
 in the `Release` configuration, plus a format-verification check — on both
 `ubuntu-latest` and `windows-latest`, on every push.
+
+The tests need neither an API key nor network access, and never touch the
+real database. `CryptoStuff.Api.IntegrationTests` hosts the API for real with
+only its CoinGecko client faked, each test's host on a migrated temporary
+database file of its own. `CryptoStuff.Persistence.IntegrationTests` works
+only on throwaway SQLite databases: temporary files, mostly, and a few
+in-memory ones.
 
 ### Database migrations
 
