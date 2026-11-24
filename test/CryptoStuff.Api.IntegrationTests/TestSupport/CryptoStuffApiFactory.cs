@@ -33,6 +33,12 @@ namespace CryptoStuff.Api.IntegrationTests.TestSupport;
 /// </remarks>
 internal sealed class CryptoStuffApiFactory : WebApplicationFactory<Program>
 {
+    /// <summary>The API key the hosted API is configured with, and every client from <c>CreateClient</c> sends.</summary>
+    public const string ApiKey = "integration-test-api-key";
+
+    /// <summary>The request header the API reads its key from.</summary>
+    public const string ApiKeyHeader = "X-Api-Key";
+
     private static readonly string DatabaseRoot = Path.Combine(Path.GetTempPath(), "cryptostuff-tests");
 
     private readonly bool _hostAlertEvaluation;
@@ -64,6 +70,13 @@ internal sealed class CryptoStuffApiFactory : WebApplicationFactory<Program>
         // mechanism (see README) actually works.
         Environment.SetEnvironmentVariable("CoinGecko__ApiKey", "integration-test-key");
 
+        // The API's own key, supplied the same way and for the same reasons,
+        // so it doubles as coverage of the documented Api__Key deployment
+        // mechanism. Every client this factory creates sends it (see
+        // ConfigureClient); a test about rejected callers uses
+        // CreateClientWithoutApiKey instead.
+        Environment.SetEnvironmentVariable("Api__Key", ApiKey);
+
         DatabaseFilePath = Path.Combine(DatabaseRoot, $"{Guid.NewGuid():N}.db");
         var connectionString = new SqliteConnectionStringBuilder { DataSource = DatabaseFilePath, Pooling = false };
         if (busyTimeoutSeconds is { } seconds)
@@ -91,6 +104,16 @@ internal sealed class CryptoStuffApiFactory : WebApplicationFactory<Program>
     {
         await base.DisposeAsync();
         DeleteDatabaseFile();
+    }
+
+    /// <summary>
+    /// Makes every client created from this factory, or from one derived with
+    /// <c>WithWebHostBuilder</c>, an authenticated caller.
+    /// </summary>
+    protected override void ConfigureClient(HttpClient client)
+    {
+        base.ConfigureClient(client);
+        client.DefaultRequestHeaders.Add(ApiKeyHeader, ApiKey);
     }
 
     /// <inheritdoc />

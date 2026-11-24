@@ -103,6 +103,27 @@ public class AlertCheckRateLimitTests
         listed.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
+    [Fact]
+    public async Task Should_LeaveTheCheckLimitUnspent_When_CallersWithoutTheApiKeyAreRejected()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        using var factory = new CryptoStuffApiFactory();
+        using var limited = factory.WithWebHostBuilder(builder => builder.UseSetting("Alerts:ChecksPerMinute", "1"));
+        using var anonymous = limited.CreateClientWithoutApiKey();
+        using var authenticated = limited.CreateClient();
+
+        var rejected = new List<HttpStatusCode>();
+        for (var i = 0; i < 2; i++)
+        {
+            rejected.Add((await anonymous.PostAsync("/alerts/check", content: null, cancellationToken)).StatusCode);
+        }
+
+        var check = await authenticated.PostAsync("/alerts/check", content: null, cancellationToken);
+
+        rejected.Should().Equal(HttpStatusCode.Unauthorized, HttpStatusCode.Unauthorized);
+        check.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
     [Theory]
     [InlineData("0")]
     [InlineData("-1")]

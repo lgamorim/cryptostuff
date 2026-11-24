@@ -11,6 +11,9 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddCryptoStuff(builder.Configuration);
 
+// Only this host serves HTTP, so only it reads Api:Key; the CLI never does.
+builder.Services.AddApiKeyAuthentication(builder.Configuration);
+
 // The host's first start-up step, before the server listens, so no request
 // ever meets a missing or outdated schema; see StartupDatabaseMigration.
 builder.Services.AddHostedService(services => new StartupDatabaseMigration(services.MigrateCryptoStuffDatabaseAsync));
@@ -26,14 +29,14 @@ builder.Services.AddProblemDetails();
 // as UTC ending in `Z`.
 builder.Services.ConfigureHttpJsonOptions(options => CryptoStuffJson.Configure(options.SerializerOptions));
 // Readiness checks the shared database only. CoinGecko is deliberately not
-// probed, so a probe never spends the API key's rate limit.
+// probed, so a probe never spends the CoinGecko API key's rate limit.
 builder.Services.AddHealthChecks()
     .Add(new HealthCheckRegistration(
         "database",
         services => new DatabaseReadinessHealthCheck(services.IsCryptoStuffDatabaseReadyAsync),
         failureStatus: null,
         tags: null));
-builder.Services.AddOpenApi();
+builder.Services.AddOpenApi(options => options.AddDocumentTransformer<ApiKeyOpenApiDocumentTransformer>());
 
 var app = builder.Build();
 
@@ -49,6 +52,13 @@ app.UsePathBase(app.Configuration["PathBase"]);
 // write their own bodies and never consult IProblemDetailsService.
 app.UseStatusCodePages();
 app.UsePersistenceBusyResponses();
+
+// Called explicitly so they run after UsePathBase has matched a prefixed
+// request's route (left to WebApplication, they would run first), and before
+// the rate limiter, so a caller without the API key cannot spend the alert
+// check's window.
+app.UseAuthentication();
+app.UseAuthorization();
 app.UseRateLimiter();
 
 app.MapCryptoStuffEndpoints();
@@ -56,14 +66,16 @@ app.MapWatchlistEndpoints();
 app.MapPortfolioEndpoints();
 app.MapAlertEndpoints();
 // Liveness runs no check, so it answers even while the database is unusable;
-// readiness runs every registered check.
-app.MapHealthChecks("/health", new HealthCheckOptions { Predicate = _ => false });
-app.MapHealthChecks("/health/ready");
-app.MapOpenApi();
+// readiness runs every registered check. These, the OpenAPI document and the
+// Scalar UI are the only routes open without the API key: every other route,
+// including any added later, requires it through the fallback policy.
+app.MapHealthChecks("/health", new HealthCheckOptions { Predicate = _ => false }).AllowAnonymous();
+app.MapHealthChecks("/health/ready").AllowAnonymous();
+app.MapOpenApi().AllowAnonymous();
 
 if (app.Environment.IsDevelopment())
 {
-    app.MapScalarApiReference();
+    app.MapScalarApiReference().AllowAnonymous();
 }
 
 // Taken before running: once RunAsync fails it has disposed the host, and

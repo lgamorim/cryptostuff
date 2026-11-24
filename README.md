@@ -95,7 +95,7 @@ and those parsers read.
 | `CryptoStuff.Persistence` | `CryptoStuffDbContext`, a `*Configuration` mapping and a `*Repository` for each stored feature, `CryptoStuffDatabase` | [Data storage](#data-storage), [Database migrations](#database-migrations) |
 | `CryptoStuff.Composition` | `AddCryptoStuff`, `AddAlertEvaluationSchedule`, `MigrateCryptoStuffDatabaseAsync`, `IsCryptoStuffDatabaseReadyAsync`, `RateLimitRetryHandler`, `DatabaseConnectionString`, `CryptoStuffJson` | [Registration](#registration), [Rate limiting](#rate-limiting), [Data storage](#data-storage) |
 | `CryptoStuff.Cli` | `CliRunner`, a `*Commands` class for each stored feature | [Command-line interface](#command-line-interface) |
-| `CryptoStuff.Api` | `CryptoStuffEndpoints`, a `*Endpoints` class for each stored feature, `AlertEvaluationBackgroundService`, `StartupDatabaseMigration`, `DatabaseReadinessHealthCheck` | [REST API](#rest-api), [Background evaluation](#background-evaluation), [Health, OpenAPI, and Scalar](#health-openapi-and-scalar) |
+| `CryptoStuff.Api` | `CryptoStuffEndpoints`, a `*Endpoints` class for each stored feature, `AlertEvaluationBackgroundService`, `StartupDatabaseMigration`, `DatabaseReadinessHealthCheck`, `ApiKeyAuthentication` and its `ApiKeyAuthenticationHandler`, `ApiKeyOpenApiDocumentTransformer` | [REST API](#rest-api), [API key](#api-key), [Background evaluation](#background-evaluation), [Health, OpenAPI, and Scalar](#health-openapi-and-scalar) |
 
 `CryptoStuff.CoinGecko`'s mappers, from its wire format to Core's views and
 from its failures to a `ServiceErrorCode`, are internal, visible only to
@@ -107,6 +107,10 @@ from its failures to a `ServiceErrorCode`, are internal, visible only to
 - A CoinGecko demo API key. Locally, set it as a user secret under
   `CoinGecko:ApiKey`; in deployment, set the `CoinGecko__ApiKey` environment
   variable.
+- For the REST API only, a secret key of your choosing that its clients must
+  send (see [API key](#api-key)). Locally, set it as a user secret under
+  `Api:Key` from `src/CryptoStuff.Api`; in deployment, set the `Api__Key`
+  environment variable. The CLI does not use it.
 
 ## Configuration
 
@@ -117,6 +121,26 @@ demo API key described in Prerequisites (`CoinGecko:ApiKey` locally,
 header. `CryptoStuff.CoinGecko` consumes five endpoints: `simple/price`,
 `simple/token_price/{platform}`, `coins/{id}/market_chart`, `coins/{id}`, and
 `coins/{id}/history`, whose `date` query parameter must be `dd-MM-yyyy`.
+
+The API host also reads `Api:Key` (`Api__Key` in deployment), the key every
+client must send in the `X-Api-Key` header; see [API key](#api-key). In this
+README, "the CoinGecko API key" is always `CoinGecko:ApiKey`, the key the app
+sends to CoinGecko, and a bare "API key" is always `Api:Key`, the key clients
+send to this API. Only the API host reads `Api:Key`: `AddCryptoStuff` does
+not, so the CLI runs without it. Spaces or tabs around its value are ignored,
+so clients send the key without them. If it is missing or blank, the API host
+fails at start-up, before it serves anything or migrates the database, with:
+
+```
+API key is missing. Choose a secret key and set it locally by running 'dotnet user-secrets set Api:Key <your-api-key>' from the src/CryptoStuff.Api project directory, or set the Api__Key environment variable in deployment. Clients send it in the X-Api-Key header.
+```
+
+To resolve it locally:
+
+```bash
+cd src/CryptoStuff.Api
+dotnet user-secrets set Api:Key <your-api-key>
+```
 
 The API host reads `PathBase` (in `appsettings.json`, or the `PathBase`
 environment variable), empty by default. Behind a reverse proxy that serves
@@ -666,14 +690,15 @@ a failure.
 
 ### Check rate limit
 
-Each `POST /alerts/check` asks CoinGecko for prices, and the API key's rate
-limit is shared with the background evaluation, the other price routes and the
-CLI. So the API allows at most `Alerts:ChecksPerMinute` checks a minute,
-counted for every caller together in one fixed window that opens anew each
-minute. A check over the limit asks CoinGecko nothing and is answered `429`
-with a ProblemDetails body and a `Retry-After: 60` header: the window's whole
-length, however much of it is left, so a client that waits that long always
-finds a new window open:
+Each `POST /alerts/check` asks CoinGecko for prices, and the CoinGecko API
+key's rate limit is shared with the background evaluation, the other price
+routes and the CLI. So the API allows at most `Alerts:ChecksPerMinute` checks
+a minute, counted for every caller together in one fixed window that opens
+anew each minute. Only checks sent with the right [API key](#api-key) count:
+one without it is a `401` and uses none of the window. A check over the limit
+asks CoinGecko nothing and is answered `429` with a ProblemDetails body and a
+`Retry-After: 60` header: the window's whole length, however much of it is
+left, so a client that waits that long always finds a new window open:
 
 ```json
 { "status": 429, "title": "Too Many Requests", "detail": "Alert checks are limited to 6 per minute; try again after the wait given in Retry-After." }
@@ -860,11 +885,15 @@ standard output.
 `CryptoStuff.Api` is a minimal-API front end over the same five operations as
 `ICryptocurrencyService`, plus the watchlist operations of `IWatchlistService`,
 the portfolio operations of `IPortfolioService`, and the alert operations of
-`IAlertService` and `IAlertEvaluator`. Run it with:
+`IAlertService` and `IAlertEvaluator`. Run it, once `Api:Key` is set (see
+[Configuration](#configuration)), with:
 
 ```bash
 dotnet run --project src/CryptoStuff.Api
 ```
+
+Every route below requires the [API key](#api-key) in the `X-Api-Key`
+header; without it, a request gets `401` and nothing else.
 
 | Route | Query/path parameters | Example |
 |---|---|---|
@@ -943,6 +972,54 @@ returns `404` with a `ProblemDetails` body. A `Location` header keeps the
 [`PathBase`](#configuration) the host is configured with, so with `/api` a new
 watchlist's is `/api/watchlists/1`.
 
+### API key
+
+Every request must carry the key configured as `Api:Key` in the `X-Api-Key`
+header:
+
+```bash
+curl -s http://localhost:5200/watchlists -H 'X-Api-Key: <your-api-key>'
+```
+
+The key is compared exactly and case-sensitively: a prefix of the key or the
+key with more characters after it is wrong. Spaces or tabs around the
+header's value are not part of the key: the HTTP server removes them before
+the comparison. Spaces or tabs around the configured `Api:Key` are ignored
+too. A client's key is read from that header only, never from the query
+string. Only these routes answer without it, and also answer a request that
+sends a wrong one:
+
+- `GET /health` and `GET /health/ready`
+- `GET /openapi/v1.json`
+- `GET /scalar/v1`, in the Development environment, where it is mapped
+
+A request without the header, with an empty or blank one, or with a wrong key
+gets the same `401` with a `ProblemDetails` body, so a caller cannot tell
+which it was:
+
+```
+HTTP/1.1 401 Unauthorized
+Content-Type: application/problem+json
+
+{ "type": "https://tools.ietf.org/html/rfc9110#section-15.5.2", "title": "Unauthorized", "status": 401, "detail": "Send a valid API key in the X-Api-Key header.", ... }
+```
+
+The request is rejected before anything else happens to it: before its input
+is validated (an invalid body or query is still a `401`, not a `400`), before
+the database or CoinGecko is touched, and before the
+[check rate limit](#check-rate-limit), so a caller without the key cannot use
+up `Alerts:ChecksPerMinute`. A path that matches no route is a `401` too, not
+a `404`, until the key is right. Under a configured
+[`PathBase`](#configuration) the same routes are open or protected as at the
+root. Every route the host maps is protected unless it is one of those
+listed above, including any route added later. Neither the configured key
+nor a supplied one ever appears in a response or a log entry. The
+[background evaluation](#background-evaluation) does not go through HTTP, so
+the key does not apply to it.
+
+With the right key, every route behaves as the rest of this section
+describes.
+
 ### Watchlist routes
 
 The `/watchlists` routes drive the same watchlists as the CLI's
@@ -954,7 +1031,7 @@ Create and rename take a JSON body with the watchlist's name — following the
 [resource name](#input-validation) rule and unique ignoring case, as for the CLI:
 
 ```bash
-curl -i -X POST http://localhost:5200/watchlists -H 'Content-Type: application/json' -d '{ "name": "majors" }'
+curl -i -X POST http://localhost:5200/watchlists -H 'X-Api-Key: <your-api-key>' -H 'Content-Type: application/json' -d '{ "name": "majors" }'
 ```
 
 ```
@@ -985,6 +1062,7 @@ Failures use the [ProblemDetails](#rest-api) contract above:
 | Status | When |
 |---|---|
 | `400` | A blank or over-long `name`, a missing body or malformed JSON, a blank `coin` or `currency`, or an `id` of zero or below |
+| `401` | No valid `X-Api-Key` header (see [API key](#api-key)), whatever else is wrong with the request |
 | `404` | No watchlist has that `id`, another writer deleted it while the request was saving, or the `id` is not a whole number (no route matches it) |
 | `409` | The name is taken by another watchlist (ignoring case), or a concurrent change won the race |
 | `422` | Adding a coin that CoinGecko does not know; the `detail` names it |
@@ -1004,7 +1082,7 @@ vs_currency every amount is in (fixed for good once created), and the
 [cost-basis method](#cost-basis), `average-cost` or `fifo`:
 
 ```bash
-curl -i -X POST http://localhost:5200/portfolios -H 'Content-Type: application/json'   -d '{ "name": "main", "vsCurrency": "usd", "costBasisMethod": "fifo" }'
+curl -i -X POST http://localhost:5200/portfolios -H 'X-Api-Key: <your-api-key>' -H 'Content-Type: application/json'   -d '{ "name": "main", "vsCurrency": "usd", "costBasisMethod": "fifo" }'
 ```
 
 ```
@@ -1096,6 +1174,7 @@ Failures use the [ProblemDetails](#rest-api) contract above:
 | Status | When |
 |---|---|
 | `400` | A missing body or malformed JSON; a blank or over-long `name`; a blank `vsCurrency` or `coinId`; a `costBasisMethod` or `kind` that is not one of its tokens; a missing or out-of-range `quantity`, `unitPrice` or `fee`; an `occurredAt` that is not an ISO 8601 timestamp with an offset; an `id` or `txId` of zero or below; an `If-Match` that is neither `*` nor a list of entity tags |
+| `401` | No valid `X-Api-Key` header (see [API key](#api-key)), whatever else is wrong with the request |
 | `404` | No portfolio has that `id`, another writer deleted it while the request was saving, the portfolio has no transaction with that `txId`, or either is not a whole number (no route matches it) |
 | `409` | The name is taken by another portfolio (ignoring case), or a concurrent write won the race |
 | `412` | `If-Match` does not match the portfolio's current `ETag` |
@@ -1116,7 +1195,7 @@ the direction, `above` or `below`, and the threshold, a JSON number greater
 than zero in that vs_currency:
 
 ```bash
-curl -i -X POST http://localhost:5200/alerts -H 'Content-Type: application/json'   -d '{ "coinId": "bitcoin", "vsCurrency": "usd", "direction": "above", "threshold": 50000 }'
+curl -i -X POST http://localhost:5200/alerts -H 'X-Api-Key: <your-api-key>' -H 'Content-Type: application/json'   -d '{ "coinId": "bitcoin", "vsCurrency": "usd", "direction": "above", "threshold": 50000 }'
 ```
 
 ```
@@ -1139,7 +1218,7 @@ price, an empty `unpriced` list when it priced them all. A triggered alert looks
 like this, both in that report and when read back:
 
 ```bash
-curl -s -X POST http://localhost:5200/alerts/check
+curl -s -X POST http://localhost:5200/alerts/check -H 'X-Api-Key: <your-api-key>'
 ```
 
 ```json
@@ -1147,7 +1226,7 @@ curl -s -X POST http://localhost:5200/alerts/check
 ```
 
 ```bash
-curl -s http://localhost:5200/alerts/1
+curl -s http://localhost:5200/alerts/1 -H 'X-Api-Key: <your-api-key>'
 ```
 
 ```json
@@ -1181,6 +1260,7 @@ Failures use the [ProblemDetails](#rest-api) contract above:
 | Status | When |
 |---|---|
 | `400` | A missing body or malformed JSON; a blank `coinId` or `vsCurrency`; a `direction` that is not `above` or `below`; a missing `threshold`, or one of zero or below; an `id` of zero or below |
+| `401` | No valid `X-Api-Key` header (see [API key](#api-key)), whatever else is wrong with the request; it does not count toward `Alerts:ChecksPerMinute` |
 | `404` | No alert has that `id`, another writer deleted it while the request was saving, or the `id` is not a whole number (no route matches it) |
 | `409` | A concurrent write won the race; for `POST /alerts/check`, another write changed one of the evaluated alerts, so nothing was triggered and the check can be run again |
 | `422` | Creating an alert on a coin CoinGecko does not know, or that has no price in that vs_currency; the `detail` names it |
@@ -1188,6 +1268,9 @@ Failures use the [ProblemDetails](#rest-api) contract above:
 | `502`, `504` | CoinGecko failed while checking a new alert's coin or while evaluating |
 
 ### Health, OpenAPI, and Scalar
+
+These routes are the only ones open without the [API key](#api-key), and
+they answer a wrong one too.
 
 - `GET /health` — a liveness probe, available in every environment. It runs
   no check, so it answers `200` even while the database is unusable.
@@ -1197,9 +1280,12 @@ Failures use the [ProblemDetails](#rest-api) contract above:
   A `503` carries only the plain-text status, `Unhealthy`, with no detail,
   so no file path can leak. It only reads: a missing database file, or its
   missing directory, is reported, not created. It does not call CoinGecko,
-  so a probe never spends the API key's rate limit.
+  so a probe never spends the CoinGecko API key's rate limit.
 - `GET /openapi/v1.json` — the generated OpenAPI document, available in every
-  environment.
+  environment. It declares the `ApiKey` security scheme (an API key in the
+  `X-Api-Key` header) and requires it on every operation it lists, each of
+  which also lists the `401` response. The open routes are not among its
+  operations.
 - `GET /scalar/v1` — an interactive Scalar UI over the OpenAPI document,
   mapped in the Development environment only.
 
@@ -1215,12 +1301,13 @@ CI (`.github/workflows/ci.yml`) runs the same three commands — build and test
 in the `Release` configuration, plus a format-verification check — on both
 `ubuntu-latest` and `windows-latest`, on every push.
 
-The tests need neither an API key nor network access, and never touch the
-real database. `CryptoStuff.Api.IntegrationTests` hosts the API for real with
-only its CoinGecko client faked, each test's host on a migrated temporary
-database file of its own. `CryptoStuff.Persistence.IntegrationTests` works
-only on throwaway SQLite databases: temporary files, mostly, and a few
-in-memory ones.
+The tests need neither a real CoinGecko API key nor network access (they
+supply placeholder keys of their own, for CoinGecko and for the API), and
+never touch the real database. `CryptoStuff.Api.IntegrationTests` hosts the
+API for real with only its CoinGecko client faked, each test's host on a
+migrated temporary database file of its own.
+`CryptoStuff.Persistence.IntegrationTests` works only on throwaway SQLite
+databases: temporary files, mostly, and a few in-memory ones.
 
 ### Database migrations
 

@@ -1037,16 +1037,16 @@ public class PortfolioApiTests
     }
 
     [Theory]
-    [InlineData("/portfolios", "get", new[] { "200", "500" })]
-    [InlineData("/portfolios", "post", new[] { "201", "400", "409", "503", "500" })]
-    [InlineData("/portfolios/{id}", "get", new[] { "200", "400", "404", "500" })]
-    [InlineData("/portfolios/{id}", "put", new[] { "200", "400", "404", "409", "412", "503", "500" })]
-    [InlineData("/portfolios/{id}", "delete", new[] { "204", "400", "404", "409", "412", "503", "500" })]
-    [InlineData("/portfolios/{id}/transactions", "post", new[] { "201", "400", "404", "409", "412", "422", "429", "502", "504", "503", "500" })]
-    [InlineData("/portfolios/{id}/transactions/{txId}", "get", new[] { "200", "400", "404", "500" })]
-    [InlineData("/portfolios/{id}/transactions/{txId}", "put", new[] { "200", "400", "404", "409", "412", "422", "429", "502", "504", "503", "500" })]
-    [InlineData("/portfolios/{id}/transactions/{txId}", "delete", new[] { "200", "400", "404", "409", "412", "422", "503", "500" })]
-    [InlineData("/portfolios/{id}/valuation", "get", new[] { "200", "400", "404", "422", "429", "502", "504", "500" })]
+    [InlineData("/portfolios", "get", new[] { "200", "401", "500" })]
+    [InlineData("/portfolios", "post", new[] { "201", "400", "409", "503", "401", "500" })]
+    [InlineData("/portfolios/{id}", "get", new[] { "200", "400", "404", "401", "500" })]
+    [InlineData("/portfolios/{id}", "put", new[] { "200", "400", "404", "409", "412", "503", "401", "500" })]
+    [InlineData("/portfolios/{id}", "delete", new[] { "204", "400", "404", "409", "412", "503", "401", "500" })]
+    [InlineData("/portfolios/{id}/transactions", "post", new[] { "201", "400", "404", "409", "412", "422", "429", "502", "504", "503", "401", "500" })]
+    [InlineData("/portfolios/{id}/transactions/{txId}", "get", new[] { "200", "400", "404", "401", "500" })]
+    [InlineData("/portfolios/{id}/transactions/{txId}", "put", new[] { "200", "400", "404", "409", "412", "422", "429", "502", "504", "503", "401", "500" })]
+    [InlineData("/portfolios/{id}/transactions/{txId}", "delete", new[] { "200", "400", "404", "409", "412", "422", "503", "401", "500" })]
+    [InlineData("/portfolios/{id}/valuation", "get", new[] { "200", "400", "404", "422", "429", "502", "504", "401", "500" })]
     public async Task Should_DocumentResponses_When_OpenApiDocumentRequested(string path, string method, string[] expectedStatuses)
     {
         var cancellationToken = TestContext.Current.CancellationToken;
