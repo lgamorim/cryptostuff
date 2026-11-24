@@ -130,14 +130,48 @@ public sealed class CoinGeckoClientMetricsTests : IDisposable
     }
 
     [Fact]
-    public async Task Should_TagRequestAsExceptionAndRethrow_When_SendFails()
+    public async Task Should_TagRequestAsNoResponse_When_SendFailsWithoutResponse()
     {
         var client = CreateClient(FakeHttpMessageHandler.Throwing(new HttpRequestException("Connection refused.")));
 
-        var act = () => client.GetAsync<TestPayload>("coins/bitcoin", CancellationToken.None);
+        await client.GetAsync<TestPayload>("coins/bitcoin", CancellationToken.None);
 
-        await act.Should().ThrowAsync<HttpRequestException>();
-        _meterFactory.Measurements.Should().BeEquivalentTo([Request("coins/{id}", "exception")]);
+        _meterFactory.Measurements.Should().BeEquivalentTo([Request("coins/{id}", "no_response")]);
+    }
+
+    [Fact]
+    public async Task Should_TagRequestAsCancelledAndRethrow_When_CallerCancelsAndSendFailsWithoutResponse()
+    {
+        var client = CreateClient(FakeHttpMessageHandler.ThrowingOnceCancelled(new HttpRequestException("Connection reset.")));
+        using var cancellationSource = new CancellationTokenSource();
+
+        var call = client.GetAsync<TestPayload>("coins/bitcoin", cancellationSource.Token);
+        await cancellationSource.CancelAsync();
+        var act = () => call;
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        _meterFactory.Measurements.Should().BeEquivalentTo([Request("coins/{id}", "cancelled")]);
+    }
+
+    [Fact]
+    public async Task Should_ReturnTimeoutTaggedTimeout_When_PendingRequestsAreCancelledAndSendFailsWithoutResponse()
+    {
+        // Stands in for HttpClient.Timeout, which cancels the send's linked token
+        // the same way but only on a real timer that takes no TimeProvider.
+        // CancelPendingRequests cancels that token with no clock, and the
+        // caller's own token stays uncancelled, as it does on a timeout.
+        using var httpClient = new HttpClient(FakeHttpMessageHandler.ThrowingOnceCancelled(new HttpRequestException("Connection reset.")))
+        {
+            BaseAddress = new Uri("https://example.test/"),
+        };
+        var client = new CoinGeckoClient(httpClient, _meterFactory);
+
+        var call = client.GetAsync<TestPayload>("coins/bitcoin", CancellationToken.None);
+        httpClient.CancelPendingRequests();
+        var response = await call;
+
+        response.IsTimeout.Should().BeTrue();
+        _meterFactory.Measurements.Should().BeEquivalentTo([Request("coins/{id}", "timeout")]);
     }
 
     [Fact]

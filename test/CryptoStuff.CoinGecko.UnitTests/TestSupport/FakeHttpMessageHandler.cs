@@ -11,12 +11,15 @@ internal sealed class FakeHttpMessageHandler : HttpMessageHandler
 {
     private readonly Func<HttpResponseMessage>? _responseFactory;
     private readonly Action<HttpRequestMessage>? _onRequest;
+    private readonly Func<CancellationToken, Task<HttpResponseMessage>>? _send;
 
     private FakeHttpMessageHandler(Func<HttpResponseMessage>? responseFactory, Action<HttpRequestMessage>? onRequest = null)
     {
         _responseFactory = responseFactory;
         _onRequest = onRequest;
     }
+
+    private FakeHttpMessageHandler(Func<CancellationToken, Task<HttpResponseMessage>> send) => _send = send;
 
     /// <summary>
     /// Creates a handler that returns the given status code and JSON body.
@@ -45,8 +48,32 @@ internal sealed class FakeHttpMessageHandler : HttpMessageHandler
     /// </summary>
     public static FakeHttpMessageHandler Throwing(Exception exception) => new(() => throw exception);
 
+    /// <summary>
+    /// Creates a handler that waits, without any delay or clock of its own,
+    /// until the token it is handed is cancelled — by the caller, or by
+    /// <see cref="HttpClient.CancelPendingRequests"/> standing in for
+    /// <see cref="HttpClient.Timeout"/> — and then throws
+    /// <paramref name="exception"/> instead of a cancellation exception, as a
+    /// connection torn down by that cancellation would.
+    /// </summary>
+    public static FakeHttpMessageHandler ThrowingOnceCancelled(Exception exception) => new(async cancellationToken =>
+    {
+        var cancelled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        await using (cancellationToken.Register(() => cancelled.SetResult()))
+        {
+            await cancelled.Task;
+        }
+
+        throw exception;
+    });
+
     protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
+        if (_send is not null)
+        {
+            return _send(cancellationToken);
+        }
+
         cancellationToken.ThrowIfCancellationRequested();
         _onRequest?.Invoke(request);
 

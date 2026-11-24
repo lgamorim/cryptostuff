@@ -51,6 +51,16 @@ public class ServiceErrorCodeMapperTests
     }
 
     [Fact]
+    public void Should_MapToUpstreamUnavailable_When_SendGotNoResponse()
+    {
+        var response = CoinGeckoResponse<string>.NoResponse();
+
+        var errorCode = ServiceErrorCodeMapper.Map(response);
+
+        errorCode.Should().Be(ServiceErrorCode.UpstreamUnavailable);
+    }
+
+    [Fact]
     public void Should_ThrowArgumentException_When_ResponseIsSuccess()
     {
         var response = CoinGeckoResponse<string>.Success("payload", HttpStatusCode.OK);

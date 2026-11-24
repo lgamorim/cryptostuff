@@ -14,7 +14,9 @@ namespace CryptoStuff.Composition.UnitTests;
 /// test registers its own <see cref="RecordingMeterFactory"/> before
 /// <c>AddCryptoStuff</c> (whose <c>AddMetrics</c> only adds one when none is
 /// registered), and swaps the CoinGecko client's primary handler for a
-/// scripted one, so no request leaves the process.
+/// scripted one, so no request leaves the process. That same seam also checks
+/// that a send getting no response ends, through the composed pipeline, as
+/// <see cref="ServiceErrorCode.UpstreamUnavailable"/>.
 /// </summary>
 public sealed class UpstreamMetricsRegistrationTests : IDisposable
 {
@@ -77,5 +79,19 @@ public sealed class UpstreamMetricsRegistrationTests : IDisposable
         MeasurementsOf("cryptostuff.upstream.retries").Should().ContainSingle()
             .Which.Tags.Should().Contain("provider", "coingecko");
         MeasurementsOf("cryptostuff.upstream.requests").Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task Should_ReturnUpstreamUnavailableAndRecordNoResponse_When_RegisteredClientGetsNoResponse()
+    {
+        using var provider = BuildProvider(SequencedHttpMessageHandler.ReturningInOrder(
+            () => throw new HttpRequestException("Connection refused.")));
+        var service = provider.GetRequiredService<ICryptocurrencyService>();
+
+        var result = await service.GetCoinAsync(new CoinQuery { CoinId = "bitcoin" }, CancellationToken.None);
+
+        result.ErrorCode.Should().Be(ServiceErrorCode.UpstreamUnavailable);
+        MeasurementsOf("cryptostuff.upstream.requests").Should().ContainSingle()
+            .Which.Tags.Should().Contain("outcome", "no_response");
     }
 }

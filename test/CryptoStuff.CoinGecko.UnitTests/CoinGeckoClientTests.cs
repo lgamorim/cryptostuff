@@ -52,6 +52,21 @@ public class CoinGeckoClientTests
     }
 
     [Fact]
+    public async Task Should_ReturnNoResponse_When_SendFailsWithoutResponse()
+    {
+        var handler = FakeHttpMessageHandler.Throwing(new HttpRequestException("Connection refused."));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://example.test/") };
+        ICoinGeckoClient client = new CoinGeckoClient(httpClient);
+
+        var response = await client.GetAsync<TestPayload>("coins/bitcoin", CancellationToken.None);
+
+        response.IsSuccess.Should().BeFalse();
+        response.IsTimeout.Should().BeFalse();
+        response.StatusCode.Should().BeNull();
+        response.Value.Should().BeNull();
+    }
+
+    [Fact]
     public async Task Should_PropagateCancellation_When_CallerCancelsToken()
     {
         var handler = FakeHttpMessageHandler.ReturningJson(HttpStatusCode.OK, """{"name":"bitcoin","value":42}""");

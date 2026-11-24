@@ -4,8 +4,8 @@ namespace CryptoStuff.CoinGecko;
 
 /// <summary>
 /// The outcome of a CoinGecko request: whether it succeeded, the HTTP status
-/// code received (absent only when the request timed out), whether it timed
-/// out, and the deserialized value on success.
+/// code received (absent when the request timed out or got no response at
+/// all), whether it timed out, and the deserialized value on success.
 /// </summary>
 public sealed record CoinGeckoResponse<TValue>
 {
@@ -19,7 +19,11 @@ public sealed record CoinGeckoResponse<TValue>
     /// </summary>
     public bool IsTimeout { get; }
 
-    /// <summary>The HTTP status code received. Null only when <see cref="IsTimeout"/> is true.</summary>
+    /// <summary>
+    /// The HTTP status code received. Null only when no response arrived: when
+    /// <see cref="IsTimeout"/> is true, or when the request got no response at
+    /// all (see <see cref="NoResponse"/>).
+    /// </summary>
     public HttpStatusCode? StatusCode { get; }
 
     /// <summary>
@@ -49,4 +53,12 @@ public sealed record CoinGeckoResponse<TValue>
     /// <summary>Creates a response indicating the request timed out.</summary>
     public static CoinGeckoResponse<TValue> Timeout() =>
         new(isSuccess: false, isTimeout: true, statusCode: null, value: default);
+
+    /// <summary>
+    /// Creates a failure response for a request that got no HTTP response at
+    /// all — connection refused, DNS or TLS failure, connection dropped — and
+    /// did not time out: no status code, not a timeout.
+    /// </summary>
+    public static CoinGeckoResponse<TValue> NoResponse() =>
+        new(isSuccess: false, isTimeout: false, statusCode: null, value: default);
 }

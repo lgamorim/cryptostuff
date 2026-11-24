@@ -46,4 +46,15 @@ public class CoinGeckoResponseTests
         response.StatusCode.Should().BeNull();
         response.Value.Should().BeNull();
     }
+
+    [Fact]
+    public void Should_IndicateFailureWithoutStatusCodeOrTimeout_When_CreatedViaNoResponse()
+    {
+        var response = CoinGeckoResponse<string>.NoResponse();
+
+        response.IsSuccess.Should().BeFalse();
+        response.IsTimeout.Should().BeFalse();
+        response.StatusCode.Should().BeNull();
+        response.Value.Should().BeNull();
+    }
 }

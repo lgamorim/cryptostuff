@@ -31,7 +31,15 @@ public sealed class CoinGeckoClient(HttpClient httpClient, IMeterFactory? meterF
     /// template the URI matches, or <c>other</c>) and <c>outcome</c>
     /// (<c>success</c>, <c>not_found</c>, <c>rate_limited</c>,
     /// <c>client_error</c>, <c>server_error</c>, <c>other_status</c>,
-    /// <c>timeout</c>, <c>cancelled</c> or <c>exception</c>).
+    /// <c>timeout</c>, <c>no_response</c>, <c>cancelled</c> or
+    /// <c>exception</c>).
+    /// </para>
+    /// <para>
+    /// A send that gets no HTTP response at all (an
+    /// <see cref="HttpRequestException"/>: connection refused, DNS or TLS
+    /// failure, connection dropped) is returned as
+    /// <see cref="CoinGeckoResponse{TValue}.NoResponse"/> rather than thrown.
+    /// A successful status whose body is not valid JSON still throws.
     /// </para>
     /// </remarks>
     /// <exception cref="ArgumentNullException">
@@ -43,8 +51,8 @@ public sealed class CoinGeckoClient(HttpClient httpClient, IMeterFactory? meterF
         ArgumentNullException.ThrowIfNull(requestUri);
 
         // Stays "exception" only when SendAsync throws anything but the
-        // caller's own cancellation: a send that never got a response, or a
-        // successful body that failed to deserialize.
+        // caller's own cancellation: a successful body that failed to
+        // deserialize, or anything else unexpected.
         var outcome = "exception";
         try
         {
@@ -78,6 +86,10 @@ public sealed class CoinGeckoClient(HttpClient httpClient, IMeterFactory? meterF
         {
             return CoinGeckoResponse<TValue>.Timeout();
         }
+        catch (HttpRequestException)
+        {
+            return CoinGeckoResponse<TValue>.NoResponse();
+        }
 
         using (response)
         {
@@ -95,6 +107,7 @@ public sealed class CoinGeckoClient(HttpClient httpClient, IMeterFactory? meterF
     {
         { IsSuccess: true } => "success",
         { IsTimeout: true } => "timeout",
+        { StatusCode: null } => "no_response",
         { StatusCode: HttpStatusCode.NotFound } => "not_found",
         { StatusCode: HttpStatusCode.TooManyRequests } => "rate_limited",
         { StatusCode: >= HttpStatusCode.BadRequest and < HttpStatusCode.InternalServerError } => "client_error",

@@ -11,7 +11,8 @@ internal static class ServiceErrorCodeMapper
     /// a <see cref="ServiceErrorCode"/>: a timeout becomes
     /// <see cref="ServiceErrorCode.RequestTimedOut"/>, `404` becomes
     /// <see cref="ServiceErrorCode.NotFound"/>, `429` becomes
-    /// <see cref="ServiceErrorCode.RateLimited"/>, and anything else becomes
+    /// <see cref="ServiceErrorCode.RateLimited"/>, and anything else — any
+    /// other status code, or no response at all — becomes
     /// <see cref="ServiceErrorCode.UpstreamUnavailable"/>.
     /// </summary>
     /// <exception cref="ArgumentException"><paramref name="response"/> is successful.</exception>

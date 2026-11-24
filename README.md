@@ -157,15 +157,16 @@ its clients then get `Location` headers without the prefix.
 ## Error codes
 
 `CryptoStuff.Core` reports a failed operation as a `ServiceErrorCode`. A failed
-CoinGecko response maps to one of the first four codes; the last three are for
-requests on the application's own stored data, mostly writes:
+CoinGecko request, whether it got a failure response or no response at all,
+maps to one of the first four codes; the last three are for requests on the
+application's own stored data, mostly writes:
 
 | Code | Meaning | Condition |
 |---|---|---|
 | `NotFound` | The requested resource does not exist | CoinGecko returned `404`, or no persisted record has that id |
 | `RateLimited` | The CoinGecko rate limit was exceeded | CoinGecko returned `429` |
 | `RequestTimedOut` | The request to CoinGecko did not complete in time | The request timed out |
-| `UpstreamUnavailable` | CoinGecko failed for any other reason | Any other non-success response |
+| `UpstreamUnavailable` | CoinGecko failed for any other reason | Any other non-success response, or no response at all (a refused connection, a DNS or TLS failure, a dropped connection) |
 | `Conflict` | The write conflicts with stored state | A duplicate name, or a lost concurrency race |
 | `RuleViolated` | The request breaks a domain rule | For example a write that would oversell or name an unknown coin, or a valuation with an amount too large to compute |
 | `PreconditionFailed` | The stored version no longer matches what the caller expected | A stale `If-Match` |
@@ -309,8 +310,9 @@ date, or query string reaches a tag. `outcome` says how the call ended:
 | `server_error` | A `5xx` |
 | `other_status` | Any other non-success status, such as a redirect that was not followed |
 | `timeout` | The `HttpClient`'s 30-second timeout, retry delays included |
+| `no_response` | No response at all, such as a refused connection, a DNS or TLS failure, or a dropped connection |
 | `cancelled` | The caller cancelling, such as an API client disconnecting; the call still throws |
-| `exception` | No response at all (a connection or DNS failure), or a success body that was not valid JSON; the call still throws |
+| `exception` | A success body that was not valid JSON, or anything else unexpected; the call still throws |
 
 A request is one logical call by the client, however many times it was sent:
 a call resent after a `429` is one request, and each resend is one retry. The
@@ -678,8 +680,9 @@ one from scratch, as a new alert would, so an edited alert is never left
 awaiting a reset. Alerts re-armed before this rule existed carry no mark and
 can trigger on the next evaluation that finds their price past the threshold.
 
-**When something goes wrong.** An upstream failure, such as `RateLimited` or
-`RequestTimedOut`, fails the evaluation with that code and leaves every alert
+**When something goes wrong.** An upstream failure, such as `RateLimited`,
+`RequestTimedOut`, or `UpstreamUnavailable` when CoinGecko cannot be reached
+at all, fails the evaluation with that code and leaves every alert
 armed, so the next evaluation simply tries again; that includes a failure while
 looking coins up one at a time. An alert CoinGecko gives no price for, because
 it no longer knows the coin or no longer quotes it in the alert's currency,
