@@ -1,0 +1,9 @@
+# Keeps host build output, repository metadata and IDE state out of the
+# build context, only to make it smaller: on a built Windows tree the context
+# was about 1.1 GB without these entries and about 3.6 MB with them. The image
+# builds and passes test/container-smoke.sh either way.
+**/bin/
+**/obj/
+.git/
+.idea/
+.vs/

@@ -18,3 +18,11 @@ jobs:
       - run: dotnet build --configuration Release --no-restore
       - run: dotnet test --configuration Release --no-build
       - run: dotnet format --verify-no-changes
+
+  # Builds the API's container image and checks it for real. Linux only: a
+  # Windows runner cannot run the image's Linux containers.
+  container-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: bash test/container-smoke.sh

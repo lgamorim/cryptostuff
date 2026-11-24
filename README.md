@@ -112,6 +112,8 @@ visible only to `CryptoStuff.CoinGecko.UnitTests` through `InternalsVisibleTo`.
   send (see [API key](#api-key)). Locally, set it as a user secret under
   `Api:Key` from `src/CryptoStuff.Api`; in deployment, set the `Api__Key`
   environment variable. The CLI does not use it.
+- For the [container image](#container-image) only, Docker running Linux
+  containers; it needs no local .NET SDK.
 
 ## Configuration
 
@@ -1358,6 +1360,92 @@ they answer a wrong one too.
 - `GET /scalar/v1` — an interactive Scalar UI over the OpenAPI document,
   mapped in the Development environment only.
 
+## Container image
+
+The [`Dockerfile`](Dockerfile) at the repository root builds an image of the
+API host, so the REST API and its
+[background evaluation](#background-evaluation) can run unattended. It
+publishes `src/CryptoStuff.Api` in `Release` on the
+`mcr.microsoft.com/dotnet/sdk:10.0.404` image and runs it on
+`mcr.microsoft.com/dotnet/aspnet:10.0`. The SDK tag is the version
+[`global.json`](global.json) pins, and the build runs with `global.json` in
+place, so an SDK image the pin rejects fails the build: move the tag whenever
+`global.json` moves. Build from the repository root:
+
+```bash
+docker build --tag cryptostuff-api .
+```
+
+Run it with both keys and a named volume for the database:
+
+```bash
+docker volume create cryptostuff-data
+docker run --detach --name cryptostuff-api \
+  --publish 127.0.0.1:8080:8080 \
+  --volume cryptostuff-data:/data \
+  --env CoinGecko__ApiKey=<your-coingecko-api-key> \
+  --env Api__Key=<your-api-key> \
+  cryptostuff-api
+curl -s http://127.0.0.1:8080/watchlists -H 'X-Api-Key: <your-api-key>'
+```
+
+- **Environment.** `CoinGecko__ApiKey` and `Api__Key` must be supplied when
+  the container is run; neither is in the image. Every other setting in
+  [Configuration](#configuration) and [Background evaluation](#background-evaluation)
+  (`Alerts__EvaluationSeconds`, `PathBase`, …) is passed the same way. The
+  image runs in the `Production` environment, so `GET /scalar/v1` is not
+  mapped; `GET /openapi/v1.json` is.
+- **Volume.** The image sets `ConnectionStrings__CryptoStuff` to
+  `Data Source=/data/cryptostuff.db`, so mount the volume at `/data`. The
+  container runs as the aspnet image's non-root `app` user (uid `1654`),
+  which owns `/data`, so on a new, empty named volume the first start-up's
+  migration creates `cryptostuff.db` there (with SQLite's `-wal` and `-shm`
+  files beside it). Data written through the API survives removing the
+  container and starting a new one on the same volume. Without a volume the
+  database lives inside the container and goes with it. A bind-mounted host
+  directory would have to be writable by uid `1654`; that is not tested.
+- **Port.** The API listens on port `8080` over plain HTTP, the aspnet
+  image's default (`ASPNETCORE_HTTP_PORTS=8080`), and the image declares no
+  `EXPOSE`, so publish the port with `--publish`. There is no HTTPS inside
+  the container: put TLS in front of it.
+- **Health.** The image declares no Docker `HEALTHCHECK`: the aspnet image
+  has neither `curl` nor `wget`, and none is added just for that. An
+  orchestrator probes over HTTP on port `8080` instead, without the API key:
+  `GET /health` for liveness and `GET /health/ready` for readiness (see
+  [Health, OpenAPI, and Scalar](#health-openapi-and-scalar)).
+- **Stopping.** `docker stop cryptostuff-api` shuts the host down cleanly
+  (exit code `0`).
+
+The image does not include the CLI, an HTTPS certificate, or a health-check
+tool, and none is published to a registry: build it yourself. It is built for
+the architecture of the machine that builds it (`linux/amd64` on an x64
+machine); no multi-architecture image is produced.
+
+### Container smoke check
+
+[`test/container-smoke.sh`](test/container-smoke.sh) builds the image from
+the repository and checks it for real, stopping at the first check that
+fails and naming it:
+
+1. **readiness** — `GET /health/ready` answers `200`;
+2. **API key** — `GET /watchlists` answers `401` without the key and `200`
+   with it;
+3. **non-root** — the container's process does not run as uid `0`;
+4. **persistence** — a watchlist created through the API is still there
+   after the container is removed and a new one is started on the same
+   volume.
+
+```bash
+bash test/container-smoke.sh
+```
+
+It needs Docker running Linux containers, `bash` and `curl`, and runs on
+Linux and from Git Bash on Windows. It uses placeholder keys, publishes the
+port on a free `127.0.0.1` port Docker picks, and only calls routes that do
+not reach CoinGecko; the container resolves CoinGecko's host to itself, so
+the check never depends on CoinGecko or spends a real key. It removes the
+containers, volume and image it created however it exits, and nothing else.
+
 ## Build, test, and format
 
 ```bash
@@ -1368,7 +1456,9 @@ dotnet format
 
 CI (`.github/workflows/ci.yml`) runs the same three commands — build and test
 in the `Release` configuration, plus a format-verification check — on both
-`ubuntu-latest` and `windows-latest`, on every push.
+`ubuntu-latest` and `windows-latest`, on every push. A second job, on
+`ubuntu-latest` only since a Windows runner cannot run Linux containers, runs
+the [container smoke check](#container-smoke-check).
 
 The tests need neither a real CoinGecko API key nor network access (they
 supply placeholder keys of their own, for CoinGecko and for the API), and
