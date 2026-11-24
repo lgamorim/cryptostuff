@@ -1,3 +1,4 @@
+using System.Diagnostics.Metrics;
 using System.Globalization;
 using CryptoStuff.CoinGecko;
 using CryptoStuff.Core;
@@ -49,8 +50,12 @@ public static class CryptoStuffServiceCollectionExtensions
     /// <see cref="IWatchlistRepository"/>, <see cref="IWatchlistService"/>,
     /// <see cref="IPortfolioRepository"/>, <see cref="IPortfolioService"/>,
     /// <see cref="IAlertRepository"/>, <see cref="IAlertService"/>, and
-    /// <see cref="IAlertEvaluator"/> as scoped. The database is located by
-    /// <see cref="DatabaseConnectionString.Resolve"/>; nothing here opens it.
+    /// <see cref="IAlertEvaluator"/> as scoped. The CoinGecko client, the
+    /// rate-limit retry handler and the caching decorator record their
+    /// upstream-call metrics on the container's <see cref="IMeterFactory"/>,
+    /// which <c>AddHttpClient</c> registers when nothing has. The database is
+    /// located by <see cref="DatabaseConnectionString.Resolve"/>; nothing here
+    /// opens it.
     /// </summary>
     /// <exception cref="InvalidOperationException">
     /// <c>CoinGecko:ApiKey</c> is missing or blank, <c>CoinGecko:CacheSeconds</c>
@@ -75,7 +80,10 @@ public static class CryptoStuffServiceCollectionExtensions
                 options.ApplyTo(httpClient);
                 httpClient.Timeout = HttpClientTimeout;
             })
-            .AddHttpMessageHandler(() => new RateLimitRetryHandler(MaxRetryAttempts, ConstantBackoff))
+            .AddHttpMessageHandler(sp => new RateLimitRetryHandler(
+                MaxRetryAttempts,
+                ConstantBackoff,
+                meterFactory: sp.GetRequiredService<IMeterFactory>()))
             // The keyed CryptocurrencyService below is registered as a singleton,
             // so it resolves and holds this typed client once for the app's whole
             // lifetime instead of getting a fresh one every couple of minutes the
@@ -101,7 +109,8 @@ public static class CryptoStuffServiceCollectionExtensions
         services.AddSingleton<ICryptocurrencyService>(sp =>
             new CachingCryptocurrencyService(
                 sp.GetRequiredKeyedService<ICryptocurrencyService>(CryptocurrencyServiceKey),
-                cacheDuration));
+                cacheDuration,
+                meterFactory: sp.GetRequiredService<IMeterFactory>()));
 
         // The clock the portfolio rules read. TryAdd leaves one a host or a
         // test registered first in place.

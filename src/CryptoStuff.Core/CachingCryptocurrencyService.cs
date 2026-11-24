@@ -1,3 +1,4 @@
+using System.Diagnostics.Metrics;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Internal;
 
@@ -13,17 +14,30 @@ namespace CryptoStuff.Core;
 /// </summary>
 public sealed class CachingCryptocurrencyService : ICryptocurrencyService, IDisposable
 {
+    private const string GetCoinOperation = "get_coin";
+    private const string GetDeveloperDataOperation = "get_developer_data";
+
     private readonly ICryptocurrencyService _inner;
     private readonly TimeSpan _cacheDuration;
     private readonly MemoryCache _cache;
+    private readonly Counter<long>? _lookups;
 
+    /// <remarks>
+    /// When <paramref name="meterFactory"/> is given, every lookup of a cached
+    /// operation adds one to the <c>cryptostuff.cache.lookups</c> counter,
+    /// tagged <c>operation</c> (<c>get_coin</c> or <c>get_developer_data</c>)
+    /// and <c>result</c> (<c>hit</c> or <c>miss</c>). An expired entry, or a
+    /// key whose last result was a failure, is a miss. When it is null,
+    /// nothing is recorded.
+    /// </remarks>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="cacheDuration"/> is not positive.</exception>
-    public CachingCryptocurrencyService(ICryptocurrencyService inner, TimeSpan cacheDuration, TimeProvider? timeProvider = null)
+    public CachingCryptocurrencyService(ICryptocurrencyService inner, TimeSpan cacheDuration, TimeProvider? timeProvider = null, IMeterFactory? meterFactory = null)
     {
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(cacheDuration, TimeSpan.Zero);
 
         _inner = inner;
         _cacheDuration = cacheDuration;
+        _lookups = meterFactory?.Create(UpstreamMetrics.MeterName).CreateCounter<long>("cryptostuff.cache.lookups", "{lookup}");
         _cache = new MemoryCache(new MemoryCacheOptions
         {
             // MemoryCacheOptions has no TimeProvider property in this package
@@ -47,11 +61,11 @@ public sealed class CachingCryptocurrencyService : ICryptocurrencyService, IDisp
 
     /// <inheritdoc />
     public Task<ServiceResult<CoinView>> GetCoinAsync(CoinQuery query, CancellationToken cancellationToken) =>
-        GetOrAddAsync(new CoinCacheKey(query.CoinId), () => _inner.GetCoinAsync(query, cancellationToken));
+        GetOrAddAsync(GetCoinOperation, new CoinCacheKey(query.CoinId), () => _inner.GetCoinAsync(query, cancellationToken));
 
     /// <inheritdoc />
     public Task<ServiceResult<CoinDeveloperDataView>> GetDeveloperDataAsync(CoinDeveloperDataQuery query, CancellationToken cancellationToken) =>
-        GetOrAddAsync(new DeveloperDataCacheKey(query.CoinId, query.Date), () => _inner.GetDeveloperDataAsync(query, cancellationToken));
+        GetOrAddAsync(GetDeveloperDataOperation, new DeveloperDataCacheKey(query.CoinId, query.Date), () => _inner.GetDeveloperDataAsync(query, cancellationToken));
 
     /// <summary>Disposes the underlying cache.</summary>
     public void Dispose() => _cache.Dispose();
@@ -63,16 +77,19 @@ public sealed class CachingCryptocurrencyService : ICryptocurrencyService, IDisp
     /// per key per <see cref="_cacheDuration"/> window in practice, and the
     /// roadmap never asked for request-coalescing.
     /// </summary>
-    private async Task<ServiceResult<TView>> GetOrAddAsync<TKey, TView>(TKey key, Func<Task<ServiceResult<TView>>> fetch)
+    private async Task<ServiceResult<TView>> GetOrAddAsync<TKey, TView>(string operation, TKey key, Func<Task<ServiceResult<TView>>> fetch)
         where TKey : notnull
     {
         if (_cache.TryGetValue<ServiceResult<TView>>(key, out var cached))
         {
+            RecordLookup(operation, "hit");
+
             // Only ever set below from a non-null successful result, so this
             // cannot itself be null.
             return cached!;
         }
 
+        RecordLookup(operation, "miss");
         var result = await fetch();
         if (result.IsSuccess)
         {
@@ -81,6 +98,9 @@ public sealed class CachingCryptocurrencyService : ICryptocurrencyService, IDisp
 
         return result;
     }
+
+    private void RecordLookup(string operation, string result) =>
+        _lookups?.Add(1, new KeyValuePair<string, object?>("operation", operation), new KeyValuePair<string, object?>("result", result));
 
     private readonly record struct CoinCacheKey(string CoinId);
 

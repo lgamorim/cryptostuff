@@ -73,7 +73,7 @@ reading from and the sections that explain the behaviour:
 
 | Area | Folder | Start with | Explained in |
 |---|---|---|---|
-| Market data | [root](src/CryptoStuff.Core) | `ICryptocurrencyService`, its five `*Query` inputs and `*View` results, `CachingCryptocurrencyService`, `KnownCoinPrices` | [Caching](#caching), [Missing identifiers](#missing-identifiers) |
+| Market data | [root](src/CryptoStuff.Core) | `ICryptocurrencyService`, its five `*Query` inputs and `*View` results, `CachingCryptocurrencyService`, `KnownCoinPrices`, `UpstreamMetrics` | [Caching](#caching), [Missing identifiers](#missing-identifiers), [Upstream metrics](#upstream-metrics) |
 | Watchlists | [`Watchlists/`](src/CryptoStuff.Core/Watchlists) | `Watchlist`, `IWatchlistService`, `IWatchlistRepository` | [Watchlist routes](#watchlist-routes) |
 | Portfolios | [`Portfolios/`](src/CryptoStuff.Core/Portfolios) | `Portfolio`, `IPortfolioService`, `IPortfolioRepository`, `ICostBasisMethod` | [Cost basis](#cost-basis), [Valuation](#valuation) |
 | Price alerts | [`Alerts/`](src/CryptoStuff.Core/Alerts) | `PriceAlert`, `IAlertService`, `IAlertEvaluator`, `IAlertRepository` | [Alert evaluation](#alert-evaluation) |
@@ -91,15 +91,16 @@ and those parsers read.
 
 | Project | Start with | Explained in |
 |---|---|---|
-| `CryptoStuff.CoinGecko` | `ICoinGeckoClient` and `CoinGeckoClient` (the wire format), `CryptocurrencyService` (the adapter) | [Configuration](#configuration), [Error codes](#error-codes) |
+| `CryptoStuff.CoinGecko` | `ICoinGeckoClient` and `CoinGeckoClient` (the wire format), `CryptocurrencyService` (the adapter) | [Configuration](#configuration), [Error codes](#error-codes), [Upstream metrics](#upstream-metrics) |
 | `CryptoStuff.Persistence` | `CryptoStuffDbContext`, a `*Configuration` mapping and a `*Repository` for each stored feature, `CryptoStuffDatabase` | [Data storage](#data-storage), [Database migrations](#database-migrations) |
-| `CryptoStuff.Composition` | `AddCryptoStuff`, `AddAlertEvaluationSchedule`, `MigrateCryptoStuffDatabaseAsync`, `IsCryptoStuffDatabaseReadyAsync`, `RateLimitRetryHandler`, `DatabaseConnectionString`, `CryptoStuffJson` | [Registration](#registration), [Rate limiting](#rate-limiting), [Data storage](#data-storage) |
+| `CryptoStuff.Composition` | `AddCryptoStuff`, `AddAlertEvaluationSchedule`, `MigrateCryptoStuffDatabaseAsync`, `IsCryptoStuffDatabaseReadyAsync`, `RateLimitRetryHandler`, `DatabaseConnectionString`, `CryptoStuffJson` | [Registration](#registration), [Rate limiting](#rate-limiting), [Upstream metrics](#upstream-metrics), [Data storage](#data-storage) |
 | `CryptoStuff.Cli` | `CliRunner`, a `*Commands` class for each stored feature | [Command-line interface](#command-line-interface) |
 | `CryptoStuff.Api` | `CryptoStuffEndpoints`, a `*Endpoints` class for each stored feature, `AlertEvaluationBackgroundService`, `StartupDatabaseMigration`, `DatabaseReadinessHealthCheck`, `ApiKeyAuthentication` and its `ApiKeyAuthenticationHandler`, `ApiKeyOpenApiDocumentTransformer` | [REST API](#rest-api), [API key](#api-key), [Background evaluation](#background-evaluation), [Health, OpenAPI, and Scalar](#health-openapi-and-scalar) |
 
 `CryptoStuff.CoinGecko`'s mappers, from its wire format to Core's views and
-from its failures to a `ServiceErrorCode`, are internal, visible only to
-`CryptoStuff.CoinGecko.UnitTests` through `InternalsVisibleTo`.
+from its failures to a `ServiceErrorCode`, and `CoinGeckoEndpoint`, which
+names the endpoint a request URI calls for the request counter, are internal,
+visible only to `CryptoStuff.CoinGecko.UnitTests` through `InternalsVisibleTo`.
 
 ## Prerequisites
 
@@ -234,7 +235,8 @@ stale.
 The decorator's cache duration is a constructor argument; it doesn't read
 configuration itself. `CryptoStuff.Composition`'s `AddCryptoStuff` extension
 wires its duration from the `CoinGecko:CacheSeconds` setting, defaulting to
-`300` (5 minutes) when unset.
+`300` (5 minutes) when unset. Its hits and misses are counted; see
+[Upstream metrics](#upstream-metrics).
 
 ## Rate limiting
 
@@ -267,6 +269,73 @@ has room to fully exhaust its retries before the client times out. A
 sufficiently long `Retry-After` value can still exceed that timeout; when it
 does, the failure surfaces as `RequestTimedOut` rather than `RateLimited`
 (see [Error codes](#error-codes)).
+
+Each resend is counted; see [Upstream metrics](#upstream-metrics).
+
+## Upstream metrics
+
+The app counts its calls to CoinGecko, the rate-limit retries, and the cache
+lookups, so their volume can be measured from a running host. The counts are
+`System.Diagnostics.Metrics` instruments only: there is no `/metrics` route,
+and nothing is exported unless a tool listens. All three are counters on one
+meter, `cryptostuff.upstream`, and each measurement adds 1:
+
+| Instrument | Unit | Recorded by | Tags |
+|---|---|---|---|
+| `cryptostuff.upstream.requests` | `{request}` | `CoinGeckoClient`, once per call | `provider`, `endpoint`, `outcome` |
+| `cryptostuff.upstream.retries` | `{retry}` | `RateLimitRetryHandler`, once per resend after a `429` | `provider` |
+| `cryptostuff.cache.lookups` | `{lookup}` | `CachingCryptocurrencyService`, once per lookup of a cached operation | `operation`, `result` |
+
+The tag values are a fixed set:
+
+| Tag | Values |
+|---|---|
+| `provider` | `coingecko` |
+| `endpoint` | `simple/price`, `simple/token_price/{platform}`, `coins/{id}/market_chart`, `coins/{id}`, `coins/{id}/history`, or `other` for a path matching none of them (the app calls none) |
+| `operation` | `get_coin`, `get_developer_data` |
+| `result` | `hit`, `miss` |
+
+The `endpoint` value is the template, never the URL: no coin id, currency,
+date, or query string reaches a tag. `outcome` says how the call ended:
+
+| `outcome` | The call ended with |
+|---|---|
+| `success` | A success status and a body that was read |
+| `not_found` | `404` |
+| `rate_limited` | `429`, once the retries ran out |
+| `client_error` | Any other `4xx`, such as a `401` or `403` from a rejected CoinGecko API key |
+| `server_error` | A `5xx` |
+| `other_status` | Any other non-success status, such as a redirect that was not followed |
+| `timeout` | The `HttpClient`'s 30-second timeout, retry delays included |
+| `cancelled` | The caller cancelling, such as an API client disconnecting; the call still throws |
+| `exception` | No response at all (a connection or DNS failure), or a success body that was not valid JSON; the call still throws |
+
+A request is one logical call by the client, however many times it was sent:
+a call resent after a `429` is one request, and each resend is one retry. The
+number of HTTP sends to CoinGecko is therefore requests plus retries, less
+any request that ended `cancelled` before its first send. The retry counter
+has no `endpoint` tag, so sends can be totalled per provider but not per
+endpoint. A resend cancelled during its delay is never sent, so it is not
+counted.
+
+A cache lookup is a call to `GetCoinAsync` or `GetDeveloperDataAsync` on the
+decorator; the other three operations are never looked up, so they record
+nothing. A miss is an absent key, an expired entry, or a key whose last
+result was a failure (which is never cached), and each miss is passed on to
+CoinGecko as one request.
+
+To read the counters from a running API host, attach `dotnet-counters`, a
+.NET diagnostic tool installed separately (`dotnet tool install --global
+dotnet-counters`):
+
+```bash
+dotnet-counters monitor --name CryptoStuff.Api --counters cryptostuff.upstream
+```
+
+`--name` matches the host's process name; `--process-id` names one by id
+instead. The counts live in the process and start from zero each time it
+starts. The CLI records them too, but a single command usually exits before a
+tool can attach.
 
 ## Registration
 

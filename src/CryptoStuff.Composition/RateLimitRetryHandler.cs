@@ -1,4 +1,7 @@
+using System.Diagnostics.Metrics;
 using System.Net;
+using CryptoStuff.CoinGecko;
+using CryptoStuff.Core;
 
 namespace CryptoStuff.Composition;
 
@@ -11,22 +14,30 @@ namespace CryptoStuff.Composition;
 /// retried request's <see cref="HttpRequestMessage.Content"/> is not
 /// preserved, matching <c>ICoinGeckoClient</c>'s GET-only contract — sending
 /// a request with content through this handler silently drops that content
-/// on any retry.
+/// on any retry. Each resend adds one to the <c>cryptostuff.upstream.retries</c>
+/// counter, tagged <c>provider=coingecko</c>; the first send of a request is
+/// never counted here, and a resend the caller cancels during the delay is
+/// not counted either.
 /// </summary>
 public sealed class RateLimitRetryHandler : DelegatingHandler
 {
     private readonly int _maxRetryAttempts;
     private readonly TimeSpan _constantBackoff;
     private readonly TimeProvider _timeProvider;
+    private readonly Counter<long>? _retries;
 
     /// <param name="maxRetryAttempts">The maximum number of retries. Total sends on full exhaustion are <c>1 + maxRetryAttempts</c>.</param>
     /// <param name="constantBackoff">The delay used when a <c>429</c> response carries no <c>Retry-After</c> header.</param>
     /// <param name="timeProvider">The clock used for delays. Defaults to <see cref="TimeProvider.System"/>.</param>
+    /// <param name="meterFactory">
+    /// Creates the meter the <c>cryptostuff.upstream.retries</c> counter is
+    /// recorded on, one measurement per resend. When null, nothing is recorded.
+    /// </param>
     /// <exception cref="ArgumentOutOfRangeException">
     /// <paramref name="maxRetryAttempts"/> is negative, or
     /// <paramref name="constantBackoff"/> is negative.
     /// </exception>
-    public RateLimitRetryHandler(int maxRetryAttempts, TimeSpan constantBackoff, TimeProvider? timeProvider = null)
+    public RateLimitRetryHandler(int maxRetryAttempts, TimeSpan constantBackoff, TimeProvider? timeProvider = null, IMeterFactory? meterFactory = null)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(maxRetryAttempts);
         ArgumentOutOfRangeException.ThrowIfLessThan(constantBackoff, TimeSpan.Zero);
@@ -34,6 +45,7 @@ public sealed class RateLimitRetryHandler : DelegatingHandler
         _maxRetryAttempts = maxRetryAttempts;
         _constantBackoff = constantBackoff;
         _timeProvider = timeProvider ?? TimeProvider.System;
+        _retries = meterFactory?.Create(UpstreamMetrics.MeterName).CreateCounter<long>("cryptostuff.upstream.retries", "{retry}");
     }
 
     /// <inheritdoc />
@@ -42,6 +54,13 @@ public sealed class RateLimitRetryHandler : DelegatingHandler
         for (var attempt = 0; ; attempt++)
         {
             var requestToSend = attempt == 0 ? request : CloneRequest(request);
+            if (attempt > 0)
+            {
+                // Counted here, once the delay is over, so a resend the
+                // caller cancelled during the delay is never counted.
+                _retries?.Add(1, new KeyValuePair<string, object?>("provider", CoinGeckoClient.ProviderName));
+            }
+
             var response = await base.SendAsync(requestToSend, cancellationToken);
             if (response.StatusCode != HttpStatusCode.TooManyRequests || attempt >= _maxRetryAttempts)
             {

@@ -38,6 +38,13 @@ internal sealed class FakeHttpMessageHandler : HttpMessageHandler
     /// </summary>
     public static FakeHttpMessageHandler SimulatingTimeout() => new(responseFactory: null);
 
+    /// <summary>
+    /// Creates a handler that throws <paramref name="exception"/> instead of
+    /// returning a response — e.g. an <see cref="HttpRequestException"/>,
+    /// as a connection failure would.
+    /// </summary>
+    public static FakeHttpMessageHandler Throwing(Exception exception) => new(() => throw exception);
+
     protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();

@@ -64,4 +64,19 @@ public class CoinGeckoClientTests
 
         await act.Should().ThrowAsync<OperationCanceledException>();
     }
+
+    [Fact]
+    public async Task Should_ThrowArgumentNullExceptionAndSendNothing_When_RequestUriIsNull()
+    {
+        var sendCount = 0;
+        var handler = FakeHttpMessageHandler.ReturningJson(HttpStatusCode.OK, """{"name":"bitcoin","value":42}""", _ => sendCount++);
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://example.test/") };
+        ICoinGeckoClient client = new CoinGeckoClient(httpClient);
+
+        // `!` is deliberate: the test hands over the null the guard must reject.
+        var act = () => client.GetAsync<TestPayload>(null!, CancellationToken.None);
+
+        await act.Should().ThrowAsync<ArgumentNullException>().WithParameterName("requestUri");
+        sendCount.Should().Be(0);
+    }
 }
