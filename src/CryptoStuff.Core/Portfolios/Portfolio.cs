@@ -10,7 +10,7 @@ namespace CryptoStuff.Core.Portfolios;
 /// below zero. Every add, replace, and removal is checked against the whole
 /// replayed ledger, because removing an earlier buy or moving a sell earlier
 /// can break a later sell. A change is also refused when it would make a
-/// coin's holding, cost, proceeds or profit, under either cost-basis method,
+/// coin's holding, cost, proceeds or profit, under any cost-basis method,
 /// too large for a decimal, or its holding need more significant digits than
 /// a decimal holds, when neither was so before, so a ledger whose coins all
 /// compute can always be valued from its own transactions. The id is zero

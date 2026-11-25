@@ -8,9 +8,10 @@ namespace CryptoStuff.Core.Portfolios;
 /// its quantities needs, trailing zeros aside, and written to that many
 /// places it always fits a decimal. Every smaller quantity a method derives
 /// from it — a lot, a lot's remainder, the units a sell still has to take —
-/// then fits too, so FIFO's lots always add up to the holding. Counting the
-/// places a quantity needs, not the ones it is written with, keeps the
-/// outcome the same whether a quantity reads 1 or, back from storage, 1.0.
+/// then fits too, so a lot-based method's lots always add up to the holding.
+/// Counting the places a quantity needs, not the ones it is written with,
+/// keeps the outcome the same whether a quantity reads 1 or, back from
+/// storage, 1.0.
 /// </summary>
 internal readonly struct ExactHolding
 {

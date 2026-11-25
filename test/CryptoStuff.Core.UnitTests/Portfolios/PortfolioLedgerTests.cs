@@ -782,11 +782,60 @@ public class PortfolioLedgerTests
         portfolio.Transactions.Should().HaveCount(3);
     }
 
+    [Fact]
+    public void Should_RejectNamingCoin_When_RealizedProfitWouldOverflowOnlyUnderLifo()
+    {
+        // Under LIFO both sells take the free units bought on day 2, so their
+        // proceeds add up past decimal's range. FIFO and HIFO sell the 7e28
+        // unit first, and average cost a share of what was paid, so every
+        // figure fits under them. The portfolio could switch to LIFO, so the
+        // ledger is refused.
+        var portfolio = Portfolio.Create("Long term", "usd", CostBasisMethod.AverageCost);
+        portfolio.AddTransaction(Buy("bitcoin", 1m, Day(1)) with { UnitPrice = 7e28m });
+        portfolio.AddTransaction(Buy("bitcoin", 2m, Day(2)) with { UnitPrice = 0m });
+        portfolio.AddTransaction(Sell("bitcoin", 1m, Day(3)) with { UnitPrice = 7e28m });
+
+        var outcome = portfolio.AddTransaction(Sell("bitcoin", 1m, Day(4)) with { UnitPrice = 2e28m });
+
+        outcome.IsValid.Should().BeFalse();
+        outcome.ErrorMessage.Should().Contain("bitcoin").And.Contain("too large");
+        portfolio.Transactions.Should().HaveCount(3);
+    }
+
+    [Fact]
+    public void Should_RejectNamingCoin_When_RealizedLossWouldOverflowOnlyUnderHifo()
+    {
+        // Three 3.5e28 units are bought between free ones, and each sell,
+        // for nothing, follows one. HIFO sells every 3.5e28 unit as it
+        // comes, so its third sell takes the loss to -1.05e29. FIFO and LIFO
+        // each sell a free unit at least once (losing 3.5e28 and 7e28), and
+        // average cost spreads each loss, so their losses fit. The portfolio
+        // could switch to HIFO, so the last sell is refused.
+        var portfolio = NewPortfolio();
+        portfolio.AddTransaction(Buy("bitcoin", 1m, Day(1)) with { UnitPrice = 0m });
+        portfolio.AddTransaction(Buy("bitcoin", 1m, Day(2)) with { UnitPrice = 3.5e28m });
+        portfolio.AddTransaction(Buy("bitcoin", 1m, Day(3)) with { UnitPrice = 0m });
+        portfolio.AddTransaction(Sell("bitcoin", 1m, Day(4)) with { UnitPrice = 0m });
+        portfolio.AddTransaction(Buy("bitcoin", 1m, Day(5)) with { UnitPrice = 3.5e28m });
+        portfolio.AddTransaction(Sell("bitcoin", 1m, Day(6)) with { UnitPrice = 0m });
+        portfolio.AddTransaction(Buy("bitcoin", 1m, Day(7)) with { UnitPrice = 3.5e28m });
+
+        var outcome = portfolio.AddTransaction(Sell("bitcoin", 1m, Day(8)) with { UnitPrice = 0m });
+
+        outcome.IsValid.Should().BeFalse();
+        outcome.ErrorMessage.Should().Contain("bitcoin").And.Contain("too large");
+        portfolio.Transactions.Should().HaveCount(7);
+    }
+
     [Theory]
     [InlineData(CostBasisMethod.AverageCost, "7e28", "0.6")]
     [InlineData(CostBasisMethod.Fifo, "7e28", "0.6")]
+    [InlineData(CostBasisMethod.Lifo, "7e28", "0.6")]
+    [InlineData(CostBasisMethod.Hifo, "7e28", "0.6")]
     [InlineData(CostBasisMethod.AverageCost, "10", "0.0000000000000000000000000006")]
     [InlineData(CostBasisMethod.Fifo, "10", "0.0000000000000000000000000006")]
+    [InlineData(CostBasisMethod.Lifo, "10", "0.0000000000000000000000000006")]
+    [InlineData(CostBasisMethod.Hifo, "10", "0.0000000000000000000000000006")]
     public void Should_RejectNamingCoin_When_ABuyWouldLeaveAHoldingNeedingMoreDigitsThanADecimalHolds(
         CostBasisMethod method, string held, string bought)
     {

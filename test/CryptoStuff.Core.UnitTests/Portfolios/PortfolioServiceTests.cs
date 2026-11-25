@@ -136,6 +136,20 @@ public class PortfolioServiceTests
         repository.Saved.Should().ContainSingle().Which.Id.Should().Be(view.Id);
     }
 
+    [Theory]
+    [InlineData(CostBasisMethod.Lifo)]
+    [InlineData(CostBasisMethod.Hifo)]
+    public async Task Should_SaveAndReturnThePortfoliosMethod_When_CreateAsyncChoosesALotMethod(CostBasisMethod method)
+    {
+        var (repository, _, service) = CreateSut();
+        var command = new CreatePortfolioCommand { Name = "Long term", VsCurrency = "usd", CostBasisMethod = method };
+
+        var result = await service.CreateAsync(command, CancellationToken.None);
+
+        SucceededValue(result).CostBasisMethod.Should().Be(method);
+        repository.Saved.Should().ContainSingle().Which.CostBasisMethod.Should().Be(method);
+    }
+
     [Fact]
     public async Task Should_ReturnConflictNamingNameWithoutSaving_When_CreateAsyncNameAlreadyExists()
     {
@@ -202,6 +216,22 @@ public class PortfolioServiceTests
         view.Name.Should().Be("Retirement");
         view.CostBasisMethod.Should().Be(CostBasisMethod.AverageCost);
         view.Version.Should().Be(2);
+        repository.SaveChangesCallCount.Should().Be(1);
+    }
+
+    [Theory]
+    [InlineData(CostBasisMethod.Lifo)]
+    [InlineData(CostBasisMethod.Hifo)]
+    public async Task Should_SaveAndReturnTheNewMethod_When_UpdateAsyncChoosesALotMethod(CostBasisMethod method)
+    {
+        var (repository, _, service) = CreateSut();
+        var portfolio = SeedPortfolio(repository, "Long term");
+        var command = new UpdatePortfolioCommand { PortfolioId = portfolio.Id, Name = "Long term", CostBasisMethod = method };
+
+        var result = await service.UpdateAsync(command, CancellationToken.None);
+
+        SucceededValue(result).CostBasisMethod.Should().Be(method);
+        portfolio.CostBasisMethod.Should().Be(method);
         repository.SaveChangesCallCount.Should().Be(1);
     }
 

@@ -11,9 +11,9 @@ public class PortfolioDispatchTests
 
     [Theory]
     [InlineData("portfolio list")]
-    [InlineData("portfolio create <name> <currency> <average-cost|fifo>")]
+    [InlineData("portfolio create <name> <currency> <average-cost|fifo|lifo|hifo>")]
     [InlineData("portfolio show <id>")]
-    [InlineData("portfolio update <id> <name> <average-cost|fifo>")]
+    [InlineData("portfolio update <id> <name> <average-cost|fifo|lifo|hifo>")]
     [InlineData("portfolio delete <id>")]
     [InlineData("portfolio value <id>")]
     [InlineData("portfolio tx add <id> <buy|sell> <coin> <qty> <price> <when> [--fee <fee>]")]

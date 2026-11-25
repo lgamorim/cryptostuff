@@ -9,6 +9,6 @@ public sealed record CreatePortfolioRequest
     /// <summary>The vs_currency the portfolio is priced in; it never changes.</summary>
     public string? VsCurrency { get; init; }
 
-    /// <summary>The cost-basis method token: <c>average-cost</c> or <c>fifo</c>.</summary>
+    /// <summary>The cost-basis method token: <c>average-cost</c>, <c>fifo</c>, <c>lifo</c> or <c>hifo</c>.</summary>
     public string? CostBasisMethod { get; init; }
 }

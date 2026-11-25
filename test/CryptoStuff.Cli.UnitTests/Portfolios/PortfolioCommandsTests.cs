@@ -237,6 +237,8 @@ public class PortfolioCommandsTests
     [InlineData("average-cost", CostBasisMethod.AverageCost)]
     [InlineData("fifo", CostBasisMethod.Fifo)]
     [InlineData("FIFO", CostBasisMethod.Fifo)]
+    [InlineData("lifo", CostBasisMethod.Lifo)]
+    [InlineData("HIFO", CostBasisMethod.Hifo)]
     public async Task Should_CreateAndPrintPortfolio_When_CreateSucceeds(string token, CostBasisMethod expected)
     {
         // Arrange
@@ -302,7 +304,7 @@ public class PortfolioCommandsTests
 
         // Assert
         exitCode.Should().Be(1);
-        _error.ToString().Should().Be("Method must be 'average-cost' or 'fifo'.\n");
+        _error.ToString().Should().Be("Method must be 'average-cost', 'fifo', 'lifo' or 'hifo'.\n");
         _portfolios.CallCount.Should().Be(0);
     }
 
@@ -328,6 +330,32 @@ public class PortfolioCommandsTests
         _output.ToString().Should().StartWith("Id: 4\nName: renamed\n");
         _portfolios.CapturedUpdateCommand.Should().Be(
             new UpdatePortfolioCommand { PortfolioId = 4, Name = "renamed", CostBasisMethod = CostBasisMethod.Fifo });
+    }
+
+    [Theory]
+    [InlineData("Lifo", CostBasisMethod.Lifo, "lifo")]
+    [InlineData("hifo", CostBasisMethod.Hifo, "hifo")]
+    public async Task Should_UpdateToAndPrintTheLotMethod_When_UpdateNamesLifoOrHifo(string token, CostBasisMethod expected, string printed)
+    {
+        // Arrange
+        _portfolios.UpdateResult = ServiceResult<PortfolioView>.Success(new PortfolioView
+        {
+            Id = 4,
+            Name = "renamed",
+            VsCurrency = "usd",
+            CostBasisMethod = expected,
+            Version = 2,
+            Transactions = [],
+        });
+
+        // Act
+        var exitCode = await _runner.RunAsync(["portfolio", "update", "4", "renamed", token], CancellationToken.None);
+
+        // Assert
+        exitCode.Should().Be(0);
+        _output.ToString().Should().Be($"Id: 4\nName: renamed\nCurrency: usd\nMethod: {printed}\nVersion: 2\nTransactions: none\n");
+        _portfolios.CapturedUpdateCommand.Should().Be(
+            new UpdatePortfolioCommand { PortfolioId = 4, Name = "renamed", CostBasisMethod = expected });
     }
 
     [Theory]
@@ -372,7 +400,7 @@ public class PortfolioCommandsTests
 
         // Assert
         exitCode.Should().Be(1);
-        _error.ToString().Should().Be("Method must be 'average-cost' or 'fifo'.\n");
+        _error.ToString().Should().Be("Method must be 'average-cost', 'fifo', 'lifo' or 'hifo'.\n");
         _portfolios.CallCount.Should().Be(0);
     }
 

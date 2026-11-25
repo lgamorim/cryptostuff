@@ -528,49 +528,72 @@ to what its units cost, and a sell's fee comes off what the sale brought in.
   first. A lot the sell takes only part of gives up a pro-rata share of its
   cost, fee included, and keeps the rest; a lot used up entirely gives up all
   of the cost it has left.
+- **LIFO** (`lifo`): each buy is a lot, and a sell uses up the newest lots
+  first: the latest in ledger order among the lots held when the sell is
+  replayed, so a buy back-dated before a sell can change which lots it took.
+  A lot gives up its cost as under FIFO.
+- **HIFO** (`hifo`): each buy is a lot, and a sell uses up the lots that cost
+  the most per unit first. A lot's cost per unit is what it cost as bought,
+  fee included, over its quantity ((quantity × unit price + fee) ÷ quantity),
+  and it keeps that rank however much of it has been sold; lots that cost
+  exactly the same per unit go oldest first. A lot gives up its cost as under
+  FIFO.
 
-The two diverge as soon as units bought at different prices are sold. Take
+The four diverge as soon as units bought at different prices are sold. Take
 one ledger:
 
 | Day | Transaction | Quantity | Unit price | Fee |
 |-----|-------------|---------:|-----------:|----:|
 | 1   | buy         | 1        | 10,000     | 10  |
 | 2   | buy         | 1        | 20,000     | 20  |
-| 3   | sell        | 1        | 30,000     | 30  |
+| 3   | buy         | 1        | 12,000     | 12  |
+| 4   | sell        | 1        | 30,000     | 30  |
 
-With their fees the two units cost 10,010 and 20,020, 30,030 in all, and the
-sale brings in 30,000 − 30 = 29,970.
+With their fees the three units cost 10,010, 20,020 and 12,012, 42,042 in
+all, and the sale brings in 30,000 − 30 = 29,970. Each method has the sale
+take a different cost, and every one leaves two units held:
 
-|                          | Average cost             | FIFO                     |
-|--------------------------|--------------------------|--------------------------|
-| Cost of the unit sold    | 30,030 ÷ 2 = 15,015      | the day-1 unit, 10,010   |
-| Realized profit and loss | 29,970 − 15,015 = 14,955 | 29,970 − 10,010 = 19,960 |
-| Quantity held            | 1                        | 1                        |
-| Cost basis held          | 15,015                   | 20,020                   |
+| Method       | Cost of the unit sold          | Realized profit and loss | Cost basis held          |
+|--------------|--------------------------------|--------------------------|--------------------------|
+| Average cost | 42,042 ÷ 3 = 14,014            | 29,970 − 14,014 = 15,956 | 42,042 − 14,014 = 28,028 |
+| FIFO         | the oldest, day 1: 10,010      | 29,970 − 10,010 = 19,960 | 20,020 + 12,012 = 32,032 |
+| LIFO         | the newest, day 3: 12,012      | 29,970 − 12,012 = 17,958 | 10,010 + 20,020 = 30,030 |
+| HIFO         | the dearest, day 2: 20,020     | 29,970 − 20,020 = 9,950  | 10,010 + 12,012 = 22,022 |
 
-Both account for the same 30,030 paid, as cost released by the sale plus cost
-basis still held; they differ only in which cost the sale takes. Here, with
-prices rising, FIFO realizes more profit now and keeps the dearer unit, so
-less profit is left to come.
+All four account for the same 42,042 paid, as cost released by the sale plus
+cost basis still held; they differ only in which cost the sale takes. Here
+FIFO realizes the most profit now, because the oldest unit was the cheapest,
+and HIFO the least, keeping the two cheapest units so that the most profit is
+left to come.
 
 Every figure is an exact `decimal`, and Core rounds nothing to currency
-places. The one inexact step is a share that does not divide evenly, such as
-a third of an average cost. A share (cost × units sold ÷ units held) is
-worked out exactly and rounded once, half to even, to the 28 or 29
-significant digits a `decimal` holds, even when cost × units sold alone would
-be too large for one; so a share never exceeds the cost it comes from, and
-the cost basis left on the units still held never goes below zero.
+places. A figure rounds only where it needs more than the 28 or 29
+significant digits a `decimal` holds. One such step is a share that does not
+divide evenly, such as a third of an average cost. A share (cost × units sold
+÷ units held) is worked out exactly and rounded once, half to even, even when
+cost × units sold alone would be too large for a `decimal`; so a share never
+exceeds the cost it comes from, and the cost basis left on the units still
+held never goes below zero. The others are the plain `decimal` steps: a
+quantity × unit price, or a sum (a cost basis, the cost a sell releases from
+several lots, a realized profit and loss) that needs more digits rounds there,
+as `7e28` + `0.6` gives `7e28` + 1, so the order of the additions can change
+the last digit. The lot methods add up the cost of the lots still held in the
+order they were bought, whichever lots they sell first, so with nothing sold
+every method reports the same cost basis. HIFO's ranking divides nothing: it
+compares two lots' costs per unit exactly, so lots whose costs per unit differ
+only past a `decimal`'s digits still rank in order, and no cost per unit is
+too large to compare.
 
 No figure can go beyond the largest `decimal`, about `7.9e28`. Recording,
 replacing or deleting a transaction is refused when it would take any coin's
-holding, cost basis, proceeds or profit past it, under either method, since a
-portfolio can switch methods at any time; the `detail` names the coin. A
-transaction is refused the same way when it would leave a coin's holding
-needing more significant digits than a `decimal` holds, written to as many
-decimal places as the finest of its quantities needs (trailing zeros do not
-count, so `1.0` needs none): `7e28` plus `0.6`, or `10` plus
+holding, cost basis, proceeds or profit past it, under any of the four
+methods, since a portfolio can switch methods at any time; the `detail` names
+the coin. A transaction is refused the same way when it would leave a coin's
+holding needing more significant digits than a `decimal` holds, written to as
+many decimal places as the finest of its quantities needs (trailing zeros do
+not count, so `1.0` needs none): `7e28` plus `0.6`, or `10` plus
 `0.0000000000000000000000000006`. Such a holding would round, and a sell of
-the rounded figure could take more than FIFO's lots hold. So
+the rounded figure could take more than the FIFO, LIFO or HIFO lots hold. So
 a ledger whose coins all compute keeps doing so. A ledger stored before this
 check may already hold a coin past the limit: it cannot be valued, but that
 coin's transactions can be edited down or deleted one at a time, even while
@@ -833,7 +856,7 @@ dotnet run --project src/CryptoStuff.Cli -- price bitcoin usd
 | `watchlist remove` | `<id> <coin>` — removes a coin id; removing one that is absent changes nothing | `cryptostuff watchlist remove 1 bitcoin` |
 | `watchlist prices` | `<id> <currency>` — live prices of the watchlist's coins in a vs_currency; a coin CoinGecko gives no price for prints `no price` | `cryptostuff watchlist prices 1 usd` |
 | `portfolio list` | — lists every portfolio, with its id, name, currency, method, and transaction count | `cryptostuff portfolio list` |
-| `portfolio create` | `<name> <currency> <method>` — a new, empty portfolio priced in a vs_currency that never changes; `<method>` is `average-cost` or `fifo`; the name follows the [resource name](#input-validation) rule and is unique, ignoring case | `cryptostuff portfolio create main usd fifo` |
+| `portfolio create` | `<name> <currency> <method>` — a new, empty portfolio priced in a vs_currency that never changes; `<method>` is `average-cost`, `fifo`, `lifo` or `hifo`; the name follows the [resource name](#input-validation) rule and is unique, ignoring case | `cryptostuff portfolio create main usd fifo` |
 | `portfolio show` | `<id>` — a portfolio's id, name, currency, method, version, and transactions | `cryptostuff portfolio show 1` |
 | `portfolio update` | `<id> <name> <method>` — replaces the portfolio's name and cost-basis method | `cryptostuff portfolio update 1 retirement average-cost` |
 | `portfolio delete` | `<id>` — deletes a portfolio with all its transactions | `cryptostuff portfolio delete 1` |
@@ -1164,7 +1187,7 @@ whole numbers the database assigns.
 Create takes the name (following the [resource name](#input-validation) rule,
 unique ignoring case), the
 vs_currency every amount is in (fixed for good once created), and the
-[cost-basis method](#cost-basis), `average-cost` or `fifo`:
+[cost-basis method](#cost-basis), `average-cost`, `fifo`, `lifo` or `hifo`:
 
 ```bash
 curl -i -X POST http://localhost:5200/portfolios -H 'X-Api-Key: <your-api-key>' -H 'Content-Type: application/json'   -d '{ "name": "main", "vsCurrency": "usd", "costBasisMethod": "fifo" }'

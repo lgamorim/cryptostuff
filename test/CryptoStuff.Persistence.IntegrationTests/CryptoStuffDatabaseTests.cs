@@ -661,7 +661,7 @@ public class CryptoStuffDatabaseTests
     [Theory]
     [InlineData("PriceAlerts", "Direction", "sideways")]
     [InlineData("PriceAlerts", "State", "snoozed")]
-    [InlineData("Portfolios", "CostBasisMethod", "lifo")]
+    [InlineData("Portfolios", "CostBasisMethod", "specific-id")]
     [InlineData("PortfolioTransactions", "Kind", "transfer")]
     public async Task Should_RefuseNamingTheColumnAndValue_When_AStoredTokenIsUnknown(string table, string column, string token)
     {
@@ -685,6 +685,26 @@ public class CryptoStuffDatabaseTests
     {
         using var database = await TestDatabase.CreateMigratedAsync();
         await SeedAlertAndPortfolioAsync(database);
+        await using var context = database.CreateContext();
+
+        var act = () => CryptoStuffDatabase.MigrateAsync(context, TestContext.Current.CancellationToken);
+
+        await act.Should().NotThrowAsync();
+    }
+
+    [Theory]
+    [InlineData("lifo")]
+    [InlineData("hifo")]
+    public async Task Should_Succeed_When_APortfolioStoresALotMethodsToken(string token)
+    {
+        using var database = await TestDatabase.CreateMigratedAsync();
+        await SeedAlertAndPortfolioAsync(database);
+        await using (var writer = database.CreateContext())
+        {
+            await writer.Database.ExecuteSqlRawAsync(
+                string.Concat("UPDATE Portfolios SET CostBasisMethod = '", token, "'"), TestContext.Current.CancellationToken);
+        }
+
         await using var context = database.CreateContext();
 
         var act = () => CryptoStuffDatabase.MigrateAsync(context, TestContext.Current.CancellationToken);

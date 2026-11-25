@@ -23,10 +23,10 @@ public static class CliUsage
           watchlist remove <id> <coin>                Remove a coin from a watchlist
           watchlist prices <id> <currency>            Live prices of a watchlist's coins
           portfolio list                              List portfolios
-          portfolio create <name> <currency> <average-cost|fifo>
+          portfolio create <name> <currency> <average-cost|fifo|lifo|hifo>
                                                       Create an empty portfolio
           portfolio show <id>                         Show a portfolio and its transactions
-          portfolio update <id> <name> <average-cost|fifo>
+          portfolio update <id> <name> <average-cost|fifo|lifo|hifo>
                                                       Replace a portfolio's name and cost-basis method
           portfolio delete <id>                       Delete a portfolio with its transactions
           portfolio value <id>                        Value a portfolio at live prices

@@ -10,11 +10,11 @@ public static class CostBasisMethodParser
     public static ValidationOutcome Validate(string? token, string fieldName) =>
         TryParse(token, out _)
             ? ValidationOutcome.Success()
-            : ValidationOutcome.Failure($"{fieldName} must be 'average-cost' or 'fifo'.");
+            : ValidationOutcome.Failure($"{fieldName} must be 'average-cost', 'fifo', 'lifo' or 'hifo'.");
 
     /// <summary>
-    /// Parses <paramref name="token"/>, <c>average-cost</c> or <c>fifo</c> in
-    /// any case, as a cost-basis method. Surrounding whitespace, enum member
+    /// Parses <paramref name="token"/>, <c>average-cost</c>, <c>fifo</c>,
+    /// <c>lifo</c> or <c>hifo</c> in any case, as a cost-basis method. Surrounding whitespace, enum member
     /// names, and numbers are not accepted.
     /// </summary>
     public static bool TryParse(string? token, out CostBasisMethod method)
@@ -26,6 +26,12 @@ public static class CostBasisMethodParser
                 return true;
             case "fifo":
                 method = CostBasisMethod.Fifo;
+                return true;
+            case "lifo":
+                method = CostBasisMethod.Lifo;
+                return true;
+            case "hifo":
+                method = CostBasisMethod.Hifo;
                 return true;
             default:
                 method = default;

@@ -11,4 +11,10 @@ public enum CostBasisMethod
 
     /// <summary>A sale uses up the oldest units bought first (<c>fifo</c>).</summary>
     Fifo,
+
+    /// <summary>A sale uses up the newest units bought first (<c>lifo</c>).</summary>
+    Lifo,
+
+    /// <summary>A sale uses up the units that cost the most per unit first (<c>hifo</c>).</summary>
+    Hifo,
 }

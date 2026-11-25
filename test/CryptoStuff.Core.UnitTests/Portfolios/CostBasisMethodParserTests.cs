@@ -22,9 +22,29 @@ public class CostBasisMethodParserTests
         method.Should().Be(CostBasisMethod.Fifo);
     }
 
+    [Fact]
+    public void Should_ParseLifo_When_TokenIsLifo()
+    {
+        var parsed = CostBasisMethodParser.TryParse("lifo", out var method);
+
+        parsed.Should().BeTrue();
+        method.Should().Be(CostBasisMethod.Lifo);
+    }
+
+    [Fact]
+    public void Should_ParseHifo_When_TokenIsHifo()
+    {
+        var parsed = CostBasisMethodParser.TryParse("hifo", out var method);
+
+        parsed.Should().BeTrue();
+        method.Should().Be(CostBasisMethod.Hifo);
+    }
+
     [Theory]
     [InlineData("FIFO", CostBasisMethod.Fifo)]
     [InlineData("Average-Cost", CostBasisMethod.AverageCost)]
+    [InlineData("LIFO", CostBasisMethod.Lifo)]
+    [InlineData("Hifo", CostBasisMethod.Hifo)]
     public void Should_IgnoreCase_When_TokenDiffersOnlyInCase(string token, CostBasisMethod expected)
     {
         var parsed = CostBasisMethodParser.TryParse(token, out var method);
@@ -37,7 +57,7 @@ public class CostBasisMethodParserTests
     [InlineData(null)]
     [InlineData("")]
     [InlineData("   ")]
-    [InlineData("lifo")]
+    [InlineData("specific-id")]
     [InlineData("average_cost")]
     [InlineData("averagecost")]
     [InlineData("AverageCost")]
@@ -77,9 +97,9 @@ public class CostBasisMethodParserTests
     [Fact]
     public void Should_ReturnInvalidNamingFieldAndAcceptedTokens_When_ValidateGivenUnknownToken()
     {
-        var outcome = CostBasisMethodParser.Validate("lifo", "Method");
+        var outcome = CostBasisMethodParser.Validate("specific-id", "Method");
 
         outcome.IsValid.Should().BeFalse();
-        outcome.ErrorMessage.Should().Contain("Method").And.Contain("average-cost").And.Contain("fifo");
+        outcome.ErrorMessage.Should().Be("Method must be 'average-cost', 'fifo', 'lifo' or 'hifo'.");
     }
 }

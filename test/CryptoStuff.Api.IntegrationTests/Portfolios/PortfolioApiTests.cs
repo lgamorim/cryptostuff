@@ -62,6 +62,50 @@ public class PortfolioApiTests
         body.GetProperty("transactions").GetArrayLength().Should().Be(0);
     }
 
+    [Theory]
+    [InlineData("LIFO", "lifo", "hifo")]
+    [InlineData("Hifo", "hifo", "lifo")]
+    public async Task Should_StoreAndReturnTheLotMethodsToken_When_PortfolioCreatedAndUpdatedWithIt(string sent, string created, string updated)
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        using var factory = new CryptoStuffApiFactory();
+        using var client = factory.CreateClient();
+
+        var createResponse = await client.PostAsJsonAsync("/portfolios", new { name = "main", vsCurrency = "usd", costBasisMethod = sent }, cancellationToken);
+        var createBody = await createResponse.Content.ReadFromJsonAsync<JsonElement>(cancellationToken);
+        var updateResponse = await client.PutAsJsonAsync("/portfolios/1", new { name = "main", costBasisMethod = updated }, cancellationToken);
+        var updateBody = await updateResponse.Content.ReadFromJsonAsync<JsonElement>(cancellationToken);
+        var reloaded = await client.GetFromJsonAsync<JsonElement>("/portfolios/1", cancellationToken);
+
+        createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        createBody.GetProperty("costBasisMethod").GetString().Should().Be(created);
+        updateResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        updateBody.GetProperty("costBasisMethod").GetString().Should().Be(updated);
+        reloaded.GetProperty("costBasisMethod").GetString().Should().Be(updated);
+    }
+
+    [Theory]
+    [InlineData("POST", "/portfolios")]
+    [InlineData("PUT", "/portfolios/1")]
+    public async Task Should_ReturnValidationProblemNamingEveryToken_When_CostBasisMethodIsUnknown(string method, string path)
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        using var factory = new CryptoStuffApiFactory();
+        using var client = factory.CreateClient();
+        await CreateAsync(client, "main", cancellationToken);
+        using var request = new HttpRequestMessage(new HttpMethod(method), path)
+        {
+            Content = JsonContent.Create(new { name = "renamed", vsCurrency = "usd", costBasisMethod = "specific-id" }),
+        };
+
+        var response = await client.SendAsync(request, cancellationToken);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var body = await response.Content.ReadFromJsonAsync<JsonElement>(cancellationToken);
+        body.GetProperty("errors").GetProperty("costBasisMethod").EnumerateArray().Select(error => error.GetString())
+            .Should().Equal("costBasisMethod must be 'average-cost', 'fifo', 'lifo' or 'hifo'.");
+    }
+
     [Fact]
     public async Task Should_ReturnPortfolioAndETag_When_GetByIdAfterCreate()
     {
@@ -1030,7 +1074,7 @@ public class PortfolioApiTests
     [Theory]
     [InlineData("POST", "/portfolios", "{ \"name\": ")]
     [InlineData("POST", "/portfolios", "{}")]
-    [InlineData("PUT", "/portfolios/1", "{ \"name\": \"main\", \"costBasisMethod\": \"lifo\" }")]
+    [InlineData("PUT", "/portfolios/1", "{ \"name\": \"main\", \"costBasisMethod\": \"specific-id\" }")]
     [InlineData("POST", "/portfolios/1/transactions", "{}")]
     [InlineData("POST", "/portfolios/1/transactions", "{ \"kind\": \"buy\", \"coinId\": \"bitcoin\", \"quantity\": \"1,5\", \"unitPrice\": 1, \"occurredAt\": \"2024-01-31T14:30:00Z\" }")]
     [InlineData("POST", "/portfolios/1/transactions", "{ \"kind\": \"buy\", \"coinId\": \"bitcoin\", \"quantity\": 1, \"unitPrice\": 1, \"occurredAt\": \"2024-01-31\" }")]
@@ -1096,6 +1140,35 @@ public class PortfolioApiTests
 
         var responses = document.GetProperty("paths").GetProperty(path).GetProperty(method).GetProperty("responses");
         responses.EnumerateObject().Select(response => response.Name).Should().BeEquivalentTo(expectedStatuses);
+    }
+
+    [Theory]
+    [InlineData("CreatePortfolioRequest")]
+    [InlineData("UpdatePortfolioRequest")]
+    public async Task Should_NameEveryCostBasisMethodToken_When_OpenApiDocumentDescribesARequestBody(string schema)
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        using var factory = new CryptoStuffApiFactory();
+        using var client = factory.CreateClient();
+
+        var document = await ReadOpenApiDocumentAsync(client, cancellationToken);
+
+        var description = document.GetProperty("components").GetProperty("schemas").GetProperty(schema)
+            .GetProperty("properties").GetProperty("costBasisMethod").GetProperty("description").GetString();
+        description.Should().Contain("average-cost").And.Contain("fifo").And.Contain("lifo").And.Contain("hifo");
+    }
+
+    [Fact]
+    public async Task Should_ListEveryCostBasisMethodToken_When_OpenApiDocumentDescribesTheMethodInResponses()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        using var factory = new CryptoStuffApiFactory();
+        using var client = factory.CreateClient();
+
+        var document = await ReadOpenApiDocumentAsync(client, cancellationToken);
+
+        var tokens = document.GetProperty("components").GetProperty("schemas").GetProperty("CostBasisMethod").GetProperty("enum");
+        tokens.EnumerateArray().Select(token => token.GetString()).Should().Equal("average-cost", "fifo", "lifo", "hifo");
     }
 
     // Both writers read version 1. The competitor commits first, so the

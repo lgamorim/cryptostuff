@@ -14,6 +14,8 @@ public static class CostBasisMethods
         {
             CostBasisMethod.AverageCost => new AverageCostMethod(),
             CostBasisMethod.Fifo => new FifoMethod(),
+            CostBasisMethod.Lifo => new LifoMethod(),
+            CostBasisMethod.Hifo => new HifoMethod(),
             _ => throw new ArgumentOutOfRangeException(nameof(method), method, "The cost-basis method is not defined."),
         };
 }

@@ -151,6 +151,52 @@ public class PortfolioValuationTests
         valuation.Totals.Should().Be(new PortfolioValuationTotals { MarketValue = 40_000m, CostBasis = 40_030m, UnrealizedProfitAndLoss = -30m, RealizedProfitAndLoss = 19_960m });
     }
 
+    // Bitcoin: buys 1 at 10,000 (fee 10), 1 at 20,000 (fee 20) and 1 at
+    // 12,000 (fee 12), then sells 1 at 30,000 (fee 30), as in the README's
+    // worked example. Priced at 25,000, the two units held are worth 50,000.
+    private static Portfolio SeedThreeLotPortfolio(FakePortfolioRepository repository, CostBasisMethod method) =>
+        SeedPortfolio(
+            repository,
+            method,
+            Buy(1m, 10_000m, 1, fee: 10m),
+            Buy(1m, 20_000m, 2, fee: 20m),
+            Buy(1m, 12_000m, 3, fee: 12m),
+            Sell(1m, 30_000m, 4, fee: 30m));
+
+    [Fact]
+    public async Task Should_ValueFromLifoPositions_When_MethodIsLifo()
+    {
+        // LIFO sold the day-3 unit, costing 12,012; the 10,010 and 20,020 units are held.
+        var (repository, upstream, service) = CreateSut();
+        var portfolio = SeedThreeLotPortfolio(repository, CostBasisMethod.Lifo);
+        upstream.PricesResult = PricedInUsd(("bitcoin", 25_000m));
+
+        var result = await service.GetValuationAsync(portfolio.Id, CancellationToken.None);
+
+        var valuation = SucceededValue(result);
+        valuation.CostBasisMethod.Should().Be(CostBasisMethod.Lifo);
+        valuation.Coins.Should().Equal(
+            new CoinValuationView { CoinId = "bitcoin", Quantity = 2m, MarketValue = 50_000m, CostBasis = 30_030m, UnrealizedProfitAndLoss = 19_970m, RealizedProfitAndLoss = 17_958m, AllocationPercent = 100m });
+        valuation.Totals.Should().Be(new PortfolioValuationTotals { MarketValue = 50_000m, CostBasis = 30_030m, UnrealizedProfitAndLoss = 19_970m, RealizedProfitAndLoss = 17_958m });
+    }
+
+    [Fact]
+    public async Task Should_ValueFromHifoPositions_When_MethodIsHifo()
+    {
+        // HIFO sold the day-2 unit, costing 20,020; the 10,010 and 12,012 units are held.
+        var (repository, upstream, service) = CreateSut();
+        var portfolio = SeedThreeLotPortfolio(repository, CostBasisMethod.Hifo);
+        upstream.PricesResult = PricedInUsd(("bitcoin", 25_000m));
+
+        var result = await service.GetValuationAsync(portfolio.Id, CancellationToken.None);
+
+        var valuation = SucceededValue(result);
+        valuation.CostBasisMethod.Should().Be(CostBasisMethod.Hifo);
+        valuation.Coins.Should().Equal(
+            new CoinValuationView { CoinId = "bitcoin", Quantity = 2m, MarketValue = 50_000m, CostBasis = 22_022m, UnrealizedProfitAndLoss = 27_978m, RealizedProfitAndLoss = 9_950m, AllocationPercent = 100m });
+        valuation.Totals.Should().Be(new PortfolioValuationTotals { MarketValue = 50_000m, CostBasis = 22_022m, UnrealizedProfitAndLoss = 27_978m, RealizedProfitAndLoss = 9_950m });
+    }
+
     [Fact]
     public async Task Should_KeepRealizedProfitWithoutCallingUpstream_When_EveryPositionIsClosed()
     {

@@ -127,6 +127,36 @@ public class PortfolioEndpointsTests
             new CreatePortfolioCommand { Name = "main", VsCurrency = "usd", CostBasisMethod = CostBasisMethod.AverageCost });
     }
 
+    [Theory]
+    [InlineData("lifo", CostBasisMethod.Lifo)]
+    [InlineData("HIFO", CostBasisMethod.Hifo)]
+    public async Task Should_ForwardTheLotMethod_When_CreateNamesLifoOrHifo(string token, CostBasisMethod expected)
+    {
+        _service.CreateResult = ServiceResult<PortfolioView>.Success(View(version: 1));
+        var request = new CreatePortfolioRequest { Name = "main", VsCurrency = "usd", CostBasisMethod = token };
+
+        var result = await PortfolioEndpoints.CreateAsync(request, _service, new DefaultHttpContext().Response, CancellationToken.None);
+
+        result.Should().BeOfType<Created<PortfolioView>>();
+        _service.CapturedCreateCommand.Should().BeEquivalentTo(
+            new CreatePortfolioCommand { Name = "main", VsCurrency = "usd", CostBasisMethod = expected });
+    }
+
+    [Theory]
+    [InlineData("Lifo", CostBasisMethod.Lifo)]
+    [InlineData("hifo", CostBasisMethod.Hifo)]
+    public async Task Should_ForwardTheLotMethod_When_UpdateNamesLifoOrHifo(string token, CostBasisMethod expected)
+    {
+        _service.UpdateResult = ServiceResult<PortfolioView>.Success(View(version: 4));
+        var request = new UpdatePortfolioRequest { Name = "long term", CostBasisMethod = token };
+
+        var result = await PortfolioEndpoints.UpdateAsync(7, request, null, _service, new DefaultHttpContext().Response, CancellationToken.None);
+
+        result.Should().BeOfType<Ok<PortfolioView>>();
+        _service.CapturedUpdateCommand.Should().BeEquivalentTo(
+            new UpdatePortfolioCommand { PortfolioId = 7, Name = "long term", CostBasisMethod = expected, ExpectedVersions = null });
+    }
+
     [Fact]
     public async Task Should_PrefixThePathBase_When_CreateSucceedsUnderOne()
     {
@@ -208,7 +238,7 @@ public class PortfolioEndpointsTests
     [InlineData(null)]
     [InlineData("")]
     [InlineData("AverageCost")]
-    [InlineData("lifo")]
+    [InlineData("specific-id")]
     [InlineData(" fifo")]
     [InlineData("1")]
     public async Task Should_ReturnValidationProblem_When_CreateCostBasisMethodNotAToken(string? costBasisMethod)
@@ -219,7 +249,7 @@ public class PortfolioEndpointsTests
 
         var problem = result.Should().BeOfType<ValidationProblem>().Subject;
         problem.ProblemDetails.Errors.Should().ContainKey("costBasisMethod")
-            .WhoseValue.Should().Equal("costBasisMethod must be 'average-cost' or 'fifo'.");
+            .WhoseValue.Should().Equal("costBasisMethod must be 'average-cost', 'fifo', 'lifo' or 'hifo'.");
         _service.CallCount.Should().Be(0);
     }
 
@@ -374,7 +404,7 @@ public class PortfolioEndpointsTests
 
         var problem = result.Should().BeOfType<ValidationProblem>().Subject;
         problem.ProblemDetails.Errors.Should().ContainKey("costBasisMethod")
-            .WhoseValue.Should().Equal("costBasisMethod must be 'average-cost' or 'fifo'.");
+            .WhoseValue.Should().Equal("costBasisMethod must be 'average-cost', 'fifo', 'lifo' or 'hifo'.");
         _service.CallCount.Should().Be(0);
     }
 

@@ -101,7 +101,7 @@ public static class CliArgumentReader
         return outcome.IsValid;
     }
 
-    /// <summary>Parses <paramref name="raw"/> as the <c>average-cost</c> or <c>fifo</c> token of a cost-basis method.</summary>
+    /// <summary>Parses <paramref name="raw"/> as the <c>average-cost</c>, <c>fifo</c>, <c>lifo</c> or <c>hifo</c> token of a cost-basis method.</summary>
     public static bool TryParseCostBasisMethod(string raw, string fieldName, out CostBasisMethod method, out string errorMessage) =>
         TryParseText(raw, fieldName, CostBasisMethodParser.TryParse, CostBasisMethodParser.Validate, out method, out errorMessage);
 

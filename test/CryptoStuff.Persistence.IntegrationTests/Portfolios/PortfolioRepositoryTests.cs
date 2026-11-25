@@ -76,8 +76,23 @@ public sealed class PortfolioRepositoryTests : IAsyncLifetime
     }
 
     [Theory]
+    [InlineData(CostBasisMethod.Lifo)]
+    [InlineData(CostBasisMethod.Hifo)]
+    public async Task Should_KeepTheLotMethod_When_PortfolioRoundTrips(CostBasisMethod method)
+    {
+        var saved = await SaveNewAsync("Long term", "usd", method, Buy("bitcoin"));
+
+        var found = await FindFreshAsync(saved.Id);
+
+        found.CostBasisMethod.Should().Be(method);
+        found.Transactions.Should().ContainSingle();
+    }
+
+    [Theory]
     [InlineData(CostBasisMethod.AverageCost, "average-cost")]
     [InlineData(CostBasisMethod.Fifo, "fifo")]
+    [InlineData(CostBasisMethod.Lifo, "lifo")]
+    [InlineData(CostBasisMethod.Hifo, "hifo")]
     public async Task Should_StoreCostBasisMethodAsToken_When_PortfolioSaved(CostBasisMethod method, string token)
     {
         await SaveNewAsync("Long term", "usd", method);
@@ -671,13 +686,13 @@ public sealed class PortfolioRepositoryTests : IAsyncLifetime
     public async Task Should_ThrowInvalidDataException_When_StoredCostBasisMethodIsNotAToken()
     {
         var saved = await SaveNewAsync("Long term");
-        await ExecuteAsync("UPDATE Portfolios SET CostBasisMethod = 'lifo'");
+        await ExecuteAsync("UPDATE Portfolios SET CostBasisMethod = 'specific-id'");
         await using var context = _database.CreateContext();
         var repository = new PortfolioRepository(context);
 
         var act = () => repository.FindAsync(saved.Id, Token);
 
-        (await act.Should().ThrowAsync<InvalidDataException>()).WithMessage("*'lifo'*cost-basis method*");
+        (await act.Should().ThrowAsync<InvalidDataException>()).WithMessage("*'specific-id'*cost-basis method*");
     }
 
     [Fact]

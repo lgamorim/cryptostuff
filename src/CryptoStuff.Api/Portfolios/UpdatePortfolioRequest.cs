@@ -10,6 +10,6 @@ public sealed record UpdatePortfolioRequest
     /// <summary>The portfolio's new name.</summary>
     public string? Name { get; init; }
 
-    /// <summary>The new cost-basis method token: <c>average-cost</c> or <c>fifo</c>.</summary>
+    /// <summary>The new cost-basis method token: <c>average-cost</c>, <c>fifo</c>, <c>lifo</c> or <c>hifo</c>.</summary>
     public string? CostBasisMethod { get; init; }
 }

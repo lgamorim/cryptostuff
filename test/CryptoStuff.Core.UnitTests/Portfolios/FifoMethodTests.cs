@@ -145,6 +145,25 @@ public class FifoMethodTests
     }
 
     [Fact]
+    public void Should_AddUpTheLotsLeftInTheOrderTheyWereBought_When_TheirTotalNeedsMoreDigitsThanADecimalHolds()
+    {
+        // The sell takes the free unit; 0.6 + 0.6 + 7e28 is left, which needs
+        // more digits than a decimal holds. In the order bought it adds up to
+        // 1.2 first, and 7e28 + 1.2 rounds to 7e28 + 1; adding a 0.6 to 7e28
+        // first would round up twice, to 7e28 + 2.
+        var transactions = Of(
+            Buy(1m, 0m, day: 1),
+            Buy(1m, 0.6m, day: 2),
+            Buy(1m, 0.6m, day: 3),
+            Buy(1m, 7e28m, day: 4),
+            Sell(1m, 0m, day: 5));
+
+        var position = _method.CalculatePosition(transactions);
+
+        position.Should().Be(new CoinPosition { Quantity = 3m, CostBasis = 70000000000000000000000000001m, RealizedProfitAndLoss = 0m });
+    }
+
+    [Fact]
     public void Should_ThrowArgumentException_When_SellExceedsHolding()
     {
         // A portfolio never records an oversell, so the sell comes from another one.
