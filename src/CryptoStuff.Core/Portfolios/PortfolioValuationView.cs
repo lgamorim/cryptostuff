@@ -43,6 +43,13 @@ public sealed record CoinValuationView
     /// <summary>The units held times the live price of one; null when the coin is held but the market data provider gave no price for it.</summary>
     public required decimal? MarketValue { get; init; }
 
+    /// <summary>
+    /// The market value as a percentage, from 0 to 100, of the priced coins' total market
+    /// value, unrounded; 0 when the market value is, even when the total is too, and null
+    /// when the market value is.
+    /// </summary>
+    public required decimal? AllocationPercent { get; init; }
+
     /// <summary>What the units still held cost, fees on their buys included.</summary>
     public required decimal CostBasis { get; init; }
 

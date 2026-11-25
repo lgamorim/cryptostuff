@@ -591,6 +591,7 @@ coin in the valuation reports:
 |---|---|
 | Quantity | The units still held |
 | Market value | Quantity × the live price of one unit; null for a coin left [unpriced](#unpriced-coins) |
+| Allocation | The coin's share of the total market value, as a percentage from 0 to 100: a coin worth 62.5% of the total reports `62.5`. 0 for a coin worth nothing; null for a coin left unpriced |
 | Cost basis | What the units still held cost, fees on their buys included, under the portfolio's method |
 | Unrealized profit and loss | Market value − cost basis: the gain or loss that selling every unit held at the live price would realize. Negative while the price is below cost. It is a paper figure and moves with the price; null for a coin left unpriced |
 | Realized profit and loss | What the coin's sells have already made: proceeds less sell fees, less the cost the method attributes to the units sold. Fixed once made, and negative for a loss |
@@ -599,10 +600,14 @@ The totals add each figure across the priced coins, closed coins included.
 Market value − cost basis equals the total unrealized profit and loss, and
 total realized profit and loss is every priced coin's realized profit and loss.
 Adding the two profit-and-loss totals gives the portfolio's overall result so
-far.
+far. The totals have no allocation: the priced coins' allocations add up to
+100, exactly or within decimal rounding (three coins worth the same each report
+33.333…, unrounded, so together they come a hair short of 100). When the total
+market value is 0, because nothing is held, every position is closed, or every
+coin held is priced at 0, every priced coin's allocation is 0.
 
 A coin whose position is fully closed stays in the list, with a quantity,
-market value, cost basis and unrealized profit and loss of zero and only its
+market value, allocation, cost basis and unrealized profit and loss of zero and only its
 realized profit and loss. It needs no price, so it is not requested, and
 keeping it means the priced rows always add up to the totals. Coins are
 listed in order of coin id.
@@ -614,21 +619,26 @@ market values, cost bases and profits and losses, which come out of
 multiplying and dividing and can run to 28 decimal places, to at most 8, the
 places a bitcoin divides into: a midpoint rounds away from zero, trailing
 zeros are dropped, and a figure that rounds to nothing prints as `0`, so a cost
-basis of 2200 / 3 prints as `733.33333333`. Quantities, and the prices and
+basis of 2200 / 3 prints as `733.33333333`. It rounds each coin's allocation
+the same way to at most 2 places and adds `%`: a third prints as
+`allocation 33.33%`, half as `allocation 50%`. Quantities, and the prices and
 fees you entered, are always printed exactly. A live price times the quantity held,
 or a total across coins, can still go past the largest `decimal`; the
 valuation then fails with `RuleViolated` rather than giving a wrong figure.
+Working out the allocations never does: a coin's share of the total is taken
+before it is scaled to 100.
 
 ### Unpriced coins
 
 A coin still held that CoinGecko gives no price for, because it no longer
 knows the coin or no longer quotes it in the portfolio's currency, does not
 fail the valuation. Its row keeps its quantity, cost basis and realized profit
-and loss, but its market value and unrealized profit and loss are null, and
-its id is listed in `unpricedCoins`. The totals leave the whole coin out, its
-cost basis and realized profit and loss too, so they still add up across the
-rows they cover; `portfolio value` prints `unpriced` for the missing figures
-and names the coins left out of the total. Any upstream failure, such as
+and loss, but its market value, allocation and unrealized profit and loss are
+null, and its id is listed in `unpricedCoins`. The totals leave the whole coin
+out, its cost basis and realized profit and loss too, so they still add up
+across the rows they cover, and the other coins' allocations are shares of
+that priced total, so they still add up to 100. `portfolio value` prints
+`unpriced` for the missing figures and names the coins left out of the total. Any upstream failure, such as
 `RateLimited`, still fails the valuation with its code.
 
 ## Alert evaluation
@@ -827,7 +837,7 @@ dotnet run --project src/CryptoStuff.Cli -- price bitcoin usd
 | `portfolio show` | `<id>` — a portfolio's id, name, currency, method, version, and transactions | `cryptostuff portfolio show 1` |
 | `portfolio update` | `<id> <name> <method>` — replaces the portfolio's name and cost-basis method | `cryptostuff portfolio update 1 retirement average-cost` |
 | `portfolio delete` | `<id>` — deletes a portfolio with all its transactions | `cryptostuff portfolio delete 1` |
-| `portfolio value` | `<id>` — the portfolio's holdings at live prices; see [Valuation](#valuation) | `cryptostuff portfolio value 1` |
+| `portfolio value` | `<id>` — the portfolio's holdings at live prices, with each coin's allocation; see [Valuation](#valuation) | `cryptostuff portfolio value 1` |
 | `portfolio tx add` | `<id> <kind> <coin> <qty> <price> <when> [--fee <fee>]` — records a buy or sell (`<kind>` is `buy` or `sell`); a buy of a coin new to the portfolio must be one CoinGecko knows | `cryptostuff portfolio tx add 1 buy bitcoin 0.5 40000 2024-01-31T14:30:00Z --fee 12.5` |
 | `portfolio tx edit` | `<id> <txid> <kind> <coin> <qty> <price> <when> [--fee <fee>]` — replaces every detail of a transaction, so an omitted `--fee` becomes `0` | `cryptostuff portfolio tx edit 1 3 sell bitcoin 0.25 42000 2024-02-15T09:00:00Z` |
 | `portfolio tx delete` | `<id> <txid>` — deletes a transaction | `cryptostuff portfolio tx delete 1 3` |
@@ -933,8 +943,9 @@ default human-readable text:
 dotnet run --project src/CryptoStuff.Cli -- coin bitcoin --json
 ```
 
-A valuation's computed figures are rounded to 8 decimal places in the text and
-kept exact in the JSON; see [Valuation](#valuation).
+A valuation's computed figures are rounded to 8 decimal places in the text, its
+allocations to 2, and all of them are kept exact in the JSON; see
+[Valuation](#valuation).
 
 Timestamps are written the same way in the text and the JSON, and in the API's
 responses and error messages: UTC, ending in `Z`, such as `2024-01-31T14:30:00Z`,
@@ -1211,7 +1222,7 @@ never gives it to another transaction, even after this one is deleted.
 | `GET /portfolios/{id}/transactions/{txId}` | `200` with `ETag` | The one transaction, shaped as in the portfolio's list; the `ETag` is the portfolio's, the one this URI's `PUT` and `DELETE` take |
 | `PUT /portfolios/{id}/transactions/{txId}` | `200` with `ETag` | The portfolio; the transaction keeps its id and sequence |
 | `DELETE /portfolios/{id}/transactions/{txId}` | `200` with `ETag` | The portfolio, without the transaction |
-| `GET /portfolios/{id}/valuation` | `200` | A [valuation](#valuation): one CoinGecko call for the coins still held, more only when one of them is unknown; a coin CoinGecko gives no price for is [left unpriced](#unpriced-coins) |
+| `GET /portfolios/{id}/valuation` | `200` | A [valuation](#valuation), each coin with its exact `allocationPercent`: one CoinGecko call for the coins still held, more only when one of them is unknown; a coin CoinGecko gives no price for is [left unpriced](#unpriced-coins) |
 
 #### `ETag` and `If-Match`
 

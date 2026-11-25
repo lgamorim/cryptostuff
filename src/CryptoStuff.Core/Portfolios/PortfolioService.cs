@@ -251,7 +251,7 @@ public sealed class PortfolioService(
         IReadOnlyList<(string CoinId, CoinPosition Position)> positions,
         PriceTable livePrices)
     {
-        var coins = new List<CoinValuationView>();
+        var marketValues = new List<decimal?>();
         var unpricedCoins = new List<string>();
         foreach (var (coinId, position) in positions)
         {
@@ -269,16 +269,20 @@ public sealed class PortfolioService(
                 }
             }
 
-            coins.Add(new CoinValuationView
-            {
-                CoinId = coinId,
-                Quantity = position.Quantity,
-                MarketValue = marketValue,
-                CostBasis = position.CostBasis,
-                UnrealizedProfitAndLoss = marketValue - position.CostBasis,
-                RealizedProfitAndLoss = position.RealizedProfitAndLoss,
-            });
+            marketValues.Add(marketValue);
         }
+
+        var totalMarketValue = marketValues.Sum(v => v ?? 0m);
+        var coins = positions.Select((p, i) => new CoinValuationView
+        {
+            CoinId = p.CoinId,
+            Quantity = p.Position.Quantity,
+            MarketValue = marketValues[i],
+            AllocationPercent = AllocationPercent(marketValues[i], totalMarketValue),
+            CostBasis = p.Position.CostBasis,
+            UnrealizedProfitAndLoss = marketValues[i] - p.Position.CostBasis,
+            RealizedProfitAndLoss = p.Position.RealizedProfitAndLoss,
+        }).ToList();
 
         var priced = coins.Where(c => c.MarketValue is not null).ToList();
         return new PortfolioValuationView
@@ -290,13 +294,29 @@ public sealed class PortfolioService(
             UnpricedCoins = unpricedCoins,
             Totals = new PortfolioValuationTotals
             {
-                MarketValue = priced.Sum(c => c.MarketValue ?? 0m),
+                MarketValue = totalMarketValue,
                 CostBasis = priced.Sum(c => c.CostBasis),
                 UnrealizedProfitAndLoss = priced.Sum(c => c.UnrealizedProfitAndLoss ?? 0m),
                 RealizedProfitAndLoss = priced.Sum(c => c.RealizedProfitAndLoss),
             },
         };
     }
+
+    /// <summary>
+    /// A market value's share of the priced coins' total, as a percentage:
+    /// null for an unpriced coin, and 0 for one worth nothing. A total of 0
+    /// means every priced coin is worth nothing, so each gets 0 rather than a
+    /// division by zero. The share is taken before it is scaled to 100, as a
+    /// market value near the largest decimal times 100 would overflow and fail
+    /// a valuation that otherwise fits.
+    /// </summary>
+    private static decimal? AllocationPercent(decimal? marketValue, decimal totalMarketValue) =>
+        marketValue switch
+        {
+            null => null,
+            _ when totalMarketValue == 0m => 0m,
+            { } value => value / totalMarketValue * 100m,
+        };
 
     /// <summary>
     /// Checks the rules on a transaction's details that need more than the

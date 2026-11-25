@@ -19,6 +19,12 @@ public static class PortfolioOutputFormatter
     // trailing zeros; a loss too small to show prints as 0, not -0.
     private static readonly string ComputedFigureFormat = "0." + new string('#', ComputedFigurePlaces);
 
+    // A coin's allocation is a percentage, so text shows it to at most this
+    // many places, rounded as ComputedFigureFormat rounds; JSON keeps it exact.
+    private const int AllocationPlaces = 2;
+
+    private static readonly string AllocationFormat = "0." + new string('#', AllocationPlaces);
+
     // The hosts' JSON shape: enums as the tokens the text output prints, timestamps as UTC ending in Z.
     private static readonly JsonSerializerOptions JsonOptions = CryptoStuffJson.Configure(new JsonSerializerOptions { WriteIndented = true });
 
@@ -79,10 +85,11 @@ public static class PortfolioOutputFormatter
         }
 
         lines.AddRange(view.Coins.Select(coin =>
-            $"{coin.CoinId}: quantity {Invariant(coin.Quantity)}, "
-            + FormatFigures(coin.MarketValue, coin.CostBasis, coin.UnrealizedProfitAndLoss, coin.RealizedProfitAndLoss)));
-        lines.Add("Total: " + FormatFigures(
-            view.Totals.MarketValue, view.Totals.CostBasis, view.Totals.UnrealizedProfitAndLoss, view.Totals.RealizedProfitAndLoss));
+            $"{coin.CoinId}: quantity {Invariant(coin.Quantity)}, market value {FormatPriced(coin.MarketValue)}, "
+            + $"allocation {FormatAllocation(coin.AllocationPercent)}, "
+            + FormatCostAndProfits(coin.CostBasis, coin.UnrealizedProfitAndLoss, coin.RealizedProfitAndLoss)));
+        lines.Add($"Total: market value {Computed(view.Totals.MarketValue)}, "
+            + FormatCostAndProfits(view.Totals.CostBasis, view.Totals.UnrealizedProfitAndLoss, view.Totals.RealizedProfitAndLoss));
         if (view.UnpricedCoins.Count > 0)
         {
             lines.Add($"Left out of the total, with no price from CoinGecko: {string.Join(", ", view.UnpricedCoins)}");
@@ -91,11 +98,14 @@ public static class PortfolioOutputFormatter
         return string.Join('\n', lines);
     }
 
-    private static string FormatFigures(decimal? marketValue, decimal costBasis, decimal? unrealized, decimal realized) =>
-        $"market value {FormatPriced(marketValue)}, cost basis {Computed(costBasis)}, unrealized {FormatPriced(unrealized)}, realized {Computed(realized)}";
+    private static string FormatCostAndProfits(decimal costBasis, decimal? unrealized, decimal realized) =>
+        $"cost basis {Computed(costBasis)}, unrealized {FormatPriced(unrealized)}, realized {Computed(realized)}";
 
     // A figure that needs the coin's live price, which CoinGecko may not have given.
     private static string FormatPriced(decimal? value) => value is { } figure ? Computed(figure) : "unpriced";
+
+    private static string FormatAllocation(decimal? percent) =>
+        percent is { } figure ? figure.ToString(AllocationFormat, CultureInfo.InvariantCulture) + "%" : "unpriced";
 
     private static string Computed(decimal value) => value.ToString(ComputedFigureFormat, CultureInfo.InvariantCulture);
 

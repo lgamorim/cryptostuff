@@ -415,6 +415,7 @@ public class PortfolioCommandsTests
                     CoinId = "bitcoin",
                     Quantity = 0.5m,
                     MarketValue = 21000.5m,
+                    AllocationPercent = 100m,
                     CostBasis = 20000m,
                     UnrealizedProfitAndLoss = 1000.5m,
                     RealizedProfitAndLoss = 0m,
@@ -424,6 +425,7 @@ public class PortfolioCommandsTests
                     CoinId = "ethereum",
                     Quantity = 0m,
                     MarketValue = 0m,
+                    AllocationPercent = 0m,
                     CostBasis = 0m,
                     UnrealizedProfitAndLoss = 0m,
                     RealizedProfitAndLoss = -25.25m,
@@ -446,8 +448,8 @@ public class PortfolioCommandsTests
         exitCode.Should().Be(0);
         _output.ToString().Should().Be(
             "Portfolio: 3 (usd, fifo)\n"
-            + "bitcoin: quantity 0.5, market value 21000.5, cost basis 20000, unrealized 1000.5, realized 0\n"
-            + "ethereum: quantity 0, market value 0, cost basis 0, unrealized 0, realized -25.25\n"
+            + "bitcoin: quantity 0.5, market value 21000.5, allocation 100%, cost basis 20000, unrealized 1000.5, realized 0\n"
+            + "ethereum: quantity 0, market value 0, allocation 0%, cost basis 0, unrealized 0, realized -25.25\n"
             + "Total: market value 21000.5, cost basis 20000, unrealized 1000.5, realized -25.25\n");
         _portfolios.CapturedId.Should().Be(3);
     }
@@ -468,6 +470,7 @@ public class PortfolioCommandsTests
                     CoinId = "bitcoin",
                     Quantity = 0.123456789012345678m,
                     MarketValue = 1000.123456785m,
+                    AllocationPercent = 100m,
                     CostBasis = 733.33333333333333333333333333m,
                     UnrealizedProfitAndLoss = 266.79012345166666666666666667m,
                     RealizedProfitAndLoss = -0.000000005m,
@@ -491,7 +494,7 @@ public class PortfolioCommandsTests
         // small to show prints as 0, not -0.
         _output.ToString().Should().Be(
             "Portfolio: 3 (usd, average-cost)\n"
-            + "bitcoin: quantity 0.123456789012345678, market value 1000.12345679, cost basis 733.33333333, unrealized 266.79012345, realized -0.00000001\n"
+            + "bitcoin: quantity 0.123456789012345678, market value 1000.12345679, allocation 100%, cost basis 733.33333333, unrealized 266.79012345, realized -0.00000001\n"
             + "Total: market value 1000.12345679, cost basis 733.33333333, unrealized 266.79012345, realized 0\n");
     }
 
@@ -572,8 +575,8 @@ public class PortfolioCommandsTests
         exitCode.Should().Be(0);
         _output.ToString().Should().Be(
             "Portfolio: 3 (usd, fifo)\n"
-            + "bitcoin: quantity 1, market value 120, cost basis 100, unrealized 20, realized 0\n"
-            + "ethereum: quantity 1, market value unpriced, cost basis 10, unrealized unpriced, realized 5\n"
+            + "bitcoin: quantity 1, market value 120, allocation 100%, cost basis 100, unrealized 20, realized 0\n"
+            + "ethereum: quantity 1, market value unpriced, allocation unpriced, cost basis 10, unrealized unpriced, realized 5\n"
             + "Total: market value 120, cost basis 100, unrealized 20, realized 0\n"
             + "Left out of the total, with no price from CoinGecko: ethereum\n");
     }
@@ -611,6 +614,7 @@ public class PortfolioCommandsTests
                     CoinId = "bitcoin",
                     Quantity = 0.5m,
                     MarketValue = 21000.5m,
+                    AllocationPercent = 100m,
                     CostBasis = 20000m,
                     UnrealizedProfitAndLoss = 1000.5m,
                     RealizedProfitAndLoss = 0m,
@@ -703,6 +707,109 @@ public class PortfolioCommandsTests
         }
     }
 
+    [Fact]
+    public async Task Should_PrintTheAllocationWithAPoint_When_CurrentCultureIsGerman()
+    {
+        // Arrange
+        _portfolios.ValuationResult = ServiceResult<PortfolioValuationView>.Success(ValuationWithAllocations(("bitcoin", 33.33333333333333333333333333m)));
+        var original = CultureInfo.CurrentCulture;
+        CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("de-DE");
+
+        try
+        {
+            // Act
+            await _runner.RunAsync(["portfolio", "value", "3"], CancellationToken.None);
+
+            // Assert
+            _output.ToString().Should().Contain("bitcoin: quantity 1, market value 10, allocation 33.33%, cost basis 10");
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = original;
+        }
+    }
+
+    // A valuation of coins with the given allocations, the other figures fixed.
+    private static PortfolioValuationView ValuationWithAllocations(params (string CoinId, decimal? AllocationPercent)[] coins) => new()
+    {
+        PortfolioId = 3,
+        VsCurrency = "usd",
+        CostBasisMethod = CostBasisMethod.Fifo,
+        Coins =
+        [
+            .. coins.Select(c => new CoinValuationView
+            {
+                CoinId = c.CoinId,
+                Quantity = 1m,
+                MarketValue = c.AllocationPercent is null ? null : 10m,
+                AllocationPercent = c.AllocationPercent,
+                CostBasis = 10m,
+                UnrealizedProfitAndLoss = c.AllocationPercent is null ? null : 0m,
+                RealizedProfitAndLoss = 0m,
+            }),
+        ],
+        UnpricedCoins = [.. coins.Where(c => c.AllocationPercent is null).Select(c => c.CoinId)],
+        Totals = new PortfolioValuationTotals { MarketValue = 100m, CostBasis = 100m, UnrealizedProfitAndLoss = 0m, RealizedProfitAndLoss = 0m },
+    };
+
+    [Fact]
+    public async Task Should_RoundTheAllocationToTwoPlacesAndDropTrailingZeros_When_ValuationIsPrintedAsText()
+    {
+        // Arrange
+        _portfolios.ValuationResult = ServiceResult<PortfolioValuationView>.Success(ValuationWithAllocations(
+            ("a", 33.33333333333333333333333333m),
+            ("b", 12.345m),
+            ("c", 0.005m),
+            ("d", 50.000m),
+            ("e", 99.999m),
+            ("f", 4.3m)));
+
+        // Act
+        await _runner.RunAsync(["portfolio", "value", "3"], CancellationToken.None);
+
+        // Assert
+        // A midpoint rounds away from zero, and trailing zeros are dropped.
+        var allocations = _output.ToString().Split('\n')
+            .Where(line => line.Contains("allocation", StringComparison.Ordinal))
+            .Select(line => line.Split(", ")[2]);
+        allocations.Should().Equal(
+            "allocation 33.33%", "allocation 12.35%", "allocation 0.01%", "allocation 50%", "allocation 100%", "allocation 4.3%");
+    }
+
+    [Fact]
+    public async Task Should_PrintTheAllocationAfterTheMarketValueAndNoneInTheTotal_When_ValuationIsPrintedAsText()
+    {
+        // Arrange
+        _portfolios.ValuationResult = ServiceResult<PortfolioValuationView>.Success(ValuationWithAllocations(("bitcoin", 62.5m), ("ethereum", null)));
+
+        // Act
+        await _runner.RunAsync(["portfolio", "value", "3"], CancellationToken.None);
+
+        // Assert
+        _output.ToString().Should().Be(
+            "Portfolio: 3 (usd, fifo)\n"
+            + "bitcoin: quantity 1, market value 10, allocation 62.5%, cost basis 10, unrealized 0, realized 0\n"
+            + "ethereum: quantity 1, market value unpriced, allocation unpriced, cost basis 10, unrealized unpriced, realized 0\n"
+            + "Total: market value 100, cost basis 100, unrealized 0, realized 0\n"
+            + "Left out of the total, with no price from CoinGecko: ethereum\n");
+    }
+
+    [Fact]
+    public async Task Should_KeepTheAllocationExactAndNullWhenUnpriced_When_ValuationIsPrintedAsJson()
+    {
+        // Arrange
+        _portfolios.ValuationResult = ServiceResult<PortfolioValuationView>.Success(ValuationWithAllocations(
+            ("bitcoin", 33.33333333333333333333333333m), ("ethereum", null)));
+
+        // Act
+        await _runner.RunAsync(["portfolio", "value", "3", "--json"], CancellationToken.None);
+
+        // Assert
+        _output.ToString().Should()
+            .Contain("\"AllocationPercent\": 33.33333333333333333333333333,")
+            .And.Contain("\"AllocationPercent\": null,");
+    }
+
     // Bitcoin is priced; ethereum is still held but CoinGecko gave no price for it.
     private static PortfolioValuationView UnpricedEthereumValuation() => new()
     {
@@ -711,8 +818,8 @@ public class PortfolioCommandsTests
         CostBasisMethod = CostBasisMethod.Fifo,
         Coins =
         [
-            new CoinValuationView { CoinId = "bitcoin", Quantity = 1m, MarketValue = 120m, CostBasis = 100m, UnrealizedProfitAndLoss = 20m, RealizedProfitAndLoss = 0m },
-            new CoinValuationView { CoinId = "ethereum", Quantity = 1m, MarketValue = null, CostBasis = 10m, UnrealizedProfitAndLoss = null, RealizedProfitAndLoss = 5m },
+            new CoinValuationView { CoinId = "bitcoin", Quantity = 1m, MarketValue = 120m, AllocationPercent = 100m, CostBasis = 100m, UnrealizedProfitAndLoss = 20m, RealizedProfitAndLoss = 0m },
+            new CoinValuationView { CoinId = "ethereum", Quantity = 1m, MarketValue = null, AllocationPercent = null, CostBasis = 10m, UnrealizedProfitAndLoss = null, RealizedProfitAndLoss = 5m },
         ],
         UnpricedCoins = ["ethereum"],
         Totals = new PortfolioValuationTotals { MarketValue = 120m, CostBasis = 100m, UnrealizedProfitAndLoss = 20m, RealizedProfitAndLoss = 0m },

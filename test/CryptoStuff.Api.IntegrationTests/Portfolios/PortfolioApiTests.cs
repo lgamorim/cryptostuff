@@ -296,6 +296,7 @@ public class PortfolioApiTests
                     CoinId = "bitcoin",
                     Quantity = 0.5m,
                     MarketValue = 25000m,
+                    AllocationPercent = 100m,
                     CostBasis = 21000m,
                     UnrealizedProfitAndLoss = 4000m,
                     RealizedProfitAndLoss = 0m,
@@ -348,6 +349,7 @@ public class PortfolioApiTests
                     CoinId = "bitcoin",
                     Quantity = 0.5m,
                     MarketValue = 25000m,
+                    AllocationPercent = 100m,
                     CostBasis = 21000m,
                     UnrealizedProfitAndLoss = 4000m,
                     RealizedProfitAndLoss = 0m,
@@ -357,6 +359,7 @@ public class PortfolioApiTests
                     CoinId = "ghostcoin",
                     Quantity = 10m,
                     MarketValue = null,
+                    AllocationPercent = null,
                     CostBasis = 5m,
                     UnrealizedProfitAndLoss = null,
                     RealizedProfitAndLoss = 0m,
@@ -371,6 +374,42 @@ public class PortfolioApiTests
                 RealizedProfitAndLoss = 0m,
             },
         });
+    }
+
+    [Fact]
+    public async Task Should_WriteEachAllocationExactlyAndNullForAnUnpricedCoin_When_ValuationRequested()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        using var factory = new CryptoStuffApiFactory();
+        factory.CoinGeckoClient.PriceMatrixResponse = CoinGeckoResponse<Dictionary<string, Dictionary<string, decimal>>>.Success(
+            new()
+            {
+                ["bitcoin"] = new() { ["usd"] = 100m },
+                ["dogecoin"] = new() { ["usd"] = 100m },
+                ["ethereum"] = new() { ["usd"] = 100m },
+                ["ghostcoin"] = new() { ["usd"] = 100m },
+            },
+            HttpStatusCode.OK);
+        using var client = factory.CreateClient();
+        var created = await CreateAsync(client, "main", cancellationToken);
+        foreach (var coinId in new[] { "bitcoin", "dogecoin", "ethereum", "ghostcoin" })
+        {
+            await AddAsync(client, created.Id, new { kind = "buy", coinId, quantity = 1m, unitPrice = 100m, occurredAt = "2024-01-31T14:30:00Z" }, cancellationToken);
+        }
+
+        // CoinGecko delists ghostcoin, so simple/price omits it.
+        factory.CoinGeckoClient.PriceMatrixResponse = CoinGeckoResponse<Dictionary<string, Dictionary<string, decimal>>>.Success(
+            new() { ["bitcoin"] = new() { ["usd"] = 100m }, ["dogecoin"] = new() { ["usd"] = 100m }, ["ethereum"] = new() { ["usd"] = 100m } },
+            HttpStatusCode.OK);
+
+        var response = await client.GetAsync($"/portfolios/{created.Id}/valuation", cancellationToken);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancellationToken));
+        var allocations = body.RootElement.GetProperty("coins").EnumerateArray()
+            .Select(coin => coin.GetProperty("allocationPercent"))
+            .Select(allocation => allocation.ValueKind == JsonValueKind.Null ? (decimal?)null : allocation.GetDecimal());
+        allocations.Should().Equal(33.33333333333333333333333333m, 33.33333333333333333333333333m, 33.33333333333333333333333333m, null);
     }
 
     [Fact]

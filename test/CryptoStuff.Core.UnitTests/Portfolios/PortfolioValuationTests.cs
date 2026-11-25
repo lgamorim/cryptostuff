@@ -102,6 +102,7 @@ public class PortfolioValuationTests
             CostBasis = 204m,
             UnrealizedProfitAndLoss = 96m,
             RealizedProfitAndLoss = 0m,
+            AllocationPercent = 100m,
         });
         valuation.Totals.Should().Be(new PortfolioValuationTotals { MarketValue = 300m, CostBasis = 204m, UnrealizedProfitAndLoss = 96m, RealizedProfitAndLoss = 0m });
         valuation.UnpricedCoins.Should().BeEmpty();
@@ -129,8 +130,8 @@ public class PortfolioValuationTests
 
         var valuation = SucceededValue(result);
         valuation.Coins.Should().Equal(
-            new CoinValuationView { CoinId = "bitcoin", Quantity = 1m, MarketValue = 25_000m, CostBasis = 15_015m, UnrealizedProfitAndLoss = 9_985m, RealizedProfitAndLoss = 14_955m },
-            new CoinValuationView { CoinId = "ethereum", Quantity = 10m, MarketValue = 15_000m, CostBasis = 20_010m, UnrealizedProfitAndLoss = -5_010m, RealizedProfitAndLoss = 0m });
+            new CoinValuationView { CoinId = "bitcoin", Quantity = 1m, MarketValue = 25_000m, CostBasis = 15_015m, UnrealizedProfitAndLoss = 9_985m, RealizedProfitAndLoss = 14_955m, AllocationPercent = 62.5m },
+            new CoinValuationView { CoinId = "ethereum", Quantity = 10m, MarketValue = 15_000m, CostBasis = 20_010m, UnrealizedProfitAndLoss = -5_010m, RealizedProfitAndLoss = 0m, AllocationPercent = 37.5m });
         valuation.Totals.Should().Be(new PortfolioValuationTotals { MarketValue = 40_000m, CostBasis = 35_025m, UnrealizedProfitAndLoss = 4_975m, RealizedProfitAndLoss = 14_955m });
     }
 
@@ -145,8 +146,8 @@ public class PortfolioValuationTests
 
         var valuation = SucceededValue(result);
         valuation.Coins.Should().Equal(
-            new CoinValuationView { CoinId = "bitcoin", Quantity = 1m, MarketValue = 25_000m, CostBasis = 20_020m, UnrealizedProfitAndLoss = 4_980m, RealizedProfitAndLoss = 19_960m },
-            new CoinValuationView { CoinId = "ethereum", Quantity = 10m, MarketValue = 15_000m, CostBasis = 20_010m, UnrealizedProfitAndLoss = -5_010m, RealizedProfitAndLoss = 0m });
+            new CoinValuationView { CoinId = "bitcoin", Quantity = 1m, MarketValue = 25_000m, CostBasis = 20_020m, UnrealizedProfitAndLoss = 4_980m, RealizedProfitAndLoss = 19_960m, AllocationPercent = 62.5m },
+            new CoinValuationView { CoinId = "ethereum", Quantity = 10m, MarketValue = 15_000m, CostBasis = 20_010m, UnrealizedProfitAndLoss = -5_010m, RealizedProfitAndLoss = 0m, AllocationPercent = 37.5m });
         valuation.Totals.Should().Be(new PortfolioValuationTotals { MarketValue = 40_000m, CostBasis = 40_030m, UnrealizedProfitAndLoss = -30m, RealizedProfitAndLoss = 19_960m });
     }
 
@@ -167,6 +168,7 @@ public class PortfolioValuationTests
             CostBasis = 0m,
             UnrealizedProfitAndLoss = 0m,
             RealizedProfitAndLoss = 45m,
+            AllocationPercent = 0m,
         });
         valuation.Totals.Should().Be(new PortfolioValuationTotals { MarketValue = 0m, CostBasis = 0m, UnrealizedProfitAndLoss = 0m, RealizedProfitAndLoss = 45m });
         upstream.GetPricesCallCount.Should().Be(0);
@@ -289,6 +291,7 @@ public class PortfolioValuationTests
             CostBasis = 15_000.27775m,
             UnrealizedProfitAndLoss = 10_617.006195m,
             RealizedProfitAndLoss = 220.98763529740739942m,
+            AllocationPercent = 100m,
         };
         valuation.Coins.Should().Equal(expected);
         valuation.Totals.Should().Be(new PortfolioValuationTotals
@@ -311,8 +314,8 @@ public class PortfolioValuationTests
 
         var valuation = SucceededValue(result);
         valuation.Coins.Should().Equal(
-            new CoinValuationView { CoinId = "bitcoin", Quantity = 1m, MarketValue = 120m, CostBasis = 100m, UnrealizedProfitAndLoss = 20m, RealizedProfitAndLoss = 0m },
-            new CoinValuationView { CoinId = "ethereum", Quantity = 1m, MarketValue = null, CostBasis = 10m, UnrealizedProfitAndLoss = null, RealizedProfitAndLoss = 0m });
+            new CoinValuationView { CoinId = "bitcoin", Quantity = 1m, MarketValue = 120m, CostBasis = 100m, UnrealizedProfitAndLoss = 20m, RealizedProfitAndLoss = 0m, AllocationPercent = 100m },
+            new CoinValuationView { CoinId = "ethereum", Quantity = 1m, MarketValue = null, CostBasis = 10m, UnrealizedProfitAndLoss = null, RealizedProfitAndLoss = 0m, AllocationPercent = null });
         valuation.UnpricedCoins.Should().Equal("ethereum");
         valuation.Totals.Should().Be(new PortfolioValuationTotals { MarketValue = 120m, CostBasis = 100m, UnrealizedProfitAndLoss = 20m, RealizedProfitAndLoss = 0m });
     }
@@ -342,7 +345,7 @@ public class PortfolioValuationTests
 
         var valuation = SucceededValue(result);
         valuation.Coins.Should().Equal(
-            new CoinValuationView { CoinId = "bitcoin", Quantity = 1m, MarketValue = null, CostBasis = 100m, UnrealizedProfitAndLoss = null, RealizedProfitAndLoss = 0m });
+            new CoinValuationView { CoinId = "bitcoin", Quantity = 1m, MarketValue = null, CostBasis = 100m, UnrealizedProfitAndLoss = null, RealizedProfitAndLoss = 0m, AllocationPercent = null });
         valuation.UnpricedCoins.Should().Equal("bitcoin");
         valuation.Totals.Should().Be(new PortfolioValuationTotals { MarketValue = 0m, CostBasis = 0m, UnrealizedProfitAndLoss = 0m, RealizedProfitAndLoss = 0m });
     }
@@ -370,9 +373,9 @@ public class PortfolioValuationTests
 
         var valuation = SucceededValue(result);
         valuation.Coins.Should().Equal(
-            new CoinValuationView { CoinId = "bitcoin", Quantity = 1m, MarketValue = 200m, CostBasis = 100m, UnrealizedProfitAndLoss = 100m, RealizedProfitAndLoss = 50m },
-            new CoinValuationView { CoinId = "dogecoin", Quantity = 0m, MarketValue = 0m, CostBasis = 0m, UnrealizedProfitAndLoss = 0m, RealizedProfitAndLoss = 1m },
-            new CoinValuationView { CoinId = "ethereum", Quantity = 1m, MarketValue = null, CostBasis = 10m, UnrealizedProfitAndLoss = null, RealizedProfitAndLoss = 20m });
+            new CoinValuationView { CoinId = "bitcoin", Quantity = 1m, MarketValue = 200m, CostBasis = 100m, UnrealizedProfitAndLoss = 100m, RealizedProfitAndLoss = 50m, AllocationPercent = 100m },
+            new CoinValuationView { CoinId = "dogecoin", Quantity = 0m, MarketValue = 0m, CostBasis = 0m, UnrealizedProfitAndLoss = 0m, RealizedProfitAndLoss = 1m, AllocationPercent = 0m },
+            new CoinValuationView { CoinId = "ethereum", Quantity = 1m, MarketValue = null, CostBasis = 10m, UnrealizedProfitAndLoss = null, RealizedProfitAndLoss = 20m, AllocationPercent = null });
         valuation.UnpricedCoins.Should().Equal("ethereum");
         valuation.Totals.Should().Be(new PortfolioValuationTotals { MarketValue = 200m, CostBasis = 100m, UnrealizedProfitAndLoss = 100m, RealizedProfitAndLoss = 51m });
     }
@@ -405,5 +408,160 @@ public class PortfolioValuationTests
 
         result.ErrorCode.Should().Be(ServiceErrorCode.RuleViolated);
         result.ErrorDetail.Should().Contain($"Portfolio {portfolio.Id}").And.Contain("too large");
+    }
+
+    // The allocation of each coin, in the order the valuation lists them.
+    private static IEnumerable<decimal?> Allocations(PortfolioValuationView valuation) =>
+        valuation.Coins.Select(c => c.AllocationPercent);
+
+    [Fact]
+    public async Task Should_AllocateTheWholePortfolioToTheCoin_When_OneCoinIsHeld()
+    {
+        var (repository, upstream, service) = CreateSut();
+        var portfolio = SeedPortfolio(repository, CostBasisMethod.Fifo, Buy(0.3m, 100m, 1));
+        upstream.PricesResult = PricedInUsd(("bitcoin", 123.45m));
+
+        var result = await service.GetValuationAsync(portfolio.Id, CancellationToken.None);
+
+        Allocations(SucceededValue(result)).Should().Equal(100m);
+    }
+
+    [Fact]
+    public async Task Should_SplitTheAllocationByMarketValue_When_TwoCoinsAreWorthDifferentAmounts()
+    {
+        var (repository, upstream, service) = CreateSut();
+        var portfolio = SeedPortfolio(repository, CostBasisMethod.Fifo, Buy(1m, 100m, 1), Buy(3m, 10m, 2, coinId: "ethereum"));
+        upstream.PricesResult = PricedInUsd(("bitcoin", 500m), ("ethereum", 100m));
+
+        var result = await service.GetValuationAsync(portfolio.Id, CancellationToken.None);
+
+        Allocations(SucceededValue(result)).Should().Equal(62.5m, 37.5m);
+    }
+
+    [Fact]
+    public async Task Should_ReportUnroundedThirds_When_ThreeCoinsAreWorthTheSame()
+    {
+        var (repository, upstream, service) = CreateSut();
+        var portfolio = SeedPortfolio(
+            repository,
+            CostBasisMethod.Fifo,
+            Buy(1m, 100m, 1),
+            Buy(1m, 100m, 2, coinId: "dogecoin"),
+            Buy(1m, 100m, 3, coinId: "ethereum"));
+        upstream.PricesResult = PricedInUsd(("bitcoin", 100m), ("dogecoin", 100m), ("ethereum", 100m));
+
+        var result = await service.GetValuationAsync(portfolio.Id, CancellationToken.None);
+
+        // Core rounds nothing, so the thirds keep every place a decimal holds
+        // and add up to a hair short of 100.
+        var allocations = Allocations(SucceededValue(result)).ToList();
+        allocations.Should().Equal(33.33333333333333333333333333m, 33.33333333333333333333333333m, 33.33333333333333333333333333m);
+        allocations.Sum().Should().Be(99.99999999999999999999999999m);
+    }
+
+    [Fact]
+    public async Task Should_AllocateNothingToTheClosedCoin_When_AClosedCoinSitsBesideOpenOnes()
+    {
+        var (repository, upstream, service) = CreateSut();
+        var portfolio = SeedPortfolio(
+            repository,
+            CostBasisMethod.Fifo,
+            Buy(1m, 100m, 1),
+            Buy(2m, 10m, 2, coinId: "dogecoin"),
+            Buy(5m, 10m, 3, coinId: "ethereum"),
+            Sell(5m, 12m, 4, coinId: "ethereum"));
+        upstream.PricesResult = PricedInUsd(("bitcoin", 150m), ("dogecoin", 25m));
+
+        var result = await service.GetValuationAsync(portfolio.Id, CancellationToken.None);
+
+        Allocations(SucceededValue(result)).Should().Equal(75m, 25m, 0m);
+    }
+
+    [Fact]
+    public async Task Should_AllocateZeroToEveryCoin_When_EveryPositionIsClosed()
+    {
+        var (repository, _, service) = CreateSut();
+        var portfolio = SeedPortfolio(
+            repository,
+            CostBasisMethod.Fifo,
+            Buy(1m, 100m, 1),
+            Sell(1m, 150m, 2),
+            Buy(5m, 10m, 3, coinId: "ethereum"),
+            Sell(5m, 12m, 4, coinId: "ethereum"));
+
+        var result = await service.GetValuationAsync(portfolio.Id, CancellationToken.None);
+
+        var valuation = SucceededValue(result);
+        valuation.Totals.MarketValue.Should().Be(0m);
+        Allocations(valuation).Should().Equal(0m, 0m);
+    }
+
+    [Fact]
+    public async Task Should_AllocateZero_When_TheOnlyHeldCoinIsPricedAtZero()
+    {
+        var (repository, upstream, service) = CreateSut();
+        var portfolio = SeedPortfolio(repository, CostBasisMethod.Fifo, Buy(1m, 100m, 1));
+        upstream.PricesResult = PricedInUsd(("bitcoin", 0m));
+
+        var result = await service.GetValuationAsync(portfolio.Id, CancellationToken.None);
+
+        var valuation = SucceededValue(result);
+        valuation.Totals.MarketValue.Should().Be(0m);
+        Allocations(valuation).Should().Equal(0m);
+    }
+
+    [Fact]
+    public async Task Should_LeaveTheUnpricedCoinWithoutAnAllocationAndShareThePricedTotal_When_AHeldCoinIsUnpriced()
+    {
+        var (repository, upstream, service) = CreateSut();
+        var portfolio = SeedPortfolio(
+            repository,
+            CostBasisMethod.Fifo,
+            Buy(1m, 100m, 1),
+            Buy(100m, 1m, 2, coinId: "dogecoin"),
+            Buy(1m, 10m, 3, coinId: "ethereum"));
+        upstream.PricesResult = PricedInUsd(("bitcoin", 300m), ("dogecoin", 1m));
+
+        var result = await service.GetValuationAsync(portfolio.Id, CancellationToken.None);
+
+        Allocations(SucceededValue(result)).Should().Equal(75m, 25m, null);
+    }
+
+    [Fact]
+    public async Task Should_LeaveEveryHeldCoinWithoutAnAllocation_When_EveryHeldCoinIsUnpriced()
+    {
+        var (repository, upstream, service) = CreateSut();
+        var portfolio = SeedPortfolio(
+            repository,
+            CostBasisMethod.Fifo,
+            Buy(1m, 100m, 1),
+            Buy(1m, 1m, 2, coinId: "dogecoin"),
+            Sell(1m, 2m, 3, coinId: "dogecoin"),
+            Buy(1m, 10m, 4, coinId: "ethereum"));
+        upstream.PricesResult = PricedInUsd();
+
+        var result = await service.GetValuationAsync(portfolio.Id, CancellationToken.None);
+
+        // The closed dogecoin is worth nothing, priced or not, so it still has 0.
+        Allocations(SucceededValue(result)).Should().Equal(null, 0m, null);
+    }
+
+    [Fact]
+    public async Task Should_ValueTheAllocationsWithoutOverflowing_When_MarketValuesApproachTheLargestDecimal()
+    {
+        var (repository, upstream, service) = CreateSut();
+        var portfolio = SeedPortfolio(
+            repository,
+            CostBasisMethod.Fifo,
+            Buy(6e28m, 0m, 1),
+            Buy(1.5e28m, 0m, 2, coinId: "ethereum"));
+        upstream.PricesResult = PricedInUsd(("bitcoin", 1m), ("ethereum", 1m));
+
+        var result = await service.GetValuationAsync(portfolio.Id, CancellationToken.None);
+
+        // Either market value times 100 is past the largest decimal.
+        var valuation = SucceededValue(result);
+        valuation.Totals.MarketValue.Should().Be(7.5e28m);
+        Allocations(valuation).Should().Equal(80m, 20m);
     }
 }
