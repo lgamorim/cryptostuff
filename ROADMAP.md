@@ -2,19 +2,34 @@
 
 Plan of record for building cryptostuff.
 
-**Status: complete.** All thirty-three milestones across all seven phases have
-shipped — the fifteen of Phases 1–4 and the eighteen of Phases 5–7, which added
-persistence-backed create, update, and delete operations — and every project
-in [Target structure](#target-structure) exists and is built out. The sections
-below are kept as the historical plan of record — see git history
-(`git log --oneline`) for the commit that closed each milestone.
+**Status: Phases 1–7 complete; Phase 8 planned.** All thirty-three milestones
+of Phases 1–7 have shipped — the fifteen of Phases 1–4 and the eighteen of
+Phases 5–7, which added persistence-backed create, update, and delete
+operations — and every project those phases name in
+[Target structure](#target-structure) exists and is built out. Their sections
+are kept as the historical plan of record — see git history
+(`git log --oneline`) for the commit that closed each milestone. Phase 8's
+seven milestones, which add CoinMarketCap as a second market data provider,
+have not started.
+
+Between Phases 7 and 8 a polish pass hardened what existed, as single changes
+that are not milestones of this plan: an API key on every REST route but
+health and OpenAPI (`Api:Key`, sent as `X-Api-Key`); a readiness probe at
+`GET /health/ready`; counters for upstream requests, rate-limit retries, and
+cache lookups on the `cryptostuff.upstream` meter; a container image for the
+API, with a smoke check in CI; `UpstreamUnavailable` for a request that gets
+no response at all; each coin's allocation in a portfolio valuation; and the
+`lifo` and `hifo` cost-basis methods. The README describes each. The sections
+for Phases 1–7 predate them and do not mention them; Phase 8's decisions and
+milestones account for the ones a second provider touches.
 
 The deliverable is a cryptocurrency market data application: one core layer that
 owns the domain workflow, an isolated CoinGecko API client beneath it, and two
 presentation hosts above it — a console app and a minimal REST API. Phases 5–7
 give the application state of its own — watchlists, a portfolio transaction
 ledger, and price alerts — stored in a local SQLite database that both hosts
-share.
+share. Phase 8 adds a second API client, for CoinMarketCap, beside the
+CoinGecko one, and a setting that chooses between them at start-up.
 
 ## Product scope
 
@@ -54,6 +69,15 @@ authenticated with a CoinGecko demo API key read from `CoinGecko:ApiKey` — use
 secrets locally, the `CoinGecko__ApiKey` environment variable in deployment —
 and sent as the `x-cg-demo-api-key` header.
 
+Phase 8 serves the same capabilities, with no new command or route, from
+CoinMarketCap when `MarketData:Provider` is `coinmarketcap`. Upstream endpoints
+consumed then: `v3/cryptocurrency/quotes/latest`, `v2/cryptocurrency/info`, and
+`v3/cryptocurrency/quotes/historical`, on the free Basic plan. Requests are
+authenticated with a key read from `CoinMarketCap:ApiKey`, the same way, and
+sent as the `X-CMC_PRO_API_KEY` header. CoinMarketCap has no developer data,
+so `developer` and `GET /coins/{coin}/developer-data` answer `Unsupported`
+under it.
+
 ## Target structure
 
 Thirteen projects once Phase 5 lands: six under `src/`, seven under `test/`.
@@ -69,6 +93,7 @@ Directory.Packages.props          .editorconfig
 .config/dotnet-tools.json         (Phase 5) pins dotnet-ef
 
 src/CryptoStuff.CoinGecko/        API client — sole owner of the wire format
+src/CryptoStuff.CoinMarketCap/    (Phase 8) second API client — sole owner of its wire format
 src/CryptoStuff.Core/             Queries, view records, results, mapping, caching, validation;
                                   (Phases 5–7) domain entities, repository interfaces, feature services
 src/CryptoStuff.Persistence/      (Phase 5) EF Core + SQLite: DbContext, mappings, repositories, migrations
@@ -77,6 +102,7 @@ src/CryptoStuff.Cli/              Console host
 src/CryptoStuff.Api/              Minimal REST host
 
 test/CryptoStuff.CoinGecko.UnitTests/
+test/CryptoStuff.CoinMarketCap.UnitTests/        (Phase 8)
 test/CryptoStuff.Core.UnitTests/
 test/CryptoStuff.Composition.UnitTests/
 test/CryptoStuff.Cli.UnitTests/
@@ -96,6 +122,14 @@ Since then the CoinGecko reference has been inverted to match Persistence:
 `ICryptocurrencyService`, `CryptoStuff.Composition` references it directly, and
 `CryptoStuff.Core` references no other project. The README's Projects section
 describes the structure as it stands.
+
+Phase 8 adds the fourteenth and fifteenth projects, in Milestone 8.4:
+`src/CryptoStuff.CoinMarketCap/`, the CoinMarketCap client and its
+`ICryptocurrencyService` implementation, and
+`test/CryptoStuff.CoinMarketCap.UnitTests/`. It sits where
+`CryptoStuff.CoinGecko` does: it references `CryptoStuff.Core`, and
+`CryptoStuff.Composition` references it. Neither client project references the
+other.
 
 ## Definition of done
 
@@ -210,6 +244,92 @@ Taken for Phases 5–7:
   fixed interval. Revisit if alerts gain outbound notifications that need
   durable retries, if the API runs as more than one instance, or if several
   scheduled jobs appear.
+
+Taken for Phase 8:
+
+- **CoinMarketCap, on its free Basic plan, is the second provider.** Basic
+  allows commercial use, serves a year of daily history carrying price, market
+  cap, and volume in any currency, and accepts slugs that mostly match
+  CoinGecko's ids. CoinPaprika was the runner-up and was rejected: its free
+  tier is licensed for personal use only, has no multi-coin price call, serves
+  history in `usd` or `btc` only, and puts its CoinGecko id mapping behind a
+  paid plan. CoinDesk Data (formerly CryptoCompare) reportedly retired its free
+  tier in May 2026, CoinCap's free tier is about 500 credits a month, and
+  DefiLlama covers token prices only. Revisit if Basic's terms change.
+- **One provider per process, chosen at start-up.** `MarketData:Provider` is
+  `coingecko`, the default, or `coinmarketcap`; any other value fails fast.
+  Only the selected provider's API key is required. There is no automatic
+  failover: the providers differ in currency coverage, series granularity, and
+  developer data, so mixing them within one run would make output depend on
+  which one answered.
+- **CoinGecko ids stay the application's ids.** Stored watchlists, portfolios,
+  and alerts stay valid under either provider. The CoinMarketCap adapter sends
+  an id as a CoinMarketCap slug — the same text for most coins — through a
+  checked-in override table where the two differ (`binancecoin` is `bnb`,
+  `ripple` is `xrp`), and maps each result back to the id asked for. Platform
+  ids in token queries are translated the same way. A coin with no
+  CoinMarketCap match is `NotFound`, as an unknown coin is today, and adding
+  an override is a one-line change. Neither Core nor the hosts ever see a
+  CoinMarketCap slug.
+- **A capability the provider lacks is a result, not an exception.** A new
+  `Unsupported` error code (`501`) answers developer data under CoinMarketCap.
+  That honours the Liskov rule against throwing `NotSupportedException` with
+  one small contract addition. Splitting developer data into its own interface
+  was rejected: it would refactor Core, both hosts, and the caching decorator
+  for one operation.
+- **Host text names no provider.** Messages and log text that say "CoinGecko"
+  say "the market data provider" instead, so they stay true under either. So
+  does README and comment text that says CoinGecko where it means whichever
+  provider is called, such as what the readiness probe leaves alone and what
+  the upstream counters count. Text about CoinGecko itself — its API key, its
+  ids, its endpoints — keeps the name.
+- **A request that gets no response is a result under either provider.** The
+  CoinGecko client turns a refused connection, a DNS or TLS failure, or a
+  dropped connection into a failed response with no status code, and its
+  service maps that to `UpstreamUnavailable`. The CoinMarketCap client and
+  service do the same; left as an exception it would surface as a `500`.
+- **Metrics name the provider that was called.** The `provider` tag on
+  `cryptostuff.upstream.requests` and `cryptostuff.upstream.retries` is
+  `coingecko` or `coinmarketcap`, the tokens `MarketData:Provider` takes. Each
+  client records its own request counter, with its own fixed set of `endpoint`
+  templates and the `outcome` values `CoinGeckoClient` already uses, and
+  `RateLimitRetryHandler` is told the provider's name instead of reading
+  CoinGecko's. `cryptostuff.cache.lookups` gains no tag: a process has one
+  provider.
+- **Shared settings leave the CoinGecko section.** `CoinGecko:CacheSeconds`
+  becomes `MarketData:CacheSeconds`, because the cache wraps whichever
+  provider is selected. The rename is deliberate and keeps no fallback for the
+  old key; the README calls it out.
+- **Calls are shaped to Basic's limits, not metered against them.** Basic
+  converts to one currency per call, so a price lookup makes one call per
+  currency, and history is requested at daily granularity. The README states
+  each command's credit cost; the client keeps no credit accounting of its
+  own. The shipped `Alerts:EvaluationSeconds` of 60 does not fit: with one
+  alert currency it spends the month's 15,000 credits in about ten days. The
+  default stays, because CoinGecko is the default provider and the interval
+  that fits depends on how many alert currencies exist, which start-up cannot
+  know. Under CoinMarketCap the operator raises it, and the README says to
+  what. A start-up warning and a longer default under CoinMarketCap were both
+  rejected for that reason.
+- **The container smoke check stays on the default provider.**
+  `test/container-smoke.sh` gains no run under `coinmarketcap`. That only the
+  selected provider's key is demanded is proved by Composition's unit tests,
+  and a second container start would repeat them at the cost of CI time.
+- **A price below zero is no price.** Nothing checks today that a live price
+  is zero or more. A negative one would give a holding a negative market
+  value, put the valuation's totals and unrealized profit and loss wrong with
+  it, and take a coin's allocation outside 0 to 100 or, where the priced
+  values nearly cancel, overflow the division and fail the valuation with
+  `RuleViolated`. Alert evaluation reads live prices the same way. CoinGecko
+  is not expected to send one, but a second provider is a second source to
+  trust. Core therefore drops such an amount, so the coin comes back without
+  one in that currency, as a coin the provider does not quote in it already
+  does: a valuation leaves it out of the totals and lists it, an alert on it
+  stays armed, and every other coin is still priced. The result does not say
+  whether a quote was missing or dropped. Failing the whole lookup as
+  `UpstreamUnavailable` was rejected: one bad quote would stop the valuation
+  of a whole portfolio. The rule sits in Core, above every provider's
+  adapter, and Milestone 8.3 delivers it.
 
 ---
 
@@ -608,3 +728,240 @@ deterministic.
 
 **README:** the alert routes, the `Alerts:EvaluationSeconds` setting, and what a
 triggered alert looks like.
+
+## Phase 8 — Second market data provider
+
+### Milestone 8.1 — `feature/provider-neutral-text`
+
+Wording only, with no change in behaviour: every message, log text, comment,
+test name, and README passage that says CoinGecko where it means whichever
+provider is selected says "the market data provider", or in a test name
+`Upstream`, as the alert evaluator's tests already do. Text about CoinGecko
+itself keeps the name: its API key and the message for a missing one, its
+ids, its endpoints, the `CoinGecko` configuration section, and its client
+project. It comes first and alone because it touches many files and changes
+nothing a user can do, so the milestones after it diff cleanly against it.
+
+The places a search finds today:
+
+- **Messages and log text:** the rate-limit, timeout, and unavailable messages
+  in both hosts, the CLI's unpriced-coin line in portfolio output, and the
+  background service's unpriced-alert log.
+- **Comments:** `Program.cs` on what the readiness probe does not call;
+  `AlertCheckRateLimit`, `AlertEndpoints`, and
+  `AlertEvaluationBackgroundService`; `PortfolioEndpoints`; and the CLI's
+  `CliOutputFormatter` and `PortfolioOutputFormatter`.
+- **Tests:** nine method names in the Core unit tests of the alert, portfolio,
+  and watchlist services, and a fixture string in the CLI's
+  `AlertFailureTests`. Renaming a test changes nothing it checks. The twelve
+  method names in `CryptoStuff.Api.IntegrationTests` that say CoinGecko keep
+  it: those tests run the CoinGecko adapter itself, over a fake client, so
+  the name is about CoinGecko.
+
+That list is a starting point, not the test. The milestone is done when a
+search for "CoinGecko" outside `CryptoStuff.CoinGecko` and its tests leaves
+only text about CoinGecko itself, plus the doc comments in Core and Composition
+that describe the one adapter there is: those change in Milestones 8.6 and
+8.7, which add the second. Host tests quote the messages, so they change
+first.
+
+**README:** the same rule, among others in the quoted messages under Error
+codes, Unpriced coins, Check rate limit, the REST status tables, the CLI's
+command table and exit codes, the readiness probe's paragraph, and the prose
+of Upstream metrics.
+
+### Milestone 8.2 — `feature/unsupported-error-code`
+
+`ServiceErrorCode.Unsupported`, for an operation the selected provider cannot
+serve, carrying a detail that names the provider. The API maps it to `501`
+ProblemDetails, and the developer-data route's OpenAPI metadata lists that
+response, beside the `401` every protected route lists; the CLI prints a
+message and exits `1`. Nothing produces `Unsupported` yet, so tests drive the
+host mappings directly, as Milestone 5.1's did.
+
+**README:** the error-code table and the REST status table gain `Unsupported`.
+
+### Milestone 8.3 — `feature/negative-price-guard`
+
+Core drops an amount below zero from a coin or token price result, so the
+coin or token comes back without an amount in that currency, as the contract
+already allows for a currency the provider does not quote it in. Zero stays a
+price. The rule sits at one point both providers' results pass through: a
+decorator over `ICryptocurrencyService` beside the caching one is the
+candidate, since each provider's service is registered beneath it, and the
+milestone opens by confirming that placement with the maintainer. Market
+charts and coin detail are shown, not computed from, and are left alone.
+
+Tests cover a negative amount dropped for a coin and for a token, zero and
+positive amounts kept, the same coin's other currencies kept, and a failed
+result passed through unchanged. The valuation and the alert evaluator already
+treat a coin without an amount as unpriced, which their existing tests pin.
+The registration is test-driven too: a Composition unit test fails until the
+guard is in the chain `ICryptocurrencyService` resolves to. Four existing
+Composition tests expect the resolved service to be the caching decorator
+itself: one asserts its exact type, and the three on the cache duration read
+that duration from it by reflection. All four change if the guard wraps the
+cache and stand if the cache wraps the guard, which is part of what confirming
+the placement decides.
+
+**README:** Unpriced coins and alert evaluation — a price below zero counts as
+no price.
+
+### Milestone 8.4 — `feature/coinmarketcap-client`
+
+The fourteenth and fifteenth projects, `CryptoStuff.CoinMarketCap` and
+`CryptoStuff.CoinMarketCap.UnitTests`, added with plain `dotnet sln add`. The
+client interface; the options — base address
+`https://pro-api.coinmarketcap.com` and the `X-CMC_PRO_API_KEY` header; a
+response contract carrying success, HTTP status code, a timeout flag, a
+no-response case with neither a status code nor the flag, and CoinMarketCap's
+own `status.error_code` and `status.error_message`, so the service can tell
+one refusal from another; and the wire types for
+`v3/cryptocurrency/quotes/latest`, `v2/cryptocurrency/info`, and
+`v3/cryptocurrency/quotes/historical`. Slugs and currencies are comma-joined
+and percent-encoded, and quote requests send `skip_invalid=true`, so an
+unknown slug is missing from the response instead of failing the call.
+
+The client counts each call on `cryptostuff.upstream.requests`, as
+`CoinGeckoClient` does: `provider` is `coinmarketcap`, `endpoint` is one of
+the three paths above or `other`, never a URI carrying slugs or dates, and
+`outcome` takes the values `CoinGeckoClient` already uses.
+
+The fake `HttpMessageHandler` harness and the recording meter factory are
+copied from `CryptoStuff.CoinGecko.UnitTests` rather than shared. The harness
+would have two consumers; the meter factory already has three copies, in the
+CoinGecko, Composition, and Core unit tests, and this is its fourth. A shared
+test library is still left out: it would be a new project and would pull three
+existing test projects into this phase. Tests cover the key header, the
+encoding, the happy path for each endpoint, an HTTP failure with
+CoinMarketCap's error code and message captured, malformed JSON, an empty body,
+a timeout distinguished from caller-initiated cancellation, a connection
+failure reported as no response rather than thrown, and the request counter's
+tags for each endpoint and outcome. No test performs real network I/O. The
+wire types follow CoinMarketCap's documentation; Milestone 8.7's live run is
+where they meet real responses.
+
+**README:** the Projects section — a `CryptoStuff.CoinMarketCap` row in the
+project table, with `CryptoStuff.CoinMarketCap.UnitTests` in its Tests column
+and the project count above the table raised to seven; its node and edges in
+the dependency diagram; and its row in "Inside the other projects" — and the
+Configuration section, which lists the CoinMarketCap endpoints consumed beside
+CoinGecko's.
+
+### Milestone 8.5 — `feature/coinmarketcap-id-mapping`
+
+The translation between application ids and CoinMarketCap's: a coin id to a
+slug, which is the id itself unless the override table lists it; a slug in a
+response back to the id that was requested; and a CoinGecko platform id to a
+CoinMarketCap platform for token queries, for the platforms the table lists.
+An unlisted platform is `NotFound`. The coin overrides are seeded from the
+largest coins by market cap whose ids differ, checked against CoinMarketCap's
+`v1/cryptocurrency/map`, which costs no credits, when the milestone is
+implemented. Tests pin each override in both directions, the identity fallback,
+an unlisted platform, and a guard that no two ids map to one slug.
+
+**README:** how ids are translated, and how to add an override.
+
+### Milestone 8.6 — `feature/coinmarketcap-service`
+
+The CoinMarketCap `ICryptocurrencyService`, honouring every remark on the
+contract:
+
+- **Prices** make one `quotes/latest` call per currency, because Basic converts
+  to one currency per call, with every coin in each. Currencies go out upper
+  case and come back lower case. A coin missing from a response fails the
+  whole call `NotFound`. A currency CoinMarketCap rejects leaves the coins
+  without an amount in it, told apart from other `400`s by the parameter the
+  error names. When every requested currency is rejected, no call has said
+  whether the coins exist, so one more call, in `USD`, settles it: `NotFound`
+  if any coin is missing from it, and otherwise the coins come back with no
+  amounts. A failure in any one call fails the result, and a query naming no
+  coins makes no call. The service applies no rule of its own to a price below
+  zero: Milestone 8.3's guard sits above every provider.
+- **Token prices** translate the platform, resolve each address through
+  `info?address=`, and require the resolved coin's contract list to hold that
+  address on that platform, otherwise `NotFound`. They are then priced as
+  coins are and keyed by the address as requested.
+- **Market chart** makes one `quotes/historical` call at daily interval over
+  the requested days, giving the price, market-cap, and volume series. It
+  returns fewer points than CoinGecko's hourly granularity for 2 to 90 days,
+  but the view's dates are whole days already. A range deeper than Basic's
+  year of daily history fails as a plan refusal does, below.
+- **Coin detail** takes the description and logo from `info`, and a snapshot
+  for each configured detail currency — `usd` by default, one call each — from
+  `quotes/latest`. Its id is the application's id, not the slug.
+- **Developer data** fails `Unsupported`, naming CoinMarketCap, with no
+  upstream call.
+- **Errors** map `429` to `RateLimited`, a timeout to `RequestTimedOut`, and
+  everything else — the `401`, `402`, and `403` plan refusals, any `5xx`, and
+  a request that got no response at all — to `UpstreamUnavailable`.
+  CoinMarketCap answers a bad argument with `400`, never `404`, so `NotFound`
+  arises only from the missing-coin and address checks above.
+
+Core's doc comments stop describing one adapter: `ICryptocurrencyService`'s
+summary no longer names CoinGecko's service as the implementation, and
+`ServiceErrorCode.NotFound`'s no longer says the provider returned `404`,
+which CoinMarketCap never does. `KnownCoinPrices`' remarks say the same of
+"the adapter" without naming CoinGecko, so Milestone 8.1's search does not
+find them; they are corrected here.
+
+The largest milestone of the phase; budget accordingly.
+
+**README:** how CoinMarketCap's answers differ from CoinGecko's — the detail
+currencies, the daily series, the history depth, and unsupported developer
+data.
+
+### Milestone 8.7 — `feature/market-data-provider-switch`
+
+Composition reads `MarketData:Provider`, defaulting to `coingecko` and failing
+fast, listing the accepted values, on any other. It registers the selected
+provider's typed `HttpClient` — with `RateLimitRetryHandler` and the same
+timeout — and its service under the existing undecorated key, so the
+decorators and everything above them are unchanged. The handler takes the
+provider's name as a constructor argument for its `provider` tag, where it
+reads `CoinGeckoClient.ProviderName` today. Only the selected provider's
+key is required; a missing `CoinMarketCap:ApiKey` fails fast with a message
+mirroring the CoinGecko one. `CoinMarketCap:DetailCurrencies` is read and
+validated at start-up, and `CoinGecko:CacheSeconds` becomes
+`MarketData:CacheSeconds`, in `appsettings.json` too. CoinMarketCap's `429`
+carries no `Retry-After`, and its per-minute window outlasts three 2-second
+retries, so a burst still surfaces as `RateLimited`; the handler is not tuned
+for it. Composition's doc comments, which describe a CoinGecko-backed service,
+are widened to the selected provider.
+
+Composition unit tests resolve the decorated service under each provider,
+reject an unknown provider, demand only the selected provider's key, and
+check that requests and retries are recorded under the selected provider's
+name. The API and CLI unit tests substitute `ICryptocurrencyService` and stay
+as they are. `CryptoStuff.Api.IntegrationTests` substitutes `ICoinGeckoClient`
+and runs `AddCryptoStuff` for real, so it passes through the rewritten
+registration under the default provider and must stay green with its tests
+unedited. It gains no CoinMarketCap variant: Composition's unit tests cover
+the selection, and the live run below covers the adapter.
+`test/container-smoke.sh` stays as it is too, running under the default
+provider. Two comments that say a host needs a CoinGecko API key become true
+only of the default provider and are reworded to the selected provider's key:
+the `Dockerfile`'s header, and `DesignTimeCryptoStuffDbContextFactory`'s
+summary in Persistence.
+
+Before the merge, run every CoinGecko-backed CLI command, plus
+`watchlist prices`, `portfolio value`, and `alert check`, against the real
+CoinMarketCap API with a Basic key, and record the results in the handoff
+summary. It is the one point where the adapter meets the real wire format,
+which no test exercises; any difference is fixed in the Milestone 8.4 and 8.6
+types on this branch.
+
+**README:** Prerequisites — which upstream key is needed, now that it depends
+on the provider; the configuration section — the provider setting, the
+CoinMarketCap key and its `dotnet user-secrets set` command, the detail
+currencies, and the sentence fixing what "CoinGecko API key" and a bare "API
+key" mean, extended to "CoinMarketCap API key"; the renamed cache setting
+wherever it is named, in Caching and in the CLI's exit codes; the registration
+section; rate limiting — each command's credit cost and the per-minute window;
+Upstream metrics — `coinmarketcap` among the `provider` values,
+CoinMarketCap's client as a recorder of requests, and its endpoint templates;
+the Container image section — `MarketData__Provider`, and that the upstream
+key to supply is the selected provider's; and alert evaluation — that the
+default `Alerts:EvaluationSeconds` of 60 overspends Basic's 15,000 credits a
+month, and what to raise it to: about 180 seconds for each distinct alert
+currency before any other use.
