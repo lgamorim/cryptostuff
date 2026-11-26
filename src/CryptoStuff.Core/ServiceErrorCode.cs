@@ -29,4 +29,10 @@ public enum ServiceErrorCode
 
     /// <summary>The caller's precondition on the stored version no longer holds, such as a stale `If-Match`.</summary>
     PreconditionFailed,
+
+    /// <summary>
+    /// The selected market data provider cannot serve the operation at all, such
+    /// as developer data from a provider that has none; the detail names the provider.
+    /// </summary>
+    Unsupported,
 }

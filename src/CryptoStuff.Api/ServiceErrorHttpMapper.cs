@@ -28,6 +28,8 @@ public static class ServiceErrorHttpMapper
                 StatusCodes.Status422UnprocessableEntity, "Unprocessable Entity", "The request violates a domain rule."),
             ServiceErrorCode.PreconditionFailed => (
                 StatusCodes.Status412PreconditionFailed, "Precondition Failed", "The resource has changed since it was last read."),
+            ServiceErrorCode.Unsupported => (
+                StatusCodes.Status501NotImplemented, "Not Implemented", "The market data provider does not support this operation."),
             _ => (
                 StatusCodes.Status500InternalServerError, "Internal Server Error", "An unknown error occurred."),
         };

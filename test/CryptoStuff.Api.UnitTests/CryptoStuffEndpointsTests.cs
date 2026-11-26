@@ -191,6 +191,7 @@ public class CryptoStuffEndpointsTests
     [InlineData(ServiceErrorCode.RateLimited, 429, "Too Many Requests", "The market data provider's rate limit was exceeded. Try again later.")]
     [InlineData(ServiceErrorCode.RequestTimedOut, 504, "Gateway Timeout", "The request to the market data provider timed out.")]
     [InlineData(ServiceErrorCode.UpstreamUnavailable, 502, "Bad Gateway", "The market data provider is currently unavailable.")]
+    [InlineData(ServiceErrorCode.Unsupported, 501, "Not Implemented", "The market data provider does not support this operation.")]
     [InlineData((ServiceErrorCode)99, 500, "Internal Server Error", "An unknown error occurred.")]
     public async Task Should_ReturnMappedProblem_When_ServiceFails(
         ServiceErrorCode errorCode, int expectedStatus, string expectedTitle, string expectedDetail)
@@ -203,6 +204,20 @@ public class CryptoStuffEndpointsTests
         problem.ProblemDetails.Status.Should().Be(expectedStatus);
         problem.ProblemDetails.Title.Should().Be(expectedTitle);
         problem.ProblemDetails.Detail.Should().Be(expectedDetail);
+    }
+
+    [Fact]
+    public async Task Should_ReturnNotImplementedNamingTheProvider_When_DeveloperDataIsUnsupported()
+    {
+        _service.DeveloperDataResult = ServiceResult<CoinDeveloperDataView>.Failure(
+            ServiceErrorCode.Unsupported, "CoinMarketCap provides no developer data.");
+
+        var result = await CryptoStuffEndpoints.GetDeveloperDataAsync("bitcoin", "31-01-2024", _service, CancellationToken.None);
+
+        var problem = result.Should().BeOfType<ProblemHttpResult>().Subject;
+        problem.ProblemDetails.Status.Should().Be(501);
+        problem.ProblemDetails.Title.Should().Be("Not Implemented");
+        problem.ProblemDetails.Detail.Should().Be("CoinMarketCap provides no developer data.");
     }
 
     [Fact]
@@ -240,6 +255,7 @@ public class CryptoStuffEndpointsTests
     [InlineData(ServiceErrorCode.Conflict, 409)]
     [InlineData(ServiceErrorCode.RuleViolated, 422)]
     [InlineData(ServiceErrorCode.PreconditionFailed, 412)]
+    [InlineData(ServiceErrorCode.Unsupported, 501)]
     public async Task Should_UseErrorDetailAsProblemDetail_When_ServiceFailsWithDetail(
         ServiceErrorCode errorCode, int expectedStatus)
     {

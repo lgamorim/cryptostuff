@@ -16,7 +16,11 @@ public static class CryptoStuffEndpoints
         app.MapGet("/token-prices", GetTokenPricesAsync).WithProblemMetadata<TokenPriceView>();
         app.MapGet("/historical-market-data", GetHistoricalMarketDataAsync).WithProblemMetadata<CoinMarketChartView>();
         app.MapGet("/coins/{coin}", GetCoinAsync).WithProblemMetadata<CoinView>();
-        app.MapGet("/coins/{coin}/developer-data", GetDeveloperDataAsync).WithProblemMetadata<CoinDeveloperDataView>();
+        // Developer data is the one operation a market data provider may not
+        // offer at all, which the API answers with 501.
+        app.MapGet("/coins/{coin}/developer-data", GetDeveloperDataAsync)
+            .WithProblemMetadata<CoinDeveloperDataView>()
+            .ProducesProblem(StatusCodes.Status501NotImplemented);
     }
 
     /// <summary><c>GET /prices</c> — live prices for the given coins in the given currencies.</summary>

@@ -160,8 +160,9 @@ its clients then get `Location` headers without the prefix.
 
 `CryptoStuff.Core` reports a failed operation as a `ServiceErrorCode`. A failed
 request to the market data provider, whether it got a failure response or no response at all,
-maps to one of the first four codes; the last three are for requests on the
-application's own stored data, mostly writes:
+maps to one of the first four codes; the next three are for requests on the
+application's own stored data, mostly writes; and the last is for an operation
+the selected market data provider cannot serve at all:
 
 | Code | Meaning | Condition |
 |---|---|---|
@@ -172,6 +173,7 @@ application's own stored data, mostly writes:
 | `Conflict` | The write conflicts with stored state | A duplicate name, or a lost concurrency race |
 | `RuleViolated` | The request breaks a domain rule | For example a write that would oversell or name an unknown coin, or a valuation with an amount too large to compute |
 | `PreconditionFailed` | The stored version no longer matches what the caller expected | A stale `If-Match` |
+| `Unsupported` | The selected market data provider cannot serve the operation | None yet: CoinGecko serves every operation. It is reserved for developer data from a provider that has none, with a detail naming the provider |
 
 A failure may also carry a detail message. When it does, the API returns it as
 the ProblemDetails `detail` and the CLI prints it, in place of the fixed text
@@ -1068,6 +1070,7 @@ message reaches a response, since one can carry paths, SQL or other internals.
 | `409` | `Conflict` |
 | `422` | `RuleViolated` |
 | `412` | `PreconditionFailed` |
+| `501` | `Unsupported` (documented on `GET /coins/{coin}/developer-data`, the one operation it is reserved for) |
 | `500` | *(defensive fallback only — every `ServiceErrorCode` value maps above)* |
 
 A write that finds the [database](#data-storage) locked by another writer for

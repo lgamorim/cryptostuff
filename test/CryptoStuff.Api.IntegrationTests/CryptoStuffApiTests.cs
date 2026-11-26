@@ -397,6 +397,26 @@ public class CryptoStuffApiTests
         body.Should().Contain("/prices");
     }
 
+    [Theory]
+    [InlineData("/prices", new[] { "200", "400", "404", "429", "502", "504", "401", "500" })]
+    [InlineData("/token-prices", new[] { "200", "400", "404", "429", "502", "504", "401", "500" })]
+    [InlineData("/historical-market-data", new[] { "200", "400", "404", "429", "502", "504", "401", "500" })]
+    [InlineData("/coins/{coin}", new[] { "200", "400", "404", "429", "502", "504", "401", "500" })]
+    [InlineData("/coins/{coin}/developer-data", new[] { "200", "400", "404", "429", "502", "504", "501", "401", "500" })]
+    public async Task Should_DocumentResponses_When_OpenApiDocumentRequested(string path, string[] expectedStatuses)
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        using var factory = new CryptoStuffApiFactory();
+        using var client = factory.CreateClient();
+
+        var response = await client.GetAsync("/openapi/v1.json", cancellationToken);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var document = await response.Content.ReadFromJsonAsync<JsonElement>(JsonOptions, cancellationToken);
+        var responses = document.GetProperty("paths").GetProperty(path).GetProperty("get").GetProperty("responses");
+        responses.EnumerateObject().Select(documented => documented.Name).Should().BeEquivalentTo(expectedStatuses);
+    }
+
     [Fact]
     public async Task Should_ReturnOk_When_ScalarRequestedInDevelopment()
     {

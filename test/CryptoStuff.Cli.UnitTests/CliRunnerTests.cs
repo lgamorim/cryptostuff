@@ -320,6 +320,7 @@ public class CliRunnerTests
     [InlineData(ServiceErrorCode.RateLimited, "Error: the market data provider's rate limit was exceeded. Try again later.\n")]
     [InlineData(ServiceErrorCode.RequestTimedOut, "Error: the request to the market data provider timed out.\n")]
     [InlineData(ServiceErrorCode.UpstreamUnavailable, "Error: the market data provider is currently unavailable.\n")]
+    [InlineData(ServiceErrorCode.Unsupported, "Error: the market data provider does not support this operation.\n")]
     public async Task Should_ReturnOneAndMappedMessage_When_ServiceFails(ServiceErrorCode errorCode, string expectedMessage)
     {
         _service.CoinResult = ServiceResult<CoinView>.Failure(errorCode);
@@ -328,6 +329,19 @@ public class CliRunnerTests
 
         exitCode.Should().Be(1);
         _error.ToString().Should().Be(expectedMessage);
+        _output.ToString().Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Should_ReturnOneNamingTheProvider_When_DeveloperDataIsUnsupported()
+    {
+        _service.DeveloperDataResult = ServiceResult<CoinDeveloperDataView>.Failure(
+            ServiceErrorCode.Unsupported, "CoinMarketCap provides no developer data.");
+
+        var exitCode = await _runner.RunAsync(["developer", "bitcoin", "31-01-2024"], CancellationToken.None);
+
+        exitCode.Should().Be(1);
+        _error.ToString().Should().Be("Error: CoinMarketCap provides no developer data.\n");
         _output.ToString().Should().BeEmpty();
     }
 
@@ -371,6 +385,7 @@ public class CliRunnerTests
     [InlineData(ServiceErrorCode.Conflict)]
     [InlineData(ServiceErrorCode.RuleViolated)]
     [InlineData(ServiceErrorCode.PreconditionFailed)]
+    [InlineData(ServiceErrorCode.Unsupported)]
     public async Task Should_PrintErrorDetail_When_ServiceFailsWithDetail(ServiceErrorCode errorCode)
     {
         _service.CoinResult = ServiceResult<CoinView>.Failure(errorCode, "A specific explanation.");

@@ -20,6 +20,7 @@ public static class ServiceErrorMessages
             ServiceErrorCode.Conflict => "Error: the request conflicts with existing data.",
             ServiceErrorCode.RuleViolated => "Error: the request violates a domain rule.",
             ServiceErrorCode.PreconditionFailed => "Error: the data has changed since it was last read.",
+            ServiceErrorCode.Unsupported => "Error: the market data provider does not support this operation.",
             _ => "Error: an unknown error occurred.",
         };
 }
