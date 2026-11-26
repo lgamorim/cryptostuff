@@ -40,9 +40,9 @@ public class PortfolioFailureTests
             var messages = new Dictionary<ServiceErrorCode, string>
             {
                 [ServiceErrorCode.NotFound] = "Error: the requested resource was not found.",
-                [ServiceErrorCode.RateLimited] = "Error: the CoinGecko rate limit was exceeded. Try again later.",
-                [ServiceErrorCode.RequestTimedOut] = "Error: the request to CoinGecko timed out.",
-                [ServiceErrorCode.UpstreamUnavailable] = "Error: CoinGecko is currently unavailable.",
+                [ServiceErrorCode.RateLimited] = "Error: the market data provider's rate limit was exceeded. Try again later.",
+                [ServiceErrorCode.RequestTimedOut] = "Error: the request to the market data provider timed out.",
+                [ServiceErrorCode.UpstreamUnavailable] = "Error: the market data provider is currently unavailable.",
                 [ServiceErrorCode.Conflict] = "Error: the request conflicts with existing data.",
                 [ServiceErrorCode.RuleViolated] = "Error: the request violates a domain rule.",
                 [ServiceErrorCode.PreconditionFailed] = "Error: the data has changed since it was last read.",

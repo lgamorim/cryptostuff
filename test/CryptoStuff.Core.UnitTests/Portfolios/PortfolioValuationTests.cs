@@ -49,7 +49,7 @@ public class PortfolioValuationTests
     private static TransactionDetails Sell(decimal quantity, decimal unitPrice, int day, decimal fee = 0m, string coinId = "bitcoin") =>
         Ledger.Sell(quantity, unitPrice, day, fee, coinId);
 
-    // What GetPricesAsync returns when CoinGecko prices each coin in the given currency.
+    // What GetPricesAsync returns when the market data provider prices each coin in the given currency.
     private static ServiceResult<CoinPriceView> PricedIn(string currency, params (string CoinId, decimal Price)[] prices) =>
         ServiceResult<CoinPriceView>.Success(new CoinPriceView
         {

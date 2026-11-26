@@ -6,7 +6,7 @@ namespace CryptoStuff.Cli.UnitTests.Alerts;
 
 public class AlertFailureTests
 {
-    private const string UnknownCoinDetail = "CoinGecko does not know the coin 'bitcoinn'.";
+    private const string UnknownCoinDetail = "The market data provider has no coin with id 'bitcoinn'.";
 
     private static readonly string[][] SubcommandArguments =
     [
@@ -40,9 +40,9 @@ public class AlertFailureTests
             var messages = new Dictionary<ServiceErrorCode, string>
             {
                 [ServiceErrorCode.NotFound] = "Error: the requested resource was not found.",
-                [ServiceErrorCode.RateLimited] = "Error: the CoinGecko rate limit was exceeded. Try again later.",
-                [ServiceErrorCode.RequestTimedOut] = "Error: the request to CoinGecko timed out.",
-                [ServiceErrorCode.UpstreamUnavailable] = "Error: CoinGecko is currently unavailable.",
+                [ServiceErrorCode.RateLimited] = "Error: the market data provider's rate limit was exceeded. Try again later.",
+                [ServiceErrorCode.RequestTimedOut] = "Error: the request to the market data provider timed out.",
+                [ServiceErrorCode.UpstreamUnavailable] = "Error: the market data provider is currently unavailable.",
                 [ServiceErrorCode.Conflict] = "Error: the request conflicts with existing data.",
                 [ServiceErrorCode.RuleViolated] = "Error: the request violates a domain rule.",
                 [ServiceErrorCode.PreconditionFailed] = "Error: the data has changed since it was last read.",
@@ -119,7 +119,7 @@ public class AlertFailureTests
 
         // Assert
         exitCode.Should().Be(1);
-        _error.ToString().Should().Be("Error: the CoinGecko rate limit was exceeded. Try again later.\n");
+        _error.ToString().Should().Be("Error: the market data provider's rate limit was exceeded. Try again later.\n");
         _output.ToString().Should().BeEmpty();
     }
 

@@ -10,11 +10,11 @@ namespace CryptoStuff.Api.Alerts;
 /// interval, each in a scope of its own so it gets a fresh database context.
 /// Each triggered alert is logged. Alerts an evaluation could not price are
 /// logged only when they differ from the last successful evaluation's, so one
-/// coin CoinGecko stopped quoting does not log a warning every tick. A failed
-/// evaluation, whether an error result or an exception, is logged and costs
-/// only its own tick, since an exception escaping here would stop the host;
-/// shutdown ends the loop, including an evaluation in progress, without
-/// logging a failure.
+/// coin the market data provider stopped quoting does not log a warning every
+/// tick. A failed evaluation, whether an error result or an exception, is
+/// logged and costs only its own tick, since an exception escaping here would
+/// stop the host; shutdown ends the loop, including an evaluation in progress,
+/// without logging a failure.
 /// </summary>
 public sealed partial class AlertEvaluationBackgroundService(
     IServiceScopeFactory scopeFactory,
@@ -98,7 +98,7 @@ public sealed partial class AlertEvaluationBackgroundService(
     private partial void LogEvaluationThrew(Exception exception);
 
     [LoggerMessage(EventId = 4, Level = LogLevel.Warning,
-        Message = "Alerts {UnpricedAlerts} could not be priced, so they stay armed. CoinGecko gave no price for them; this is logged again only when the alerts it cannot price change.")]
+        Message = "Alerts {UnpricedAlerts} could not be priced, so they stay armed. The market data provider gave no price for them; this is logged again only when the alerts it cannot price change.")]
     private partial void LogAlertsUnpriced(string unpricedAlerts);
 
     [LoggerMessage(EventId = 5, Level = LogLevel.Information, Message = "Every armed alert was priced again.")]

@@ -17,11 +17,11 @@ public static class ServiceErrorHttpMapper
             ServiceErrorCode.NotFound => (
                 StatusCodes.Status404NotFound, "Not Found", "The requested resource was not found."),
             ServiceErrorCode.RateLimited => (
-                StatusCodes.Status429TooManyRequests, "Too Many Requests", "The CoinGecko rate limit was exceeded. Try again later."),
+                StatusCodes.Status429TooManyRequests, "Too Many Requests", "The market data provider's rate limit was exceeded. Try again later."),
             ServiceErrorCode.RequestTimedOut => (
-                StatusCodes.Status504GatewayTimeout, "Gateway Timeout", "The request to CoinGecko timed out."),
+                StatusCodes.Status504GatewayTimeout, "Gateway Timeout", "The request to the market data provider timed out."),
             ServiceErrorCode.UpstreamUnavailable => (
-                StatusCodes.Status502BadGateway, "Bad Gateway", "CoinGecko is currently unavailable."),
+                StatusCodes.Status502BadGateway, "Bad Gateway", "The market data provider is currently unavailable."),
             ServiceErrorCode.Conflict => (
                 StatusCodes.Status409Conflict, "Conflict", "The request conflicts with the current state of the resource."),
             ServiceErrorCode.RuleViolated => (

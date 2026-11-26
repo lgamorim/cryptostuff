@@ -18,10 +18,10 @@ internal static class PriceResults
         });
 
     /// <summary>
-    /// What upstream returns when CoinGecko knows only the coins priced here: a
-    /// query naming any other coin is NotFound for the whole query, as the
-    /// adapter reports it, and one naming only known coins gets their prices
-    /// in the currencies it asked for.
+    /// What upstream returns when the market data provider knows only the coins
+    /// priced here: a query naming any other coin is NotFound for the whole
+    /// query, as the adapter reports it, and one naming only known coins gets
+    /// their prices in the currencies it asked for.
     /// </summary>
     public static Func<CoinPriceQuery, ServiceResult<CoinPriceView>> KnowsOnly(params (string CoinId, string Currency, decimal Amount)[] prices) =>
         query => query.CoinIds.All(id => prices.Any(p => p.CoinId == id))

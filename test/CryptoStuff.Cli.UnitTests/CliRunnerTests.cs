@@ -317,9 +317,9 @@ public class CliRunnerTests
 
     [Theory]
     [InlineData(ServiceErrorCode.NotFound, "Error: the requested resource was not found.\n")]
-    [InlineData(ServiceErrorCode.RateLimited, "Error: the CoinGecko rate limit was exceeded. Try again later.\n")]
-    [InlineData(ServiceErrorCode.RequestTimedOut, "Error: the request to CoinGecko timed out.\n")]
-    [InlineData(ServiceErrorCode.UpstreamUnavailable, "Error: CoinGecko is currently unavailable.\n")]
+    [InlineData(ServiceErrorCode.RateLimited, "Error: the market data provider's rate limit was exceeded. Try again later.\n")]
+    [InlineData(ServiceErrorCode.RequestTimedOut, "Error: the request to the market data provider timed out.\n")]
+    [InlineData(ServiceErrorCode.UpstreamUnavailable, "Error: the market data provider is currently unavailable.\n")]
     public async Task Should_ReturnOneAndMappedMessage_When_ServiceFails(ServiceErrorCode errorCode, string expectedMessage)
     {
         _service.CoinResult = ServiceResult<CoinView>.Failure(errorCode);

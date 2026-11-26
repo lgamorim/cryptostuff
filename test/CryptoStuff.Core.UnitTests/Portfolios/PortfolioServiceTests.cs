@@ -45,7 +45,7 @@ public class PortfolioServiceTests
     private static AddTransactionCommand AddCommand(Portfolio portfolio, TransactionDetails transaction) =>
         new() { PortfolioId = portfolio.Id, Transaction = transaction };
 
-    // What GetPricesAsync returns for a coin CoinGecko knows and prices in each of the given currencies.
+    // What GetPricesAsync returns for a coin the market data provider knows and prices in each of the given currencies.
     private static ServiceResult<CoinPriceView> PricedIn(string coinId, params string[] vsCurrencies) =>
         ServiceResult<CoinPriceView>.Success(new CoinPriceView
         {
@@ -360,7 +360,7 @@ public class PortfolioServiceTests
     }
 
     [Fact]
-    public async Task Should_ReturnRuleViolatedNamingCoinWithoutRecordingOrSaving_When_AddTransactionAsyncCoinIsUnknownToCoinGecko()
+    public async Task Should_ReturnRuleViolatedNamingCoinWithoutRecordingOrSaving_When_AddTransactionAsyncCoinIsUnknownUpstream()
     {
         var (repository, upstream, service) = CreateSut();
         var portfolio = SeedPortfolio(repository, "Long term");
@@ -531,7 +531,7 @@ public class PortfolioServiceTests
     }
 
     [Fact]
-    public async Task Should_RecordAndSaveWithoutUpstreamCall_When_AddTransactionAsyncSellsACoinCoinGeckoNoLongerKnows()
+    public async Task Should_RecordAndSaveWithoutUpstreamCall_When_AddTransactionAsyncSellsACoinUpstreamNoLongerKnows()
     {
         var (repository, upstream, service) = CreateSut();
         var portfolio = SeedPortfolioWith(repository, Buy("ghostcoin", 10m, Day(1)));
@@ -548,7 +548,7 @@ public class PortfolioServiceTests
     [InlineData(ServiceErrorCode.RateLimited)]
     [InlineData(ServiceErrorCode.RequestTimedOut)]
     [InlineData(ServiceErrorCode.UpstreamUnavailable)]
-    public async Task Should_RecordWithoutUpstreamCall_When_AddTransactionAsyncBuysMoreOfAHeldCoinWhileCoinGeckoFails(ServiceErrorCode errorCode)
+    public async Task Should_RecordWithoutUpstreamCall_When_AddTransactionAsyncBuysMoreOfAHeldCoinWhileUpstreamFails(ServiceErrorCode errorCode)
     {
         var (repository, upstream, service) = CreateSut();
         var portfolio = SeedPortfolioWith(repository, Buy("bitcoin", 1m, Day(1)));
@@ -759,7 +759,7 @@ public class PortfolioServiceTests
     }
 
     [Fact]
-    public async Task Should_ReturnRuleViolatedNamingCoinWithoutSaving_When_ReplaceTransactionAsyncNewCoinIsUnknownToCoinGecko()
+    public async Task Should_ReturnRuleViolatedNamingCoinWithoutSaving_When_ReplaceTransactionAsyncNewCoinIsUnknownUpstream()
     {
         var (repository, upstream, service) = CreateSut();
         var portfolio = SeedPortfolioWith(repository, Buy("bitcoin", 1m, Day(1)));

@@ -374,7 +374,7 @@ public sealed class AlertEvaluationBackgroundServiceTests : IAsyncDisposable
     private static LogEntry UnpricedWarning(string alerts) =>
         new(
             LogLevel.Warning,
-            $"Alerts {alerts} could not be priced, so they stay armed. CoinGecko gave no price for them; this is logged again only when the alerts it cannot price change.",
+            $"Alerts {alerts} could not be priced, so they stay armed. The market data provider gave no price for them; this is logged again only when the alerts it cannot price change.",
             null);
 
     private TriggeredAlertView Triggered(int id, string coinId, string vsCurrency, AlertDirection direction, decimal threshold, decimal price) =>

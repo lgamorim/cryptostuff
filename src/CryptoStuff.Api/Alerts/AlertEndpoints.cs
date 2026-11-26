@@ -23,7 +23,8 @@ public static class AlertEndpoints
         group.MapGet("/", ListAsync)
             .WithProblemMetadata<IReadOnlyList<AlertView>>(StatusCodes.Status200OK);
 
-        // Creating asks CoinGecko about the coin, so it can also fail upstream.
+        // Creating asks the market data provider about the coin, so it can also
+        // fail upstream.
         group.MapPost("/", CreateAsync)
             .WithProblemMetadata<AlertView>(
                 StatusCodes.Status201Created,
@@ -50,10 +51,11 @@ public static class AlertEndpoints
                 StatusCodes.Status200OK, StatusCodes.Status400BadRequest, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict)
             .WithDatabaseBusyProblem();
 
-        // Evaluating asks CoinGecko for every armed alert's price, which can
-        // fail upstream; the throttle that keeps it from spending CoinGecko's
-        // rate limit answers 429 too. Its one save of every trigger fails as a
-        // whole when another writer changed one of the alerts.
+        // Evaluating asks the market data provider for every armed alert's
+        // price, which can fail upstream; the throttle that keeps it from
+        // spending the provider's rate limit answers 429 too. Its one save of
+        // every trigger fails as a whole when another writer changed one of
+        // the alerts.
         group.MapPost("/check", CheckAsync)
             .RequireRateLimiting(AlertCheckRateLimit.PolicyName)
             .WithProblemMetadata<AlertEvaluationView>(

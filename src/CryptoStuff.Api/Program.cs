@@ -28,8 +28,9 @@ builder.Services.AddProblemDetails();
 // The same JSON shape the CLI prints: enumerations as their tokens, timestamps
 // as UTC ending in `Z`.
 builder.Services.ConfigureHttpJsonOptions(options => CryptoStuffJson.Configure(options.SerializerOptions));
-// Readiness checks the shared database only. CoinGecko is deliberately not
-// probed, so a probe never spends the CoinGecko API key's rate limit.
+// Readiness checks the shared database only. The market data provider is
+// deliberately not probed, so a probe never spends the rate limit of the
+// market data provider's API key.
 builder.Services.AddHealthChecks()
     .Add(new HealthCheckRegistration(
         "database",

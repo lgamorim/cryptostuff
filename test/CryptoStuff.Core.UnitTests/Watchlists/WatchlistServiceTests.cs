@@ -320,14 +320,15 @@ public class WatchlistServiceTests
 
         var result = await service.AddCoinAsync(new WatchlistCoinCommand { WatchlistId = watchlist.Id, CoinId = "BitCoin" }, CancellationToken.None);
 
-        // `!` is safe: adding a known coin asks CoinGecko about it and then succeeds, and a null
-        // query or value would fail the test with a NullReferenceException anyway.
+        // `!` is safe: adding a known coin asks the market data provider about it
+        // and then succeeds, and a null query or value would fail the test with a
+        // NullReferenceException anyway.
         upstream.CapturedPricesQuery!.CoinIds.Should().Equal("bitcoin");
         result.Value!.CoinIds.Should().Equal("bitcoin");
     }
 
     [Fact]
-    public async Task Should_ReturnRuleViolatedNamingCoinWithoutSaving_When_AddCoinAsyncCoinIsUnknownToCoinGecko()
+    public async Task Should_ReturnRuleViolatedNamingCoinWithoutSaving_When_AddCoinAsyncCoinIsUnknownUpstream()
     {
         var (repository, upstream, service) = CreateSut();
         var watchlist = SeedWatchlist(repository, "Majors");
@@ -500,7 +501,7 @@ public class WatchlistServiceTests
 
         result.IsSuccess.Should().BeTrue();
         result.Value.Should().Be(prices);
-        // `!` is safe: the service asked CoinGecko for these prices, so the query was captured.
+        // `!` is safe: the service asked the market data provider for these prices, so the query was captured.
         upstream.CapturedPricesQuery!.CoinIds.Should().Equal("ethereum", "bitcoin");
         upstream.CapturedPricesQuery.VsCurrencies.Should().Equal("eur");
     }

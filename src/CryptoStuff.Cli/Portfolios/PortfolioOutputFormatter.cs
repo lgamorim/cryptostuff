@@ -92,7 +92,7 @@ public static class PortfolioOutputFormatter
             + FormatCostAndProfits(view.Totals.CostBasis, view.Totals.UnrealizedProfitAndLoss, view.Totals.RealizedProfitAndLoss));
         if (view.UnpricedCoins.Count > 0)
         {
-            lines.Add($"Left out of the total, with no price from CoinGecko: {string.Join(", ", view.UnpricedCoins)}");
+            lines.Add($"Left out of the total, with no price from the market data provider: {string.Join(", ", view.UnpricedCoins)}");
         }
 
         return string.Join('\n', lines);
@@ -101,7 +101,8 @@ public static class PortfolioOutputFormatter
     private static string FormatCostAndProfits(decimal costBasis, decimal? unrealized, decimal realized) =>
         $"cost basis {Computed(costBasis)}, unrealized {FormatPriced(unrealized)}, realized {Computed(realized)}";
 
-    // A figure that needs the coin's live price, which CoinGecko may not have given.
+    // A figure that needs the coin's live price, which the market data provider
+    // may not have given.
     private static string FormatPriced(decimal? value) => value is { } figure ? Computed(figure) : "unpriced";
 
     private static string FormatAllocation(decimal? percent) =>

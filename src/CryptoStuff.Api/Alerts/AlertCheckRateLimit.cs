@@ -5,13 +5,14 @@ using Microsoft.AspNetCore.RateLimiting;
 namespace CryptoStuff.Api.Alerts;
 
 /// <summary>
-/// Throttles <c>POST /alerts/check</c>, the one route that asks CoinGecko for
-/// prices every time it is called, so a client checking in a loop cannot spend
-/// the CoinGecko API key's rate limit that the background evaluation, the
-/// other price routes and the CLI share. One fixed window of a minute holds for every
-/// caller together, since the rate limit it protects is the key's, not a
-/// caller's. A check over the limit is a <c>429</c> with a ProblemDetails body
-/// and a <c>Retry-After</c> header, and asks CoinGecko nothing.
+/// Throttles <c>POST /alerts/check</c>, the one route that asks the market data
+/// provider for prices every time it is called, so a client checking in a loop
+/// cannot spend the rate limit of the market data provider's API key that the
+/// background evaluation, the other price routes and the CLI share. One fixed window of a
+/// minute holds for every caller together, since the rate limit it protects is
+/// the key's, not a caller's. A check over the limit is a <c>429</c> with a
+/// ProblemDetails body and a <c>Retry-After</c> header, and asks the provider
+/// nothing.
 /// </summary>
 public static class AlertCheckRateLimit
 {

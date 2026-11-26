@@ -606,7 +606,7 @@ public class PortfolioCommandsTests
             + "bitcoin: quantity 1, market value 120, allocation 100%, cost basis 100, unrealized 20, realized 0\n"
             + "ethereum: quantity 1, market value unpriced, allocation unpriced, cost basis 10, unrealized unpriced, realized 5\n"
             + "Total: market value 120, cost basis 100, unrealized 20, realized 0\n"
-            + "Left out of the total, with no price from CoinGecko: ethereum\n");
+            + "Left out of the total, with no price from the market data provider: ethereum\n");
     }
 
     [Fact]
@@ -819,7 +819,7 @@ public class PortfolioCommandsTests
             + "bitcoin: quantity 1, market value 10, allocation 62.5%, cost basis 10, unrealized 0, realized 0\n"
             + "ethereum: quantity 1, market value unpriced, allocation unpriced, cost basis 10, unrealized unpriced, realized 0\n"
             + "Total: market value 100, cost basis 100, unrealized 0, realized 0\n"
-            + "Left out of the total, with no price from CoinGecko: ethereum\n");
+            + "Left out of the total, with no price from the market data provider: ethereum\n");
     }
 
     [Fact]
@@ -838,7 +838,7 @@ public class PortfolioCommandsTests
             .And.Contain("\"AllocationPercent\": null,");
     }
 
-    // Bitcoin is priced; ethereum is still held but CoinGecko gave no price for it.
+    // Bitcoin is priced; ethereum is still held but the market data provider gave no price for it.
     private static PortfolioValuationView UnpricedEthereumValuation() => new()
     {
         PortfolioId = 3,

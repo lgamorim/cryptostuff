@@ -188,9 +188,9 @@ public class CryptoStuffEndpointsTests
 
     [Theory]
     [InlineData(ServiceErrorCode.NotFound, 404, "Not Found", "The requested resource was not found.")]
-    [InlineData(ServiceErrorCode.RateLimited, 429, "Too Many Requests", "The CoinGecko rate limit was exceeded. Try again later.")]
-    [InlineData(ServiceErrorCode.RequestTimedOut, 504, "Gateway Timeout", "The request to CoinGecko timed out.")]
-    [InlineData(ServiceErrorCode.UpstreamUnavailable, 502, "Bad Gateway", "CoinGecko is currently unavailable.")]
+    [InlineData(ServiceErrorCode.RateLimited, 429, "Too Many Requests", "The market data provider's rate limit was exceeded. Try again later.")]
+    [InlineData(ServiceErrorCode.RequestTimedOut, 504, "Gateway Timeout", "The request to the market data provider timed out.")]
+    [InlineData(ServiceErrorCode.UpstreamUnavailable, 502, "Bad Gateway", "The market data provider is currently unavailable.")]
     [InlineData((ServiceErrorCode)99, 500, "Internal Server Error", "An unknown error occurred.")]
     public async Task Should_ReturnMappedProblem_When_ServiceFails(
         ServiceErrorCode errorCode, int expectedStatus, string expectedTitle, string expectedDetail)

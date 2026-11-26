@@ -128,7 +128,9 @@ header. `CryptoStuff.CoinGecko` consumes five endpoints: `simple/price`,
 The API host also reads `Api:Key` (`Api__Key` in deployment), the key every
 client must send in the `X-Api-Key` header; see [API key](#api-key). In this
 README, "the CoinGecko API key" is always `CoinGecko:ApiKey`, the key the app
-sends to CoinGecko, and a bare "API key" is always `Api:Key`, the key clients
+sends to CoinGecko; "the market data provider's API key" is the key the app
+sends to whichever market data provider it calls, which today is always the
+CoinGecko API key; and a bare "API key" is always `Api:Key`, the key clients
 send to this API. Only the API host reads `Api:Key`: `AddCryptoStuff` does
 not, so the CLI runs without it. Spaces or tabs around its value are ignored,
 so clients send the key without them. If it is missing or blank, the API host
@@ -157,16 +159,16 @@ its clients then get `Location` headers without the prefix.
 ## Error codes
 
 `CryptoStuff.Core` reports a failed operation as a `ServiceErrorCode`. A failed
-CoinGecko request, whether it got a failure response or no response at all,
+request to the market data provider, whether it got a failure response or no response at all,
 maps to one of the first four codes; the last three are for requests on the
 application's own stored data, mostly writes:
 
 | Code | Meaning | Condition |
 |---|---|---|
 | `NotFound` | The requested resource does not exist | CoinGecko returned `404`, or no persisted record has that id |
-| `RateLimited` | The CoinGecko rate limit was exceeded | CoinGecko returned `429` |
-| `RequestTimedOut` | The request to CoinGecko did not complete in time | The request timed out |
-| `UpstreamUnavailable` | CoinGecko failed for any other reason | Any other non-success response, or no response at all (a refused connection, a DNS or TLS failure, a dropped connection) |
+| `RateLimited` | The market data provider's rate limit was exceeded | CoinGecko returned `429` |
+| `RequestTimedOut` | The request to the market data provider did not complete in time | The request timed out |
+| `UpstreamUnavailable` | The market data provider failed for any other reason | Any other non-success response, or no response at all (a refused connection, a DNS or TLS failure, a dropped connection) |
 | `Conflict` | The write conflicts with stored state | A duplicate name, or a lost concurrency race |
 | `RuleViolated` | The request breaks a domain rule | For example a write that would oversell or name an unknown coin, or a valuation with an amount too large to compute |
 | `PreconditionFailed` | The stored version no longer matches what the caller expected | A stale `If-Match` |
@@ -189,7 +191,7 @@ watchlist's coins, the coins armed alerts watch), losing one of them upstream
 should not hide the others, so Core reads their prices through
 `KnownCoinPrices.GetKnownCoinPricesAsync`. It makes the same single call, and
 only when that call is `NotFound` asks for each coin on its own to find the
-ones CoinGecko still knows. A coin it does not know comes back with no
+ones the market data provider still knows. A coin it does not know comes back with no
 amounts, exactly as a coin not quoted in a requested currency already does.
 An HTTP `404` from the price endpoint itself also reads as `NotFound`, so it
 too leaves every coin without amounts. `GET /prices` and `cryptostuff price`
@@ -203,7 +205,7 @@ for an unknown coin id, which the error-code mapping above already turns into
 ## Input validation
 
 `CryptoStuff.Core` provides a small set of shared validation rules for the
-CLI and API hosts to apply to user input before a request reaches CoinGecko.
+CLI and API hosts to apply to user input before a request reaches the market data provider.
 Each rule reports which field failed and what was expected of it.
 
 | Rule | Applies to | What's required |
@@ -277,7 +279,7 @@ Each resend is counted; see [Upstream metrics](#upstream-metrics).
 
 ## Upstream metrics
 
-The app counts its calls to CoinGecko, the rate-limit retries, and the cache
+The app counts its calls to the market data provider, the rate-limit retries, and the cache
 lookups, so their volume can be measured from a running host. The counts are
 `System.Diagnostics.Metrics` instruments only: there is no `/metrics` route,
 and nothing is exported unless a tool listens. All three are counters on one
@@ -316,7 +318,7 @@ date, or query string reaches a tag. `outcome` says how the call ended:
 
 A request is one logical call by the client, however many times it was sent:
 a call resent after a `429` is one request, and each resend is one retry. The
-number of HTTP sends to CoinGecko is therefore requests plus retries, less
+number of HTTP sends to the market data provider is therefore requests plus retries, less
 any request that ended `cancelled` before its first send. The retry counter
 has no `endpoint` tag, so sends can be totalled per provider but not per
 endpoint. A resend cancelled during its delay is never sent, so it is not
@@ -326,7 +328,7 @@ A cache lookup is a call to `GetCoinAsync` or `GetDeveloperDataAsync` on the
 decorator; the other three operations are never looked up, so they record
 nothing. A miss is an absent key, an expired entry, or a key whose last
 result was a failure (which is never cached), and each miss is passed on to
-CoinGecko as one request.
+the market data provider as one request.
 
 To read the counters from a running API host, attach `dotnet-counters`, a
 .NET diagnostic tool installed separately (`dotnet tool install --global
@@ -460,7 +462,7 @@ There is no setup step. Both hosts create the file and its folder when they
 are missing and apply any pending [migrations](#database-migrations) at start
 up — the API before it starts listening, the CLI before it runs a command that
 uses the database (the `watchlist`, `portfolio` and `alert` commands) — so whichever host runs first
-after an upgrade brings the schema up to date. The CLI's CoinGecko-only
+after an upgrade brings the schema up to date. The CLI's market-data-only
 commands (`price`, `token`, `history`, `coin`, `developer`) never open the
 database, so they skip migration and start as fast as they always did. If the
 database cannot be opened or migrated for any reason (an unwritable folder, a
@@ -606,7 +608,7 @@ Valuing a portfolio joins the [cost-basis](#cost-basis) positions with live
 prices. Core makes one price lookup, for the coins the portfolio still holds,
 priced in the portfolio's own currency (through
 [`KnownCoinPrices`](#missing-identifiers), so it asks coin by coin only when
-CoinGecko reports one of them unknown). A portfolio that holds nothing,
+the market data provider reports one of them unknown). A portfolio that holds nothing,
 whether it is empty or every position is closed, makes no upstream call. Each
 coin in the valuation reports:
 
@@ -653,7 +655,7 @@ before it is scaled to 100.
 
 ### Unpriced coins
 
-A coin still held that CoinGecko gives no price for, because it no longer
+A coin still held that the market data provider gives no price for, because it no longer
 knows the coin or no longer quotes it in the portfolio's currency, does not
 fail the valuation. Its row keeps its quantity, cost basis and realized profit
 and loss, but its market value, allocation and unrealized profit and loss are
@@ -686,9 +688,9 @@ One evaluation:
 1. Loads the armed alerts. With none, it makes no upstream call and reports
    nothing triggered.
 2. Makes one price lookup for every coin and currency the armed alerts need,
-   however many alerts there are. Only if CoinGecko reports one of those coins
+   however many alerts there are. Only if the market data provider reports one of those coins
    as unknown does it then look up each coin on its own, in those same
-   currencies, to tell the coins CoinGecko still knows from the ones it does
+   currencies, to tell the coins the provider still knows from the ones it does
    not (through [`KnownCoinPrices`](#missing-identifiers)).
 3. Triggers each alert whose price meets it, inclusively: at or above the
    threshold for `above`, at or below it for `below`. An alert whose price has
@@ -714,14 +716,14 @@ awaiting a reset. Alerts re-armed before this rule existed carry no mark and
 can trigger on the next evaluation that finds their price past the threshold.
 
 **When something goes wrong.** An upstream failure, such as `RateLimited`,
-`RequestTimedOut`, or `UpstreamUnavailable` when CoinGecko cannot be reached
+`RequestTimedOut`, or `UpstreamUnavailable` when the market data provider cannot be reached
 at all, fails the evaluation with that code and leaves every alert
 armed, so the next evaluation simply tries again; that includes a failure while
-looking coins up one at a time. An alert CoinGecko gives no price for, because
+looking coins up one at a time. An alert the provider gives no price for, because
 it no longer knows the coin or no longer quotes it in the alert's currency,
 does not hold up the others: the evaluation checks every alert it could price
 and reports the rest as unpriced. An unpriced alert stays armed and is tried
-again by every evaluation until CoinGecko prices it or the alert is edited or
+again by every evaluation until the provider prices it or the alert is edited or
 deleted. A `404` from CoinGecko's price endpoint itself, such as from a wrong
 base address, cannot be told apart from an unknown coin, so it reports every
 alert unpriced rather than failing the evaluation.
@@ -786,7 +788,7 @@ they differ from the ones the last successful evaluation could not price, so a
 delisted coin is logged once rather than every tick:
 
 ```
-Alerts 5 (ghostcoin in usd), 9 (bitcoin in eur) could not be priced, so they stay armed. CoinGecko gave no price for them; this is logged again only when the alerts it cannot price change.
+Alerts 5 (ghostcoin in usd), 9 (bitcoin in eur) could not be priced, so they stay armed. The market data provider gave no price for them; this is logged again only when the alerts it cannot price change.
 ```
 
 When none is left unpriced, that is logged once at `Information` as
@@ -797,13 +799,13 @@ a failure.
 
 ### Check rate limit
 
-Each `POST /alerts/check` asks CoinGecko for prices, and the CoinGecko API
-key's rate limit is shared with the background evaluation, the other price
-routes and the CLI. So the API allows at most `Alerts:ChecksPerMinute` checks
+Each `POST /alerts/check` asks the market data provider for prices, and the
+rate limit of the market data provider's API key is shared with the
+background evaluation, the other price routes and the CLI. So the API allows at most `Alerts:ChecksPerMinute` checks
 a minute, counted for every caller together in one fixed window that opens
 anew each minute. Only checks sent with the right [API key](#api-key) count:
 one without it is a `401` and uses none of the window. A check over the limit
-asks CoinGecko nothing and is answered `429` with a ProblemDetails body and a
+asks the provider nothing and is answered `429` with a ProblemDetails body and a
 `Retry-After: 60` header: the window's whole length, however much of it is
 left, so a client that waits that long always finds a new window open:
 
@@ -852,20 +854,20 @@ dotnet run --project src/CryptoStuff.Cli -- price bitcoin usd
 | `watchlist show` | `<id>` — a watchlist's id, name, and coins | `cryptostuff watchlist show 1` |
 | `watchlist rename` | `<id> <name>` — a new name for a watchlist | `cryptostuff watchlist rename 1 blue-chips` |
 | `watchlist delete` | `<id>` — deletes a watchlist | `cryptostuff watchlist delete 1` |
-| `watchlist add` | `<id> <coin>` — appends a coin id that CoinGecko knows; adding a coin already present changes nothing | `cryptostuff watchlist add 1 bitcoin` |
+| `watchlist add` | `<id> <coin>` — appends a coin id that the market data provider knows; adding a coin already present changes nothing | `cryptostuff watchlist add 1 bitcoin` |
 | `watchlist remove` | `<id> <coin>` — removes a coin id; removing one that is absent changes nothing | `cryptostuff watchlist remove 1 bitcoin` |
-| `watchlist prices` | `<id> <currency>` — live prices of the watchlist's coins in a vs_currency; a coin CoinGecko gives no price for prints `no price` | `cryptostuff watchlist prices 1 usd` |
+| `watchlist prices` | `<id> <currency>` — live prices of the watchlist's coins in a vs_currency; a coin the market data provider gives no price for prints `no price` | `cryptostuff watchlist prices 1 usd` |
 | `portfolio list` | — lists every portfolio, with its id, name, currency, method, and transaction count | `cryptostuff portfolio list` |
 | `portfolio create` | `<name> <currency> <method>` — a new, empty portfolio priced in a vs_currency that never changes; `<method>` is `average-cost`, `fifo`, `lifo` or `hifo`; the name follows the [resource name](#input-validation) rule and is unique, ignoring case | `cryptostuff portfolio create main usd fifo` |
 | `portfolio show` | `<id>` — a portfolio's id, name, currency, method, version, and transactions | `cryptostuff portfolio show 1` |
 | `portfolio update` | `<id> <name> <method>` — replaces the portfolio's name and cost-basis method | `cryptostuff portfolio update 1 retirement average-cost` |
 | `portfolio delete` | `<id>` — deletes a portfolio with all its transactions | `cryptostuff portfolio delete 1` |
 | `portfolio value` | `<id>` — the portfolio's holdings at live prices, with each coin's allocation; see [Valuation](#valuation) | `cryptostuff portfolio value 1` |
-| `portfolio tx add` | `<id> <kind> <coin> <qty> <price> <when> [--fee <fee>]` — records a buy or sell (`<kind>` is `buy` or `sell`); a buy of a coin new to the portfolio must be one CoinGecko knows | `cryptostuff portfolio tx add 1 buy bitcoin 0.5 40000 2024-01-31T14:30:00Z --fee 12.5` |
+| `portfolio tx add` | `<id> <kind> <coin> <qty> <price> <when> [--fee <fee>]` — records a buy or sell (`<kind>` is `buy` or `sell`); a buy of a coin new to the portfolio must be one the market data provider knows | `cryptostuff portfolio tx add 1 buy bitcoin 0.5 40000 2024-01-31T14:30:00Z --fee 12.5` |
 | `portfolio tx edit` | `<id> <txid> <kind> <coin> <qty> <price> <when> [--fee <fee>]` — replaces every detail of a transaction, so an omitted `--fee` becomes `0` | `cryptostuff portfolio tx edit 1 3 sell bitcoin 0.25 42000 2024-02-15T09:00:00Z` |
 | `portfolio tx delete` | `<id> <txid>` — deletes a transaction | `cryptostuff portfolio tx delete 1 3` |
 | `alert list` | — lists every alert, with its id, coin, direction, threshold, currency, and state | `cryptostuff alert list` |
-| `alert create` | `<coin> <currency> <direction> <threshold>` — a new, armed alert on a coin priced in a vs_currency, both of which CoinGecko must know and neither of which changes later; `<direction>` is `above` or `below`; the threshold is greater than zero | `cryptostuff alert create bitcoin usd above 50000` |
+| `alert create` | `<coin> <currency> <direction> <threshold>` — a new, armed alert on a coin priced in a vs_currency, both of which the market data provider must know and neither of which changes later; `<direction>` is `above` or `below`; the threshold is greater than zero | `cryptostuff alert create bitcoin usd above 50000` |
 | `alert show` | `<id>` — an alert's id, coin, currency, direction, threshold, state, when and at what price it triggered, and version | `cryptostuff alert show 1` |
 | `alert update` | `<id> <direction> <threshold>` — replaces the alert's direction and threshold, which re-arms it whether or not it had triggered | `cryptostuff alert update 1 below 42000` |
 | `alert delete` | `<id>` — deletes an alert | `cryptostuff alert delete 1` |
@@ -873,7 +875,7 @@ dotnet run --project src/CryptoStuff.Cli -- price bitcoin usd
 | `alert check` | `[--exit-code]` — evaluates the armed alerts once and prints the ones that triggered, or `Nothing triggered.`, then any it could not price; with `--exit-code` it exits `2` when it triggered an alert; see [Alert evaluation](#alert-evaluation) | `cryptostuff alert check --exit-code` |
 
 Each command applies the applicable [input validation](#input-validation)
-rules above to its arguments before calling CoinGecko, and reports the first
+rules above to its arguments before calling the market data provider, and reports the first
 violation it finds. The non-empty-collection rule doesn't apply here: a
 comma-separated list argument can never be truly empty, only contain a blank
 entry (e.g. `bitcoin,,ethereum`), which is reported as such.
@@ -887,7 +889,7 @@ cannot recolour or clear the terminal; `--json` output escapes them as JSON
 does. They read and write the shared [database](#data-storage), so these
 and the `portfolio` and `alert` commands are the only commands that open it (and
 migrate it first). A failure the service
-reports for them — an unknown id, a duplicate name, a coin CoinGecko doesn't
+reports for them — an unknown id, a duplicate name, a coin the market data provider doesn't
 know — is printed as `Error: …` with the service's own message, and exits `1`.
 `delete` prints `Deleted watchlist <id>.`; with `--json` it prints
 `{"Id": <id>, "Deleted": true}`, indented.
@@ -916,7 +918,7 @@ with `--json`. A threshold is read like a portfolio quantity (a point for the
 decimal mark, an optional exponent, and no thousands separators: `0.5` and
 `1.5e3` are accepted, `0,5` is not) and must be greater than zero, so `0` and `-1` are rejected as
 `Threshold must be greater than zero.` Core refuses a coin or currency
-CoinGecko doesn't know, or that has no price in that currency, when the alert is
+the market data provider doesn't know, or that has no price in that currency, when the alert is
 created, in a message printed as `Error: …` with exit `1`. `rearm` on an alert
 that is already armed changes nothing and prints it as it is, waiting for its
 price to move back or not, so running it twice does no more than running it
@@ -933,7 +935,7 @@ alert that could not be priced, are not failures, so `check` exits `0` then,
 and by default it exits `0` when alerts triggered too. With `--exit-code` it
 exits `2` when it triggered at least one alert, after printing them, so a
 script can act on a trigger without reading the output; it still exits `0`
-when nothing triggered. Only an evaluation that failed, such as a CoinGecko
+when nothing triggered. Only an evaluation that failed, such as a market data provider
 error, exits `1`, with or without the flag, and changes no alert. **Continuous evaluation
 happens only in the API host**: the CLI exits after each command, so alerts are
 evaluated only when `alert check` is run, while a running API host evaluates them
@@ -980,11 +982,11 @@ another offset comes back converted to UTC.
 | Code | Meaning |
 |---|---|
 | `0` | The command completed successfully. |
-| `1` | No command or an unrecognized command, the wrong number of arguments, an input validation failure, a CoinGecko service failure (see [Error codes](#error-codes)), a startup configuration error (a missing or invalid `CoinGecko:ApiKey`/`CoinGecko:CacheSeconds`, see [Registration](#registration), or an unresolvable database connection string, see [Data storage](#data-storage)), or, for a command that uses the database, a database that could not be opened or migrated, that holds data this version cannot read, or that another writer kept locked (see [Data storage](#data-storage)). |
+| `1` | No command or an unrecognized command, the wrong number of arguments, an input validation failure, a market data provider failure (see [Error codes](#error-codes)), a startup configuration error (a missing or invalid `CoinGecko:ApiKey`/`CoinGecko:CacheSeconds`, see [Registration](#registration), or an unresolvable database connection string, see [Data storage](#data-storage)), or, for a command that uses the database, a database that could not be opened or migrated, that holds data this version cannot read, or that another writer kept locked (see [Data storage](#data-storage)). |
 | `2` | `alert check --exit-code` triggered at least one alert. Without `--exit-code`, `alert check` exits `0` whether or not anything triggered. |
 | `130` | The command was canceled (Ctrl+C) before it completed. |
 
-Usage and validation errors, CoinGecko service failures, and database
+Usage and validation errors, market data provider failures, and database
 failures are written to standard error; successful results are written to
 standard output.
 
@@ -1037,7 +1039,7 @@ header; without it, a request gets `401` and nothing else.
 | `POST /alerts/check` | — no body | `/alerts/check` |
 
 Each route applies the applicable [input validation](#input-validation) rules
-above to its parameters before calling CoinGecko, and reports the first
+above to its parameters before calling the market data provider, and reports the first
 violation it finds. As with the CLI, the non-empty-collection rule doesn't
 apply here: a comma-separated list parameter can never be truly empty, only
 contain a blank entry (e.g. `coins=bitcoin,,ethereum`), which is reported as
@@ -1114,7 +1116,7 @@ Content-Type: application/problem+json
 
 The request is rejected before anything else happens to it: before its input
 is validated (an invalid body or query is still a `401`, not a `400`), before
-the database or CoinGecko is touched, and before the
+the database or the market data provider is touched, and before the
 [check rate limit](#check-rate-limit), so a caller without the key cannot use
 up `Alerts:ChecksPerMinute`. A path that matches no route is a `401` too, not
 a `404`, until the key is right. Under a configured
@@ -1163,7 +1165,7 @@ route that returns a watchlist returns it in that shape: `id`, `name`, and
 | `DELETE /watchlists/{id}` | `204` | No body |
 | `PUT /watchlists/{id}/coins/{coin}` | `200` | Idempotent: adding a coin already present changes nothing |
 | `DELETE /watchlists/{id}/coins/{coin}` | `200` | Idempotent: removing a coin that is absent changes nothing |
-| `GET /watchlists/{id}/prices` | `200` | A `CoinPriceView`, as `GET /prices` returns, in the watchlist's coin order; a coin CoinGecko no longer knows comes back with no amounts, and an empty watchlist returns no coins without calling CoinGecko |
+| `GET /watchlists/{id}/prices` | `200` | A `CoinPriceView`, as `GET /prices` returns, in the watchlist's coin order; a coin the market data provider no longer knows comes back with no amounts, and an empty watchlist returns no coins without calling the market data provider |
 
 Failures use the [ProblemDetails](#rest-api) contract above:
 
@@ -1173,8 +1175,8 @@ Failures use the [ProblemDetails](#rest-api) contract above:
 | `401` | No valid `X-Api-Key` header (see [API key](#api-key)), whatever else is wrong with the request |
 | `404` | No watchlist has that `id`, another writer deleted it while the request was saving, or the `id` is not a whole number (no route matches it) |
 | `409` | The name is taken by another watchlist (ignoring case), or a concurrent change won the race |
-| `422` | Adding a coin that CoinGecko does not know; the `detail` names it |
-| `429`, `502`, `504` | CoinGecko failed while checking a coin to add or while pricing |
+| `422` | Adding a coin that the market data provider does not know; the `detail` names it |
+| `429`, `502`, `504` | The market data provider failed while checking a coin to add or while pricing |
 
 ### Portfolio routes
 
@@ -1212,10 +1214,10 @@ routes. Recording or replacing a transaction takes this body:
 
 - `kind` is `buy` or `sell`; `coinId` is a CoinGecko coin id, stored
   trimmed and lowercased. A buy of a coin new to the portfolio's ledger is
-  checked against CoinGecko; a coin any of its transactions already holds is
-  not, since it passed that check when first recorded, so a coin CoinGecko has
+  checked against the market data provider; a coin any of its transactions already holds is
+  not, since it passed that check when first recorded, so a coin the provider has
   since delisted can still be sold, and a held coin can be traded while
-  CoinGecko is failing. Nor is a sell of a coin new to the ledger, which
+  the provider is failing. Nor is a sell of a coin new to the ledger, which
   always oversells.
 - `quantity` is a JSON number greater than zero; `unitPrice` and `fee` are
   JSON numbers of zero or more, in the portfolio's vs_currency. `fee` is
@@ -1245,7 +1247,7 @@ never gives it to another transaction, even after this one is deleted.
 | `GET /portfolios/{id}/transactions/{txId}` | `200` with `ETag` | The one transaction, shaped as in the portfolio's list; the `ETag` is the portfolio's, the one this URI's `PUT` and `DELETE` take |
 | `PUT /portfolios/{id}/transactions/{txId}` | `200` with `ETag` | The portfolio; the transaction keeps its id and sequence |
 | `DELETE /portfolios/{id}/transactions/{txId}` | `200` with `ETag` | The portfolio, without the transaction |
-| `GET /portfolios/{id}/valuation` | `200` | A [valuation](#valuation), each coin with its exact `allocationPercent`: one CoinGecko call for the coins still held, more only when one of them is unknown; a coin CoinGecko gives no price for is [left unpriced](#unpriced-coins) |
+| `GET /portfolios/{id}/valuation` | `200` | A [valuation](#valuation), each coin with its exact `allocationPercent`: one market data provider call for the coins still held, more only when one of them is unknown; a coin the provider gives no price for is [left unpriced](#unpriced-coins) |
 
 #### `ETag` and `If-Match`
 
@@ -1286,8 +1288,8 @@ Failures use the [ProblemDetails](#rest-api) contract above:
 | `404` | No portfolio has that `id`, another writer deleted it while the request was saving, the portfolio has no transaction with that `txId`, or either is not a whole number (no route matches it) |
 | `409` | The name is taken by another portfolio (ignoring case), or a concurrent write won the race |
 | `412` | `If-Match` does not match the portfolio's current `ETag` |
-| `422` | The ledger would oversell (the `detail` names the coin and date of the sell), a coin's amounts would be [too large to compute](#cost-basis) (the `detail` names the coin), the transaction is dated more than five minutes in the future, or CoinGecko does not know a coin new to the portfolio that the transaction buys, or has no price for it in the portfolio's vs_currency; valuing a portfolio whose valuation has an amount too large to compute |
-| `429`, `502`, `504` | CoinGecko failed while checking a bought coin new to the portfolio or while valuing |
+| `422` | The ledger would oversell (the `detail` names the coin and date of the sell), a coin's amounts would be [too large to compute](#cost-basis) (the `detail` names the coin), the transaction is dated more than five minutes in the future, or the market data provider does not know a coin new to the portfolio that the transaction buys, or has no price for it in the portfolio's vs_currency; valuing a portfolio whose valuation has an amount too large to compute |
+| `429`, `502`, `504` | The market data provider failed while checking a bought coin new to the portfolio or while valuing |
 
 ### Alert routes
 
@@ -1298,7 +1300,7 @@ goes through the same Core validators and token parsers. Ids are the positive
 whole numbers the database assigns.
 
 Create takes the CoinGecko coin id and the vs_currency it is priced in (both
-checked against CoinGecko, stored trimmed and lowercased, and fixed for good once created),
+checked against the market data provider, stored trimmed and lowercased, and fixed for good once created),
 the direction, `above` or `below`, and the threshold, a JSON number greater
 than zero in that vs_currency:
 
@@ -1371,9 +1373,9 @@ Failures use the [ProblemDetails](#rest-api) contract above:
 | `401` | No valid `X-Api-Key` header (see [API key](#api-key)), whatever else is wrong with the request; it does not count toward `Alerts:ChecksPerMinute` |
 | `404` | No alert has that `id`, another writer deleted it while the request was saving, or the `id` is not a whole number (no route matches it) |
 | `409` | A concurrent write won the race; for `POST /alerts/check`, another write changed one of the evaluated alerts, so nothing was triggered and the check can be run again |
-| `422` | Creating an alert on a coin CoinGecko does not know, or that has no price in that vs_currency; the `detail` names it |
-| `429` | `POST /alerts/check` went over `Alerts:ChecksPerMinute`, with a `Retry-After` header, or CoinGecko's rate limit was hit while checking a new alert's coin or while evaluating |
-| `502`, `504` | CoinGecko failed while checking a new alert's coin or while evaluating |
+| `422` | Creating an alert on a coin the market data provider does not know, or that has no price in that vs_currency; the `detail` names it |
+| `429` | `POST /alerts/check` went over `Alerts:ChecksPerMinute`, with a `Retry-After` header, or the market data provider's rate limit was hit while checking a new alert's coin or while evaluating |
+| `502`, `504` | The market data provider failed while checking a new alert's coin or while evaluating |
 
 ### Health, OpenAPI, and Scalar
 
@@ -1387,8 +1389,9 @@ they answer a wrong one too.
   otherwise, such as when the file is missing or is not a SQLite database.
   A `503` carries only the plain-text status, `Unhealthy`, with no detail,
   so no file path can leak. It only reads: a missing database file, or its
-  missing directory, is reported, not created. It does not call CoinGecko,
-  so a probe never spends the CoinGecko API key's rate limit.
+  missing directory, is reported, not created. It does not call the market
+  data provider, so a probe never spends the rate limit of the market data
+  provider's API key.
 - `GET /openapi/v1.json` — the generated OpenAPI document, available in every
   environment. It declares the `ApiKey` security scheme (an API key in the
   `X-Api-Key` header) and requires it on every operation it lists, each of

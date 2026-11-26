@@ -22,7 +22,7 @@ public class AlertServiceTests
     private static CreateAlertCommand NewAlertCommand(string coinId = "bitcoin", string vsCurrency = "usd", decimal threshold = 100m) =>
         new() { CoinId = coinId, VsCurrency = vsCurrency, Direction = AlertDirection.Above, Threshold = threshold };
 
-    // What GetPricesAsync returns for a coin CoinGecko knows and prices in each of the given currencies.
+    // What GetPricesAsync returns for a coin the market data provider knows and prices in each of the given currencies.
     private static ServiceResult<CoinPriceView> PricedIn(string coinId, params string[] vsCurrencies) =>
         ServiceResult<CoinPriceView>.Success(new CoinPriceView
         {
@@ -103,7 +103,7 @@ public class AlertServiceTests
     }
 
     [Fact]
-    public async Task Should_AskCoinGeckoOnceForTheLowercasedCoinInTheLowercasedCurrency_When_CreateAsyncGivenMixedCase()
+    public async Task Should_AskUpstreamOnceForTheLowercasedCoinInTheLowercasedCurrency_When_CreateAsyncGivenMixedCase()
     {
         var (_, upstream, service) = CreateSut();
         upstream.PricesResult = PricedIn("bitcoin", "usd");
@@ -119,7 +119,7 @@ public class AlertServiceTests
     }
 
     [Fact]
-    public async Task Should_ReturnRuleViolatedNamingCoinWithoutSaving_When_CreateAsyncCoinIsUnknownToCoinGecko()
+    public async Task Should_ReturnRuleViolatedNamingCoinWithoutSaving_When_CreateAsyncCoinIsUnknownUpstream()
     {
         var (repository, upstream, service) = CreateSut();
         upstream.PricesResult = ServiceResult<CoinPriceView>.Failure(ServiceErrorCode.NotFound);
@@ -137,7 +137,8 @@ public class AlertServiceTests
     public async Task Should_ReturnRuleViolatedNamingCoinAndCurrencyWithoutSaving_When_CreateAsyncCurrencyHasNoPriceForTheCoin()
     {
         var (repository, upstream, service) = CreateSut();
-        // CoinGecko knows the coin but prices it only in eur: an unknown currency is not an upstream error.
+        // The market data provider knows the coin but prices it only in eur: an
+        // unknown currency is not an upstream error.
         upstream.PricesResult = PricedIn("bitcoin", "eur");
 
         var result = await service.CreateAsync(NewAlertCommand("bitcoin", "notacurrency"), CancellationToken.None);
@@ -182,7 +183,7 @@ public class AlertServiceTests
 
     [Theory]
     [MemberData(nameof(InvalidNewAlerts))]
-    public async Task Should_ThrowBeforeAskingCoinGeckoOrSaving_When_CreateAsyncGivenDetailsThatBreakTheEntityRules(CreateAlertCommand command)
+    public async Task Should_ThrowBeforeAskingUpstreamOrSaving_When_CreateAsyncGivenDetailsThatBreakTheEntityRules(CreateAlertCommand command)
     {
         var (repository, upstream, service) = CreateSut();
         upstream.PricesResult = PricedIn("bitcoin", "usd");
@@ -276,7 +277,7 @@ public class AlertServiceTests
     }
 
     [Fact]
-    public async Task Should_NotAskCoinGecko_When_UpdateAsyncCalled()
+    public async Task Should_NotAskUpstream_When_UpdateAsyncCalled()
     {
         var (repository, upstream, service) = CreateSut();
         var alert = SeedAlert(repository);
