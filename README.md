@@ -73,7 +73,7 @@ reading from and the sections that explain the behaviour:
 
 | Area | Folder | Start with | Explained in |
 |---|---|---|---|
-| Market data | [root](src/CryptoStuff.Core) | `ICryptocurrencyService`, its five `*Query` inputs and `*View` results, `CachingCryptocurrencyService`, `KnownCoinPrices`, `UpstreamMetrics` | [Caching](#caching), [Missing identifiers](#missing-identifiers), [Upstream metrics](#upstream-metrics) |
+| Market data | [root](src/CryptoStuff.Core) | `ICryptocurrencyService`, its five `*Query` inputs and `*View` results, `CachingCryptocurrencyService`, `NegativePriceGuard`, `KnownCoinPrices`, `UpstreamMetrics` | [Caching](#caching), [Missing identifiers](#missing-identifiers), [Unpriced coins](#unpriced-coins), [Upstream metrics](#upstream-metrics) |
 | Watchlists | [`Watchlists/`](src/CryptoStuff.Core/Watchlists) | `Watchlist`, `IWatchlistService`, `IWatchlistRepository` | [Watchlist routes](#watchlist-routes) |
 | Portfolios | [`Portfolios/`](src/CryptoStuff.Core/Portfolios) | `Portfolio`, `IPortfolioService`, `IPortfolioRepository`, `ICostBasisMethod` | [Cost basis](#cost-basis), [Valuation](#valuation) |
 | Price alerts | [`Alerts/`](src/CryptoStuff.Core/Alerts) | `PriceAlert`, `IAlertService`, `IAlertEvaluator`, `IAlertRepository` | [Alert evaluation](#alert-evaluation) |
@@ -349,8 +349,8 @@ tool can attach.
 
 `CryptoStuff.Composition` provides `AddCryptoStuff(IServiceCollection,
 IConfiguration)`, the single extension method that registers everything
-above: the CoinGecko-backed `ICryptocurrencyService`, wrapped in the caching
-decorator, wired to the CoinGecko `HttpClient` and its rate-limit retry
+above: the CoinGecko-backed `ICryptocurrencyService`, wrapped in the
+[negative-price guard](#unpriced-coins) and then the caching decorator, wired to the CoinGecko `HttpClient` and its rate-limit retry
 handler. It also registers the persistence services over the
 [shared database](#data-storage): the EF Core context, and the watchlist, portfolio and
 alert repositories and services, and the alert evaluator. The clock the portfolio and alert rules read is
@@ -668,6 +668,11 @@ that priced total, so they still add up to 100. `portfolio value` prints
 `unpriced` for the missing figures and names the coins left out of the total. Any upstream failure, such as
 `RateLimited`, still fails the valuation with its code.
 
+A price below zero counts as no price. Core drops it from the provider's
+answer before anything is valued, so the coin is unpriced in that currency,
+the same as when the provider has no quote for it. A price of zero is still a
+price: the coin is valued at zero and stays in the totals.
+
 ## Alert evaluation
 
 An alert only changes state when something evaluates it. One evaluator,
@@ -724,7 +729,10 @@ armed, so the next evaluation simply tries again; that includes a failure while
 looking coins up one at a time. An alert the provider gives no price for, because
 it no longer knows the coin or no longer quotes it in the alert's currency,
 does not hold up the others: the evaluation checks every alert it could price
-and reports the rest as unpriced. An unpriced alert stays armed and is tried
+and reports the rest as unpriced. A price below zero counts as no price here
+too, so it is reported unpriced rather than triggering a `below` alert or
+resetting a re-armed `above` one; a price of zero is checked like any other.
+An unpriced alert stays armed and is tried
 again by every evaluation until the provider prices it or the alert is edited or
 deleted. A `404` from CoinGecko's price endpoint itself, such as from a wrong
 base address, cannot be told apart from an unknown coin, so it reports every

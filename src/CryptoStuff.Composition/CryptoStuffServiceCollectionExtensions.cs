@@ -19,7 +19,7 @@ namespace CryptoStuff.Composition;
 /// <summary>
 /// Registers everything <c>CryptoStuff</c> needs to serve cryptocurrency data:
 /// the CoinGecko-backed <see cref="ICryptocurrencyService"/>, wrapped in its
-/// caching decorator, wired to a CoinGecko <see cref="HttpClient"/> with the
+/// negative-price guard and then its caching decorator, wired to a CoinGecko <see cref="HttpClient"/> with the
 /// rate-limit retry handler attached, and the scoped SQLite-backed features
 /// over <see cref="CryptoStuffDbContext"/>.
 /// </summary>
@@ -106,9 +106,13 @@ public static class CryptoStuffServiceCollectionExtensions
         // call without changing that type.
         services.AddKeyedSingleton<ICryptocurrencyService, CryptocurrencyService>(CryptocurrencyServiceKey);
 
+        // NegativePriceGuard sits inside the cache, so nothing the cache keeps
+        // has skipped it. The two cover different operations today (the guard
+        // filters prices and token prices; the cache holds coin detail and
+        // developer data), and the guard has no state to keep.
         services.AddSingleton<ICryptocurrencyService>(sp =>
             new CachingCryptocurrencyService(
-                sp.GetRequiredKeyedService<ICryptocurrencyService>(CryptocurrencyServiceKey),
+                new NegativePriceGuard(sp.GetRequiredKeyedService<ICryptocurrencyService>(CryptocurrencyServiceKey)),
                 cacheDuration,
                 meterFactory: sp.GetRequiredService<IMeterFactory>()));
 

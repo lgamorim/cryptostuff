@@ -21,9 +21,11 @@ internal sealed class SpyCryptocurrencyService : ICryptocurrencyService
     /// <summary>Every query <see cref="GetPricesAsync"/> received, in order.</summary>
     public IReadOnlyList<CoinPriceQuery> CapturedPricesQueries => _capturedPricesQueries;
 
+    public TokenPriceQuery? CapturedTokenPricesQuery { get; private set; }
+
     public CoinQuery? CapturedCoinQuery { get; private set; }
 
-    /// <summary>When set, <see cref="GetPricesAsync"/> and <see cref="GetCoinAsync"/> throw it.</summary>
+    /// <summary>When set, <see cref="GetPricesAsync"/>, <see cref="GetTokenPricesAsync"/> and <see cref="GetCoinAsync"/> throw it.</summary>
     public Exception? ExceptionToThrow { get; set; }
 
     public ServiceResult<CoinPriceView> PricesResult { get; set; } =
@@ -62,6 +64,12 @@ internal sealed class SpyCryptocurrencyService : ICryptocurrencyService
     {
         GetTokenPricesCallCount++;
         CapturedCancellationToken = cancellationToken;
+        CapturedTokenPricesQuery = query;
+        if (ExceptionToThrow is not null)
+        {
+            throw ExceptionToThrow;
+        }
+
         return Task.FromResult(TokenPricesResult);
     }
 
