@@ -4,7 +4,7 @@
     <ProjectReference Include="..\CryptoStuff.Core\CryptoStuff.Core.csproj" />
   </ItemGroup>
 
-  <!-- The URL encoder, endpoint paths and response bodies are internal: only the client and its extensions use them, and the tests reach the encoder directly. -->
+  <!-- The URL encoder, endpoint paths, response bodies and id translation are internal: nothing outside this project uses them, and the tests reach the encoder and the id translation directly. -->
   <ItemGroup>
     <InternalsVisibleTo Include="CryptoStuff.CoinMarketCap.UnitTests" />
   </ItemGroup>

@@ -42,7 +42,7 @@ Seven projects under `src/`, each with its tests under `test/`:
 |---|---|---|
 | `CryptoStuff.Core` | The domain: the market-data contract, watchlists, portfolios, price alerts, validation, and caching; see [Inside Core](#inside-core) | `CryptoStuff.Core.UnitTests` |
 | `CryptoStuff.CoinGecko` | Adapter: the CoinGecko API client, sole owner of the wire format, and the `ICryptocurrencyService` implementation over it | `CryptoStuff.CoinGecko.UnitTests` |
-| `CryptoStuff.CoinMarketCap` | Adapter: the CoinMarketCap API client, sole owner of CoinMarketCap's wire format; no `ICryptocurrencyService` implementation or registration uses it yet | `CryptoStuff.CoinMarketCap.UnitTests` |
+| `CryptoStuff.CoinMarketCap` | Adapter: the CoinMarketCap API client, sole owner of CoinMarketCap's wire format, and the translation of the app's ids to CoinMarketCap's; no `ICryptocurrencyService` implementation or registration uses it yet | `CryptoStuff.CoinMarketCap.UnitTests` |
 | `CryptoStuff.Persistence` | Adapter: EF Core over SQLite, implementing Core's repository interfaces, with the checked-in migrations | `CryptoStuff.Persistence.IntegrationTests` |
 | `CryptoStuff.Composition` | Wiring: service registration, the HTTP retry pipeline, the database location, and the JSON shape both hosts write | `CryptoStuff.Composition.UnitTests` |
 | `CryptoStuff.Cli` | Console host | `CryptoStuff.Cli.UnitTests` |
@@ -66,8 +66,9 @@ Dependencies point inward. The adapters plug into `CryptoStuff.Core` by
 implementing its interfaces: `CryptoStuff.CoinGecko` its
 `ICryptocurrencyService`, and `CryptoStuff.Persistence` its repository
 interfaces. `CryptoStuff.CoinMarketCap` so far holds only its client, which
-takes the upstream metrics' meter name from `CryptoStuff.Core`; nothing
-references it yet. `CryptoStuff.Core` references no other project, so it never
+takes the upstream metrics' meter name from `CryptoStuff.Core`, and its id
+translation, which takes `ServiceResult` and `ServiceErrorCode` from it;
+nothing references it yet. `CryptoStuff.Core` references no other project, so it never
 sees either provider's wire format or EF Core.
 
 ### Inside Core
@@ -96,7 +97,7 @@ and those parsers read.
 | Project | Start with | Explained in |
 |---|---|---|
 | `CryptoStuff.CoinGecko` | `ICoinGeckoClient` and `CoinGeckoClient` (the wire format), `CryptocurrencyService` (the adapter) | [Configuration](#configuration), [Error codes](#error-codes), [Upstream metrics](#upstream-metrics) |
-| `CryptoStuff.CoinMarketCap` | `ICoinMarketCapClient` and `CoinMarketCapClient` (the wire format), `CoinMarketCapClientExtensions` (one call per endpoint) | [Configuration](#configuration) |
+| `CryptoStuff.CoinMarketCap` | `ICoinMarketCapClient` and `CoinMarketCapClient` (the wire format), `CoinMarketCapClientExtensions` (one call per endpoint), `CoinMarketCapIds` (id translation) | [Configuration](#configuration) |
 | `CryptoStuff.Persistence` | `CryptoStuffDbContext`, a `*Configuration` mapping and a `*Repository` for each stored feature, `CryptoStuffDatabase` | [Data storage](#data-storage), [Database migrations](#database-migrations) |
 | `CryptoStuff.Composition` | `AddCryptoStuff`, `AddAlertEvaluationSchedule`, `MigrateCryptoStuffDatabaseAsync`, `IsCryptoStuffDatabaseReadyAsync`, `RateLimitRetryHandler`, `DatabaseConnectionString`, `CryptoStuffJson` | [Registration](#registration), [Rate limiting](#rate-limiting), [Upstream metrics](#upstream-metrics), [Data storage](#data-storage) |
 | `CryptoStuff.Cli` | `CliRunner`, a `*Commands` class for each stored feature | [Command-line interface](#command-line-interface) |
@@ -106,8 +107,8 @@ and those parsers read.
 from its failures to a `ServiceErrorCode`, and `CoinGeckoEndpoint`, which
 names the endpoint a request URI calls for the request counter, are internal,
 visible only to `CryptoStuff.CoinGecko.UnitTests` through `InternalsVisibleTo`.
-`CryptoStuff.CoinMarketCap`'s URL encoder, endpoint paths and response
-bodies are internal in the same way, visible only to
+`CryptoStuff.CoinMarketCap`'s URL encoder, endpoint paths, response bodies
+and id translation are internal in the same way, visible only to
 `CryptoStuff.CoinMarketCap.UnitTests`.
 
 ## Prerequisites
@@ -144,6 +145,39 @@ for a coin, since it documents no slug parameter. Quote requests send
 answer instead of failing it. A failure keeps CoinMarketCap's own
 `status.error_code` and `status.error_message` beside the HTTP status. Nothing
 calls the client yet, so no CoinMarketCap key is read.
+
+The app's coin and platform ids are CoinGecko's, so `CoinMarketCapIds`
+holds the translation a CoinMarketCap-backed service will use; nothing calls
+it yet either. A coin id translates to its own slug unless the override table
+lists it: `binancecoin` becomes `bnb`, `ripple` becomes `xrp`, and so on for
+the coins among CoinGecko's top 100 whose slug differs. Ids match exactly, so
+`Binancecoin` is not `binancecoin`, as with CoinGecko itself. An id that is
+another coin's override slug, such as `xrp`, translates to no slug and comes
+back unknown, as it does from CoinGecko, which has no such id, rather than
+priced as XRP. A slug in an answer resolves back to the ids that were
+requested. A token query's platform must be one the platform table
+lists (`ethereum`, `binance-smart-chain`, `polygon-pos`, `arbitrum-one`,
+`optimistic-ethereum`, `base`, `avalanche`, `solana`, and `tron`), translated
+to the slug CoinMarketCap gives that platform's coin; any other platform is
+`NotFound`. That slug names a coin, not a platform, and CoinMarketCap gives
+some platforms the same coin: `bnb` is the coin of both BNB Smart Chain and
+opBNB, so by the slug alone an opBNB address passes for a
+`binance-smart-chain` one. A coin missing from the
+table whose slug differs comes back as CoinMarketCap not knowing it, or, if
+another coin holds that slug, as the wrong coin, which is why the table was
+checked by contract address where names were ambiguous (CoinMarketCap's
+`bitway` is not CoinGecko's `bitway`).
+
+To add an override, find the coin on coinmarketcap.com: its slug is the last
+part of the page's address, `coinmarketcap.com/currencies/<slug>/`. Confirm it
+is the same coin by symbol and, for a token, by contract address, then add the
+CoinGecko id and that slug to `CoinSlugOverrides` in
+`src/CryptoStuff.CoinMarketCap/CoinMarketCapIds.cs`, and the same pair to
+`PinnedCoinOverrides` in `CoinMarketCapIdsTests`, which fails until both
+lists match. A platform is added the same way, to `PlatformSlugs` and
+`PinnedPlatforms`, using the slug of the coin CoinMarketCap names as the
+platform's. The tests also reject two ids or two platforms sharing a slug, an
+override that changes nothing, and an override slug that is also a listed id.
 
 The API host also reads `Api:Key` (`Api__Key` in deployment), the key every
 client must send in the `X-Api-Key` header; see [API key](#api-key). In this

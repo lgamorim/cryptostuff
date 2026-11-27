@@ -860,6 +860,11 @@ largest coins by market cap whose ids differ, checked against CoinMarketCap's
 implemented. Tests pin each override in both directions, the identity fallback,
 an unlisted platform, and a guard that no two ids map to one slug.
 
+As implemented, the overrides were checked against coinmarketcap.com's pages
+and CoinGecko's keyless public API instead: the map endpoint needs a
+CoinMarketCap key, and none was available before Milestone 8.7. Milestone
+8.7's live run is the first check against CoinMarketCap's API itself.
+
 **README:** how ids are translated, and how to add an override.
 
 ### Milestone 8.6 — `feature/coinmarketcap-service`
@@ -881,7 +886,10 @@ contract:
 - **Token prices** translate the platform, resolve each address through
   `info?address=`, and require the resolved coin's contract list to hold that
   address on that platform, otherwise `NotFound`. They are then priced as
-  coins are and keyed by the address as requested.
+  coins are and keyed by the address as requested. Milestone 8.5's platform
+  slug names the platform's coin, which BNB Smart Chain and opBNB share, so
+  the check also needs the platform's name, which the Milestone 8.4 wire type
+  does not yet read, to tell those two apart.
 - **Market chart** makes one `quotes/historical` call at daily interval over
   the requested days, giving the price, market-cap, and volume series. It
   returns fewer points than CoinGecko's hourly granularity for 2 to 90 days,
