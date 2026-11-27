@@ -36,12 +36,13 @@ The AI workflow is the experiment.
 
 ## Projects
 
-Six projects under `src/`, each with its tests under `test/`:
+Seven projects under `src/`, each with its tests under `test/`:
 
 | Project | Role | Tests |
 |---|---|---|
 | `CryptoStuff.Core` | The domain: the market-data contract, watchlists, portfolios, price alerts, validation, and caching; see [Inside Core](#inside-core) | `CryptoStuff.Core.UnitTests` |
 | `CryptoStuff.CoinGecko` | Adapter: the CoinGecko API client, sole owner of the wire format, and the `ICryptocurrencyService` implementation over it | `CryptoStuff.CoinGecko.UnitTests` |
+| `CryptoStuff.CoinMarketCap` | Adapter: the CoinMarketCap API client, sole owner of CoinMarketCap's wire format; no `ICryptocurrencyService` implementation or registration uses it yet | `CryptoStuff.CoinMarketCap.UnitTests` |
 | `CryptoStuff.Persistence` | Adapter: EF Core over SQLite, implementing Core's repository interfaces, with the checked-in migrations | `CryptoStuff.Persistence.IntegrationTests` |
 | `CryptoStuff.Composition` | Wiring: service registration, the HTTP retry pipeline, the database location, and the JSON shape both hosts write | `CryptoStuff.Composition.UnitTests` |
 | `CryptoStuff.Cli` | Console host | `CryptoStuff.Cli.UnitTests` |
@@ -57,14 +58,17 @@ graph TD
     Composition --> Persistence[CryptoStuff.Persistence]
     Composition --> Core[CryptoStuff.Core]
     CoinGecko --> Core
+    CoinMarketCap[CryptoStuff.CoinMarketCap] --> Core
     Persistence --> Core
 ```
 
-Dependencies point inward. The two adapters plug into `CryptoStuff.Core` by
+Dependencies point inward. The adapters plug into `CryptoStuff.Core` by
 implementing its interfaces: `CryptoStuff.CoinGecko` its
 `ICryptocurrencyService`, and `CryptoStuff.Persistence` its repository
-interfaces. `CryptoStuff.Core` references no other project, so it never sees
-CoinGecko's wire format or EF Core.
+interfaces. `CryptoStuff.CoinMarketCap` so far holds only its client, which
+takes the upstream metrics' meter name from `CryptoStuff.Core`; nothing
+references it yet. `CryptoStuff.Core` references no other project, so it never
+sees either provider's wire format or EF Core.
 
 ### Inside Core
 
@@ -92,6 +96,7 @@ and those parsers read.
 | Project | Start with | Explained in |
 |---|---|---|
 | `CryptoStuff.CoinGecko` | `ICoinGeckoClient` and `CoinGeckoClient` (the wire format), `CryptocurrencyService` (the adapter) | [Configuration](#configuration), [Error codes](#error-codes), [Upstream metrics](#upstream-metrics) |
+| `CryptoStuff.CoinMarketCap` | `ICoinMarketCapClient` and `CoinMarketCapClient` (the wire format), `CoinMarketCapClientExtensions` (one call per endpoint) | [Configuration](#configuration) |
 | `CryptoStuff.Persistence` | `CryptoStuffDbContext`, a `*Configuration` mapping and a `*Repository` for each stored feature, `CryptoStuffDatabase` | [Data storage](#data-storage), [Database migrations](#database-migrations) |
 | `CryptoStuff.Composition` | `AddCryptoStuff`, `AddAlertEvaluationSchedule`, `MigrateCryptoStuffDatabaseAsync`, `IsCryptoStuffDatabaseReadyAsync`, `RateLimitRetryHandler`, `DatabaseConnectionString`, `CryptoStuffJson` | [Registration](#registration), [Rate limiting](#rate-limiting), [Upstream metrics](#upstream-metrics), [Data storage](#data-storage) |
 | `CryptoStuff.Cli` | `CliRunner`, a `*Commands` class for each stored feature | [Command-line interface](#command-line-interface) |
@@ -101,6 +106,9 @@ and those parsers read.
 from its failures to a `ServiceErrorCode`, and `CoinGeckoEndpoint`, which
 names the endpoint a request URI calls for the request counter, are internal,
 visible only to `CryptoStuff.CoinGecko.UnitTests` through `InternalsVisibleTo`.
+`CryptoStuff.CoinMarketCap`'s URL encoder, endpoint paths and response
+bodies are internal in the same way, visible only to
+`CryptoStuff.CoinMarketCap.UnitTests`.
 
 ## Prerequisites
 
@@ -124,6 +132,18 @@ demo API key described in Prerequisites (`CoinGecko:ApiKey` locally,
 header. `CryptoStuff.CoinGecko` consumes five endpoints: `simple/price`,
 `simple/token_price/{platform}`, `coins/{id}/market_chart`, `coins/{id}`, and
 `coins/{id}/history`, whose `date` query parameter must be `dd-MM-yyyy`.
+
+`CryptoStuff.CoinMarketCap`'s client talks to CoinMarketCap's API at
+`https://pro-api.coinmarketcap.com`, sending its key as the
+`X-CMC_PRO_API_KEY` HTTP header, and consumes three endpoints:
+`v3/cryptocurrency/quotes/latest` and `v2/cryptocurrency/info`, which take
+coins by slug (and the info endpoint a token by contract address), and
+`v3/cryptocurrency/quotes/historical`, which takes CoinMarketCap's numeric id
+for a coin, since it documents no slug parameter. Quote requests send
+`skip_invalid=true`, so a slug CoinMarketCap does not know is missing from the
+answer instead of failing it. A failure keeps CoinMarketCap's own
+`status.error_code` and `status.error_message` beside the HTTP status. Nothing
+calls the client yet, so no CoinMarketCap key is read.
 
 The API host also reads `Api:Key` (`Api__Key` in deployment), the key every
 client must send in the `X-Api-Key` header; see [API key](#api-key). In this

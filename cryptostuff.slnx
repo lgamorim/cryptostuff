@@ -3,6 +3,7 @@
     <Project Path="src/CryptoStuff.Api/CryptoStuff.Api.csproj" />
     <Project Path="src/CryptoStuff.Cli/CryptoStuff.Cli.csproj" />
     <Project Path="src/CryptoStuff.CoinGecko/CryptoStuff.CoinGecko.csproj" />
+    <Project Path="src/CryptoStuff.CoinMarketCap/CryptoStuff.CoinMarketCap.csproj" />
     <Project Path="src/CryptoStuff.Composition/CryptoStuff.Composition.csproj" />
     <Project Path="src/CryptoStuff.Core/CryptoStuff.Core.csproj" />
     <Project Path="src/CryptoStuff.Persistence/CryptoStuff.Persistence.csproj" />
@@ -12,6 +13,7 @@
     <Project Path="test/CryptoStuff.Api.UnitTests/CryptoStuff.Api.UnitTests.csproj" />
     <Project Path="test/CryptoStuff.Cli.UnitTests/CryptoStuff.Cli.UnitTests.csproj" />
     <Project Path="test/CryptoStuff.CoinGecko.UnitTests/CryptoStuff.CoinGecko.UnitTests.csproj" />
+    <Project Path="test/CryptoStuff.CoinMarketCap.UnitTests/CryptoStuff.CoinMarketCap.UnitTests.csproj" />
     <Project Path="test/CryptoStuff.Composition.UnitTests/CryptoStuff.Composition.UnitTests.csproj" />
     <Project Path="test/CryptoStuff.Core.UnitTests/CryptoStuff.Core.UnitTests.csproj" />
     <Project Path="test/CryptoStuff.Persistence.IntegrationTests/CryptoStuff.Persistence.IntegrationTests.csproj" />

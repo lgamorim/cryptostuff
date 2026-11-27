@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\CryptoStuff.Core\CryptoStuff.Core.csproj" />
+  </ItemGroup>
+
+  <!-- The URL encoder, endpoint paths and response bodies are internal: only the client and its extensions use them, and the tests reach the encoder directly. -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="CryptoStuff.CoinMarketCap.UnitTests" />
+  </ItemGroup>
+
+</Project>
