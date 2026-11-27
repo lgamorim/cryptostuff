@@ -75,3 +75,26 @@
   `--in-root`. That flag suppresses the `<Folder Name="/src/">` and
   `<Folder Name="/test/">` elements, so IDEs show every project flat at the
   solution root instead of mirroring the directory layout.
+- New code gets no null guard, and no test, for a parameter declared
+  non-nullable when a null can only reach it from this repo's own code.
+  `Nullable` is enabled and `TreatWarningsAsErrors` turns a possible null at
+  such a call site into a build error, so a guard and a test that has to pass
+  `null!` to reach it would only repeat the compiler.
+  `core/testing-philosophy.md`'s "null/empty inputs" still applies to
+  parameters declared nullable and to values that cross a boundary unchecked.
+  Request bodies, CLI arguments and configuration are covered by the hosts'
+  validators and the configuration readers. Upstream JSON is not covered by
+  the compiler or by a wire type's `required` members: `required` rejects only
+  a missing field, and an explicit JSON `null` leaves a non-nullable member
+  null. The mappers and services that read those members check for null, and
+  their tests set a member to `null!` to pin it; keep doing so for every
+  provider.
+  A guard is still worth adding where a null would otherwise go wrong somewhere
+  misleading, as `CoinGeckoClient.GetAsync` does for `requestUri`. Without it,
+  `HttpClient` sends a null URI to the base address, and the endpoint tag,
+  worked out only after the send, then fails, or with no meter factory nothing
+  fails at all. Such a guard is production code like any other: it gets a
+  failing test first, which passes `null!`.
+  Guards and tests already in the repo stay as they are; this note governs
+  what new code adds, not what earlier milestones chose. Empty values are not
+  covered by this note: test them wherever they can arrive.
