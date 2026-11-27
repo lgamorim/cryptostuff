@@ -4,8 +4,9 @@ namespace CryptoStuff.Core;
 public enum ServiceErrorCode
 {
     /// <summary>
-    /// The requested resource does not exist: the market data provider returned `404`, or no
-    /// persisted record has the given id.
+    /// The requested resource does not exist: the market data provider does not
+    /// know the coin, token or platform asked for, or no persisted record has
+    /// the given id.
     /// </summary>
     NotFound,
 

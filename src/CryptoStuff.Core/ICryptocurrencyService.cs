@@ -1,12 +1,13 @@
 namespace CryptoStuff.Core;
 
 /// <summary>
-/// The domain-level cryptocurrency market data workflow, decoupled from
-/// CoinGecko's wire format. Implemented by <c>CryptocurrencyService</c> in
-/// <c>CryptoStuff.CoinGecko</c>, which adapts CoinGecko to this contract the
-/// way <c>CryptoStuff.Persistence</c> adapts EF Core to the repository
-/// contracts; milestone `3.4`'s caching decorator depends on this abstraction instead of
-/// the concrete type, so further decoration stays possible.
+/// The domain-level cryptocurrency market data workflow, decoupled from any
+/// provider's wire format. Implemented by <c>CryptocurrencyService</c> in
+/// <c>CryptoStuff.CoinGecko</c> and by <c>CoinMarketCapCryptocurrencyService</c>
+/// in <c>CryptoStuff.CoinMarketCap</c>, each adapting its provider to this
+/// contract the way <c>CryptoStuff.Persistence</c> adapts EF Core to the
+/// repository contracts; milestone `3.4`'s caching decorator depends on this
+/// abstraction instead of a concrete type, so further decoration stays possible.
 /// </summary>
 public interface ICryptocurrencyService
 {
@@ -34,11 +35,19 @@ public interface ICryptocurrencyService
     Task<ServiceResult<TokenPriceView>> GetTokenPricesAsync(TokenPriceQuery query, CancellationToken cancellationToken);
 
     /// <summary>Gets the historical price, market cap, and volume series for a coin.</summary>
+    /// <remarks>
+    /// A provider whose plan serves fewer days of history than the query asks
+    /// for fails with <see cref="ServiceErrorCode.UpstreamUnavailable"/>.
+    /// </remarks>
     Task<ServiceResult<CoinMarketChartView>> GetMarketChartAsync(CoinMarketChartQuery query, CancellationToken cancellationToken);
 
     /// <summary>Gets coin detail: description, image, and current market data.</summary>
     Task<ServiceResult<CoinView>> GetCoinAsync(CoinQuery query, CancellationToken cancellationToken);
 
     /// <summary>Gets a coin's developer repository activity as of a given date.</summary>
+    /// <remarks>
+    /// A provider with no developer data fails with
+    /// <see cref="ServiceErrorCode.Unsupported"/>, naming itself in the detail.
+    /// </remarks>
     Task<ServiceResult<CoinDeveloperDataView>> GetDeveloperDataAsync(CoinDeveloperDataQuery query, CancellationToken cancellationToken);
 }

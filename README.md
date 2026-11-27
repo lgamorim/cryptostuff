@@ -42,7 +42,7 @@ Seven projects under `src/`, each with its tests under `test/`:
 |---|---|---|
 | `CryptoStuff.Core` | The domain: the market-data contract, watchlists, portfolios, price alerts, validation, and caching; see [Inside Core](#inside-core) | `CryptoStuff.Core.UnitTests` |
 | `CryptoStuff.CoinGecko` | Adapter: the CoinGecko API client, sole owner of the wire format, and the `ICryptocurrencyService` implementation over it | `CryptoStuff.CoinGecko.UnitTests` |
-| `CryptoStuff.CoinMarketCap` | Adapter: the CoinMarketCap API client, sole owner of CoinMarketCap's wire format, and the translation of the app's ids to CoinMarketCap's; no `ICryptocurrencyService` implementation or registration uses it yet | `CryptoStuff.CoinMarketCap.UnitTests` |
+| `CryptoStuff.CoinMarketCap` | Adapter: the CoinMarketCap API client, sole owner of CoinMarketCap's wire format, the translation of the app's ids to CoinMarketCap's, and the `ICryptocurrencyService` implementation over both; no registration uses it yet | `CryptoStuff.CoinMarketCap.UnitTests` |
 | `CryptoStuff.Persistence` | Adapter: EF Core over SQLite, implementing Core's repository interfaces, with the checked-in migrations | `CryptoStuff.Persistence.IntegrationTests` |
 | `CryptoStuff.Composition` | Wiring: service registration, the HTTP retry pipeline, the database location, and the JSON shape both hosts write | `CryptoStuff.Composition.UnitTests` |
 | `CryptoStuff.Cli` | Console host | `CryptoStuff.Cli.UnitTests` |
@@ -63,13 +63,12 @@ graph TD
 ```
 
 Dependencies point inward. The adapters plug into `CryptoStuff.Core` by
-implementing its interfaces: `CryptoStuff.CoinGecko` its
-`ICryptocurrencyService`, and `CryptoStuff.Persistence` its repository
-interfaces. `CryptoStuff.CoinMarketCap` so far holds only its client, which
-takes the upstream metrics' meter name from `CryptoStuff.Core`, and its id
-translation, which takes `ServiceResult` and `ServiceErrorCode` from it;
-nothing references it yet. `CryptoStuff.Core` references no other project, so it never
-sees either provider's wire format or EF Core.
+implementing its interfaces: `CryptoStuff.CoinGecko` and
+`CryptoStuff.CoinMarketCap` its `ICryptocurrencyService`, and
+`CryptoStuff.Persistence` its repository interfaces. Nothing references
+`CryptoStuff.CoinMarketCap` yet, so the hosts still call CoinGecko alone.
+`CryptoStuff.Core` references no other project, so it never sees either
+provider's wire format or EF Core.
 
 ### Inside Core
 
@@ -97,7 +96,7 @@ and those parsers read.
 | Project | Start with | Explained in |
 |---|---|---|
 | `CryptoStuff.CoinGecko` | `ICoinGeckoClient` and `CoinGeckoClient` (the wire format), `CryptocurrencyService` (the adapter) | [Configuration](#configuration), [Error codes](#error-codes), [Upstream metrics](#upstream-metrics) |
-| `CryptoStuff.CoinMarketCap` | `ICoinMarketCapClient` and `CoinMarketCapClient` (the wire format), `CoinMarketCapClientExtensions` (one call per endpoint), `CoinMarketCapIds` (id translation) | [Configuration](#configuration) |
+| `CryptoStuff.CoinMarketCap` | `ICoinMarketCapClient` and `CoinMarketCapClient` (the wire format), `CoinMarketCapClientExtensions` (one call per endpoint), `CoinMarketCapIds` (id translation), `CoinMarketCapCryptocurrencyService` (the adapter) and its `CoinMarketCapServiceOptions` | [Configuration](#configuration), [CoinMarketCap's answers](#coinmarketcaps-answers), [Error codes](#error-codes) |
 | `CryptoStuff.Persistence` | `CryptoStuffDbContext`, a `*Configuration` mapping and a `*Repository` for each stored feature, `CryptoStuffDatabase` | [Data storage](#data-storage), [Database migrations](#database-migrations) |
 | `CryptoStuff.Composition` | `AddCryptoStuff`, `AddAlertEvaluationSchedule`, `MigrateCryptoStuffDatabaseAsync`, `IsCryptoStuffDatabaseReadyAsync`, `RateLimitRetryHandler`, `DatabaseConnectionString`, `CryptoStuffJson` | [Registration](#registration), [Rate limiting](#rate-limiting), [Upstream metrics](#upstream-metrics), [Data storage](#data-storage) |
 | `CryptoStuff.Cli` | `CliRunner`, a `*Commands` class for each stored feature | [Command-line interface](#command-line-interface) |
@@ -107,9 +106,10 @@ and those parsers read.
 from its failures to a `ServiceErrorCode`, and `CoinGeckoEndpoint`, which
 names the endpoint a request URI calls for the request counter, are internal,
 visible only to `CryptoStuff.CoinGecko.UnitTests` through `InternalsVisibleTo`.
-`CryptoStuff.CoinMarketCap`'s URL encoder, endpoint paths, response bodies
-and id translation are internal in the same way, visible only to
-`CryptoStuff.CoinMarketCap.UnitTests`.
+`CryptoStuff.CoinMarketCap`'s URL encoder, endpoint paths, response bodies,
+id translation, error mapping, and the quote reader, contract resolver and
+chart mapper its service is built from are internal in the same way, visible
+only to `CryptoStuff.CoinMarketCap.UnitTests`.
 
 ## Prerequisites
 
@@ -143,12 +143,12 @@ coins by slug (and the info endpoint a token by contract address), and
 for a coin, since it documents no slug parameter. Quote requests send
 `skip_invalid=true`, so a slug CoinMarketCap does not know is missing from the
 answer instead of failing it. A failure keeps CoinMarketCap's own
-`status.error_code` and `status.error_message` beside the HTTP status. Nothing
-calls the client yet, so no CoinMarketCap key is read.
+`status.error_code` and `status.error_message` beside the HTTP status. Only
+`CoinMarketCapCryptocurrencyService` calls the client, and nothing registers
+that yet, so no CoinMarketCap key is read.
 
 The app's coin and platform ids are CoinGecko's, so `CoinMarketCapIds`
-holds the translation a CoinMarketCap-backed service will use; nothing calls
-it yet either. A coin id translates to its own slug unless the override table
+holds the translation `CoinMarketCapCryptocurrencyService` uses. A coin id translates to its own slug unless the override table
 lists it: `binancecoin` becomes `bnb`, `ripple` becomes `xrp`, and so on for
 the coins among CoinGecko's top 100 whose slug differs. Ids match exactly, so
 `Binancecoin` is not `binancecoin`, as with CoinGecko itself. An id that is
@@ -210,6 +210,38 @@ a prefixed request names it. It must start with `/`, or the host fails to
 start. A proxy that strips the prefix before forwarding needs no setting, but
 its clients then get `Location` headers without the prefix.
 
+## CoinMarketCap's answers
+
+`CoinMarketCapCryptocurrencyService` serves `ICryptocurrencyService` within
+what CoinMarketCap's free Basic plan allows, so its answers differ from
+CoinGecko's in these ways:
+
+- **Prices.** Basic converts to one currency per call, so a price or token
+  price query makes one `quotes/latest` call per distinct currency, with every
+  coin in each, where CoinGecko answers in one. A currency CoinMarketCap
+  rejects leaves every coin without an amount in it, as a currency CoinGecko
+  does not quote does. When every currency is rejected, one more call, in
+  USD, settles which coins exist, so an unknown coin still fails the query.
+  An answer rejecting the `slug` parameter also reads as an unknown coin.
+- **Token prices.** CoinMarketCap quotes coins, not addresses, so each
+  distinct address is first resolved to its coin with one `info` call, and
+  must be deployed on the requested platform. An address CoinMarketCap
+  rejects, or holds only on another platform, is `NotFound`.
+- **Market chart.** `quotes/historical` takes CoinMarketCap's numeric id, so
+  one `quotes/latest` call in USD looks it up first. The history runs back
+  the requested days from now with one point a day, where CoinGecko gives
+  several a day for ranges up to 90 days. Basic serves 365 days of history,
+  so a query for more fails with `UpstreamUnavailable`, with no call made.
+- **Coin detail.** A coin query names no currency, and each currency costs a
+  call, so the market data holds a snapshot in each of
+  `CoinMarketCapServiceOptions.DetailCurrencies` alone, `usd` by default,
+  where CoinGecko's covers every currency it quotes. As with CoinGecko, a
+  snapshot needs a price, a market cap and a volume, and the market data is
+  null when no currency has all three. The image is CoinMarketCap's 64-pixel
+  logo, and the symbol is lower-cased, as CoinGecko gives it.
+- **Developer data.** CoinMarketCap has none, so the operation fails with
+  `Unsupported`, its detail naming CoinMarketCap, with no call made.
+
 ## Error codes
 
 `CryptoStuff.Core` reports a failed operation as a `ServiceErrorCode`. A failed
@@ -220,14 +252,14 @@ the selected market data provider cannot serve at all:
 
 | Code | Meaning | Condition |
 |---|---|---|
-| `NotFound` | The requested resource does not exist | CoinGecko returned `404`, or no persisted record has that id |
-| `RateLimited` | The market data provider's rate limit was exceeded | CoinGecko returned `429` |
+| `NotFound` | The requested resource does not exist | CoinGecko returned `404`; CoinMarketCap's answer lacks the coin or token asked for, or it rejected the coins' slugs or the token's address; or no persisted record has that id |
+| `RateLimited` | The market data provider's rate limit was exceeded | CoinGecko or CoinMarketCap returned `429` |
 | `RequestTimedOut` | The request to the market data provider did not complete in time | The request timed out |
-| `UpstreamUnavailable` | The market data provider failed for any other reason | Any other non-success response, or no response at all (a refused connection, a DNS or TLS failure, a dropped connection) |
+| `UpstreamUnavailable` | The market data provider failed for any other reason | Any other non-success response, or no response at all (a refused connection, a DNS or TLS failure, a dropped connection); also a CoinMarketCap market chart for more days than its Basic plan serves, refused before any request |
 | `Conflict` | The write conflicts with stored state | A duplicate name, or a lost concurrency race |
 | `RuleViolated` | The request breaks a domain rule | For example a write that would oversell or name an unknown coin, or a valuation with an amount too large to compute |
 | `PreconditionFailed` | The stored version no longer matches what the caller expected | A stale `If-Match` |
-| `Unsupported` | The selected market data provider cannot serve the operation | None yet: CoinGecko serves every operation. It is reserved for developer data from a provider that has none, with a detail naming the provider |
+| `Unsupported` | The selected market data provider cannot serve the operation | Developer data asked of CoinMarketCap, which has none, with a detail naming it. CoinGecko serves every operation |
 
 A failure may also carry a detail message. When it does, the API returns it as
 the ProblemDetails `detail` and the CLI prints it, in place of the fixed text
@@ -241,6 +273,9 @@ for the code.
 identifiers instead of returning an error, so `CryptoStuff.CoinGecko` treats any
 requested identifier absent from the response as a `NotFound` failure for the
 whole request, rather than returning a partial result with a silent gap.
+CoinMarketCap's `quotes/latest` omits an unknown slug the same way, since
+quote requests send `skip_invalid=true`, and `CryptoStuff.CoinMarketCap`
+treats it the same way.
 
 Where the coins are ones the app already tracks (a portfolio's holdings, a
 watchlist's coins, the coins armed alerts watch), losing one of them upstream
@@ -249,14 +284,15 @@ should not hide the others, so Core reads their prices through
 only when that call is `NotFound` asks for each coin on its own to find the
 ones the market data provider still knows. A coin it does not know comes back with no
 amounts, exactly as a coin not quoted in a requested currency already does.
-An HTTP `404` from the price endpoint itself also reads as `NotFound`, so it
-too leaves every coin without amounts. `GET /prices` and `cryptostuff price`
+An HTTP `404` from CoinGecko's price endpoint itself also reads as
+`NotFound`, so it too leaves every coin without amounts. `GET /prices` and `cryptostuff price`
 still fail on an unknown coin, since the caller named it.
 
 The single-resource endpoints (`coins/{id}`, `coins/{id}/market_chart`,
 `coins/{id}/history`) don't need this check: CoinGecko itself returns `404`
 for an unknown coin id, which the error-code mapping above already turns into
-`NotFound`.
+`NotFound`. CoinMarketCap's coin detail and market chart look the coin up
+through `quotes/latest` first, so an unknown coin is `NotFound` there too.
 
 ## Input validation
 

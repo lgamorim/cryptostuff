@@ -14,16 +14,17 @@ public static class KnownCoinPrices
     /// whole lookup. Every requested coin is in the result, in query order.
     /// </summary>
     /// <remarks>
-    /// One upstream call covers the whole query. The market data provider omits a coin it no
-    /// longer knows, which the adapter reports as
+    /// One price lookup covers the whole query. A coin the market data provider
+    /// no longer knows fails that lookup with
     /// <see cref="ServiceErrorCode.NotFound"/> for the whole call without naming
     /// the coin; only then is each coin asked for on its own, in every
     /// requested currency, to tell the known coins from the unknown ones. With
-    /// a single coin the one call already was that coin's own, so it is not
-    /// repeated. The adapter also reports an HTTP <c>404</c> from the price
-    /// endpoint itself as <see cref="ServiceErrorCode.NotFound"/>, which cannot
-    /// be told apart, so that too leaves every coin without amounts. Any other
-    /// failure, from either kind of call, is passed on unchanged.
+    /// a single coin the one lookup already was that coin's own, so it is not
+    /// repeated. A provider's adapter may also report a failure of the price
+    /// endpoint itself as <see cref="ServiceErrorCode.NotFound"/>, as
+    /// CoinGecko's does an HTTP <c>404</c>, which cannot be told apart, so that
+    /// too leaves every coin without amounts. Any other failure, from either
+    /// kind of lookup, is passed on unchanged.
     /// </remarks>
     public static async Task<ServiceResult<CoinPriceView>> GetKnownCoinPricesAsync(
         this ICryptocurrencyService cryptocurrencyService, CoinPriceQuery query, CancellationToken cancellationToken)

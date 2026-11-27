@@ -913,6 +913,19 @@ which CoinMarketCap never does. `KnownCoinPrices`' remarks say the same of
 "the adapter" without naming CoinGecko, so Milestone 8.1's search does not
 find them; they are corrected here.
 
+As implemented, `quotes/historical` takes only CoinMarketCap's numeric id, as
+Milestone 8.4's client documents, so the market chart first looks the id up
+with one `quotes/latest` call in `USD`, and a range deeper than 365 days fails
+before any call rather than after Basic refuses it. An address `info` rejects
+with a `400` naming the `address` parameter is `NotFound`, as an unknown
+address should be, and so is a `quotes/latest` answer whose `400` names the
+`slug` parameter, which `skip_invalid=true` should prevent but which would
+otherwise turn an unknown coin into an outage. The token check matches the platform by its coin's slug alone: the
+opBNB limit is accepted for now, and the platform's name is left for when
+Milestone 8.7's live run shows what the wire carries. The service takes a
+`TimeProvider` for the chart's end and a `CoinMarketCapServiceOptions` for the
+detail currencies, which Milestone 8.7 binds from configuration.
+
 The largest milestone of the phase; budget accordingly.
 
 **README:** how CoinMarketCap's answers differ from CoinGecko's — the detail
@@ -958,6 +971,33 @@ CoinMarketCap API with a Basic key, and record the results in the handoff
 summary. It is the one point where the adapter meets the real wire format,
 which no test exercises; any difference is fixed in the Milestone 8.4 and 8.6
 types on this branch.
+
+Milestone 8.6 left these questions for that run to settle:
+
+- **The `400` message.** Does CoinMarketCap word a rejected argument as
+  `Invalid value for "<parameter>"`? `RejectsParameter` matches any message
+  quoting the parameter's name, which is looser than that form. Tighten it
+  once the real wording is known.
+- **All-unknown slugs.** Does `quotes/latest` with `skip_invalid=true` answer a
+  request whose slugs are all unknown with an empty list, or with a `400`
+  naming `slug`? The reader reads either as an unknown coin.
+- **`info?slug=` keys.** Is the answer keyed by slug or by numeric id? The
+  service matches by slug, so either works, but the wire type's remarks should
+  say which.
+- **`quotes/historical`.** Check the answer's shape, whether `count` is
+  honoured, and whether Basic serves a 365-day range starting exactly a year
+  back, as the 365-day boundary assumes.
+- **The platform name.** Find where it is on the wire, so opBNB can be told
+  apart from BNB Smart Chain.
+- **Credit cost.** With one unknown coin among n tracked coins,
+  `KnownCoinPrices`' coin-by-coin retry makes up to n + 1 `quotes/latest`
+  calls per currency on every lookup, where a lookup with no unknown coin
+  makes one. The README's credit figures for rate limiting and alert
+  evaluation should allow for it. The burst can also exceed Basic's
+  per-minute window and end the lookup `RateLimited`, the very outcome
+  `KnownCoinPrices` exists to avoid, so the run should check whether it does.
+  If so, avoid the retry instead of documenting it: the adapter could tell
+  the known coins from the unknown ones out of the answer it already holds.
 
 **README:** Prerequisites — which upstream key is needed, now that it depends
 on the provider; the configuration section — the provider setting, the
